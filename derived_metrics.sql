@@ -148,8 +148,8 @@ ORDER BY ph.phase_id;
 -- =========================================================
 -- Scale uses sessions.elite_hrv_readiness (0-10).
 -- Suggested thresholds:
---   green  = >= 7.5
---   yellow = >= 5.0 and < 7.5
+--   green  = >= 7.0
+--   yellow = >= 5.0 and < 7.0
 --   red    = < 5.0
 --   gray   = missing
 SELECT
@@ -159,7 +159,7 @@ SELECT
     s.elite_hrv_readiness,
     CASE
         WHEN s.elite_hrv_readiness IS NULL THEN 'gray'
-        WHEN s.elite_hrv_readiness >= 7.5 THEN 'green'
+        WHEN s.elite_hrv_readiness >= 7.0 THEN 'green'
         WHEN s.elite_hrv_readiness >= 5.0 THEN 'yellow'
         ELSE 'red'
     END AS readiness_color

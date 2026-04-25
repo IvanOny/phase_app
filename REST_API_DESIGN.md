@@ -98,7 +98,7 @@ Design principle:
 {
   "phaseId": 42,
   "sessionDate": "2026-02-14",
-  "sessionType": "heavy",
+  "sessionType": "heavy_bench",
   "eliteHrvReadiness": 7.4,
   "garminOvernightHrv": 58.2,
   "notes": "Felt strong"
@@ -111,7 +111,7 @@ Design principle:
   "sessionId": 901,
   "phaseId": 42,
   "sessionDate": "2026-02-14",
-  "sessionType": "heavy",
+  "sessionType": "heavy_bench",
   "eliteHrvReadiness": 7.4,
   "garminOvernightHrv": 58.2,
   "notes": "Felt strong",
@@ -265,7 +265,7 @@ Design principle:
     "benchTopsetE1rmKg": 138.52,
     "benchSessionVolumeKgReps": 4120.75,
     "pullupMaxReps": 20.5,
-    "runPaceSecPerKm": 327.8
+    "runPaceMinPerKm": 5.46
   },
   "counts": {
     "benchmarkPullups": 3,
@@ -324,7 +324,7 @@ Design principle:
 
 ## 3.3 Sessions
 - `phaseId` must reference an existing phase.
-- `sessionType` in: `heavy | volume | run | pull | other`.
+- `sessionType` in: `heavy_bench | volume_bench | speed_bench | run | pull | other`.
 - Unique per `(phaseId, sessionDate, sessionType)`.
 - `eliteHrvReadiness` either null or `0..10`.
 - `garminOvernightHrv` either null or `>= 0`.
@@ -349,7 +349,7 @@ Design principle:
 - `benchmarkType` in: `max_bodyweight_pullups | run_aerobic_test`.
 - `details` must match type:
   - For `max_bodyweight_pullups`: `reps > 0`, `unit == "reps"`.
-  - For `run_aerobic_test`: `targetHr > 0`, `durationMin > 0`, `avgHr > 0`, `paceSecPerKm > 0`.
+  - For `run_aerobic_test`: `targetHr > 0`, `durationMin > 0`, `avgHr > 0`, `paceMinPerKm > 0`.
 
 ## 3.7 Computed endpoints
 - Read-only; only `GET` allowed.

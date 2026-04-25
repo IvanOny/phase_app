@@ -2,7 +2,7 @@
 
 -- Optional controlled vocabularies
 CREATE TYPE phase_type_enum AS ENUM ('bench', 'pull_ups', 'run');
-CREATE TYPE session_type_enum AS ENUM ('heavy', 'volume', 'run', 'pull', 'other');
+CREATE TYPE session_type_enum AS ENUM ('heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other');
 CREATE TYPE benchmark_type_enum AS ENUM ('max_bodyweight_pullups', 'run_aerobic_test');
 
 -- 1) Phases: primary boundary for all evaluation windows
@@ -125,11 +125,11 @@ CREATE TABLE benchmark_run_aerobic_test (
     target_hr SMALLINT NOT NULL DEFAULT 140,
     duration_min SMALLINT NOT NULL DEFAULT 40,
     avg_hr NUMERIC(5,2) NOT NULL,
-    pace_sec_per_km NUMERIC(7,2) NOT NULL,
+    pace_min_per_km NUMERIC(7,2) NOT NULL,
     CONSTRAINT chk_target_hr_positive CHECK (target_hr > 0),
     CONSTRAINT chk_duration_min_positive CHECK (duration_min > 0),
     CONSTRAINT chk_avg_hr_positive CHECK (avg_hr > 0),
-    CONSTRAINT chk_pace_positive CHECK (pace_sec_per_km > 0)
+    CONSTRAINT chk_pace_positive CHECK (pace_min_per_km > 0)
 );
 
 -- 9) Phase aggregations: derived metrics only, versionable snapshots
@@ -143,7 +143,7 @@ CREATE TABLE phase_aggregations (
     benchmark_count_pullups INTEGER,
     benchmark_count_run INTEGER,
     avg_pullup_max_reps NUMERIC(6,2),
-    avg_run_pace_sec_per_km NUMERIC(8,2),
+    avg_run_pace_min_per_km NUMERIC(8,2),
     prev_phase_pullup_delta NUMERIC(8,2),
     prev_phase_run_pace_delta_sec_per_km NUMERIC(8,2),
     notes TEXT,

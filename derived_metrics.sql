@@ -53,6 +53,7 @@ SELECT
     s.phase_id,
     s.session_id,
     s.session_date,
+    s.session_type,
     COALESCE(SUM(es.load_kg * es.reps), 0)::numeric(12,2) AS bench_volume_kg_reps
 FROM sessions s
 JOIN session_exercises se
@@ -63,7 +64,8 @@ JOIN exercise_sets es
   ON es.session_exercise_id = se.session_exercise_id
 WHERE e.is_barbell_bench_press = TRUE
   AND es.is_working_set = TRUE
-GROUP BY s.phase_id, s.session_id, s.session_date
+  AND s.session_type IN ('heavy_bench', 'volume_bench', 'speed_bench')
+GROUP BY s.phase_id, s.session_id, s.session_date, s.session_type
 ORDER BY s.session_date;
 
 -- =========================================================
@@ -73,7 +75,7 @@ ORDER BY s.session_date;
 -- - avg bench top-set e1RM
 -- - avg bench session volume
 -- - avg pull-up benchmark reps
--- - avg run benchmark pace (sec/km)
+-- - avg run benchmark pace (min/km)
 WITH bench_topset_e1rm_by_session AS (
     SELECT
         s.phase_id,
@@ -108,7 +110,7 @@ pullup_benchmarks AS (
     WHERE b.benchmark_type = 'max_bodyweight_pullups'
 ),
 run_benchmarks AS (
-    SELECT b.phase_id, r.pace_sec_per_km::numeric AS run_pace_sec_per_km
+    SELECT b.phase_id, r.pace_min_per_km::numeric AS run_pace_min_per_km
     FROM benchmarks b
     JOIN benchmark_run_aerobic_test r
       ON r.benchmark_id = b.benchmark_id
@@ -120,7 +122,7 @@ SELECT
     AVG(bte.top_set_e1rm)::numeric(10,2) AS avg_bench_topset_e1rm,
     AVG(bv.bench_volume)::numeric(12,2) AS avg_bench_session_volume,
     AVG(pb.pullup_reps)::numeric(8,2) AS avg_pullup_max_reps,
-    AVG(rb.run_pace_sec_per_km)::numeric(8,2) AS avg_run_pace_sec_per_km
+    AVG(rb.run_pace_min_per_km)::numeric(8,2) AS avg_run_pace_min_per_km
 FROM phases ph
 LEFT JOIN bench_topset_e1rm_by_session bte ON bte.phase_id = ph.phase_id
 LEFT JOIN bench_volume_by_session bv ON bv.phase_id = ph.phase_id
@@ -176,7 +178,7 @@ WITH phase_metrics AS (
         COALESCE(COUNT(*) FILTER (WHERE b.benchmark_type = 'max_bodyweight_pullups'), 0) AS benchmark_count_pullups,
         COALESCE(COUNT(*) FILTER (WHERE b.benchmark_type = 'run_aerobic_test'), 0) AS benchmark_count_run,
         AVG(pu.reps::numeric) AS avg_pullup_max_reps,
-        AVG(rt.pace_sec_per_km::numeric) AS avg_run_pace_sec_per_km
+        AVG(rt.pace_min_per_km::numeric) AS avg_run_pace_min_per_km
     FROM phases ph
     LEFT JOIN benchmarks b ON b.phase_id = ph.phase_id
     LEFT JOIN benchmark_pullup_max_reps pu ON pu.benchmark_id = b.benchmark_id
@@ -189,7 +191,7 @@ INSERT INTO phase_aggregations (
     benchmark_count_pullups,
     benchmark_count_run,
     avg_pullup_max_reps,
-    avg_run_pace_sec_per_km,
+    avg_run_pace_min_per_km,
     notes
 )
 SELECT
@@ -198,7 +200,7 @@ SELECT
     benchmark_count_pullups,
     benchmark_count_run,
     avg_pullup_max_reps,
-    avg_run_pace_sec_per_km,
+    avg_run_pace_min_per_km,
     CASE
         WHEN benchmark_count_pullups < 2 OR benchmark_count_run < 2
             THEN 'Low benchmark count; interpret averages cautiously'

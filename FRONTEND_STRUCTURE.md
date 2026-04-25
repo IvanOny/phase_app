@@ -110,7 +110,7 @@ interface BenchPhaseData {
     run: {
       weeklyTargetKm: number;
       completedKm: number;
-      sessions: Array<{ date: string; distanceKm: number; paceSecPerKm?: number }>;
+      sessions: Array<{ date: string; distanceKm: number; paceMinPerKm?: number }>;
     };
   };
   readinessInputs: {

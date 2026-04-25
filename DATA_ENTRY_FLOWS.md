@@ -20,7 +20,7 @@ Goal: make logging fast, avoid duplicate typing, and keep benchmark records stan
 2. System preselects:
    - `phase_id` from current phase context.
    - `session_date` = today.
-   - `session_type` = last bench session type (usually `heavy` or `volume`).
+   - `session_type` = last bench session type (usually `heavy_bench`, `volume_bench`, or `speed_bench`).
 
 ### Step-by-step flow
 1. **Session header (minimal required)**
@@ -113,7 +113,7 @@ Goal: make logging fast, avoid duplicate typing, and keep benchmark records stan
 3. **Result capture (required)**
    - Enter `avg_hr`.
    - Enter either:
-     - `pace_sec_per_km`, or
+     - `pace_min_per_km`, or
      - distance + elapsed time (system converts to pace).
 4. **Protocol compliance check (required)**
    - Quick toggle: “Protocol completed continuously without interruptions.”
@@ -129,7 +129,7 @@ Goal: make logging fast, avoid duplicate typing, and keep benchmark records stan
 
 ### Standardization rules
 - `benchmark_type` fixed to `run_aerobic_test`.
-- Required numeric constraints: `target_hr > 0`, `duration_min > 0`, `avg_hr > 0`, `pace_sec_per_km > 0`.
+- Required numeric constraints: `target_hr > 0`, `duration_min > 0`, `avg_hr > 0`, `pace_min_per_km > 0`.
 - Keep protocol metadata (target HR, duration) with every record to separate standard vs custom tests.
 
 ---
@@ -143,7 +143,7 @@ Goal: make logging fast, avoid duplicate typing, and keep benchmark records stan
 | `phase_id` | integer | Yes | Inferred from active phase | Must exist | Editable only when cross-phase logging is enabled |
 | `session_id` | integer | No | Suggested from same-day session | Must exist if provided | Links benchmark to a workout context |
 | `session_date` | date (ISO) | Yes (session flow) | Defaults to today | Valid date | Stored as source-of-truth session date |
-| `session_type` | enum | Yes (session flow) | Last used in phase | `heavy \| volume \| run \| pull \| other` | Bench flow usually `heavy`/`volume` |
+| `session_type` | enum | Yes (session flow) | Last used in phase | `heavy_bench \| volume_bench \| speed_bench \| run \| pull \| other` | Bench flow usually `heavy_bench`/`volume_bench`/`speed_bench` |
 | `notes` | text | No | Blank | Any text | Optional user context |
 
 ## Bench session fields
@@ -179,7 +179,7 @@ Goal: make logging fast, avoid duplicate typing, and keep benchmark records stan
 | `target_hr` | integer | Yes | 140 | `> 0` | Standard protocol anchor |
 | `duration_min` | integer | Yes | 40 | `> 0` | Standard protocol anchor |
 | `avg_hr` | decimal | Yes | Empty | `> 0` | From wearable/manual entry |
-| `pace_sec_per_km` | decimal | Yes* | Derived or entered | `> 0` | *Required final stored metric |
+| `pace_min_per_km` | decimal | Yes* | Derived or entered | `> 0` | *Required final stored metric |
 | `distance_km` | decimal | Optional input path | Empty | `> 0` if provided | Used to compute pace |
 | `elapsed_sec` | integer | Optional input path | Empty | `> 0` if provided | Used to compute pace |
 | `protocol_compliant` | boolean | Yes | True | Boolean | False flags as non-standard |
@@ -190,7 +190,7 @@ Goal: make logging fast, avoid duplicate typing, and keep benchmark records stan
 ## Recommended UX safeguards
 
 - **Duplicate detection**: warn if same benchmark type already logged on same date in same phase.
-- **Unit-locking**: hide units when fixed by standard (`reps`, sec/km).
+- **Unit-locking**: hide units when fixed by standard (`reps`, min/km).
 - **Validation timing**: inline validation while typing; hard-stop only on save.
 - **Smart confirmation**: if value deviates greatly from recent history, ask for confirm (not block).
 - **Standard filterability**: all analytics views should allow filtering to `protocol_compliant=true` and matching standard version.

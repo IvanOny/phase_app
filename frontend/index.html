@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phase App - Bench Vertical Slice</title>
+    <style>
+      body { font-family: Arial, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; }
+      .row { display: flex; gap: 0.75rem; margin-bottom: 0.5rem; }
+      input, select, button { padding: 0.5rem; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+      .muted { color: #555; }
+      pre { background: #f7f7f7; padding: 0.75rem; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <h1>Bench Session Vertical Slice</h1>
+    <p class="muted">Log a session, add sets, then fetch live e1RM + bench volume.</p>
+
+    <div class="card">
+      <h3>1) Create Session</h3>
+      <div class="row">
+        <input id="phaseId" type="number" value="1" placeholder="Phase ID" />
+        <input id="sessionDate" type="date" value="2026-02-14" />
+        <select id="sessionType">
+          <option value="heavy_bench">heavy_bench</option>
+          <option value="volume_bench">volume_bench</option>
+          <option value="speed_bench">speed_bench</option>
+        </select>
+        <button id="createSessionBtn">Create</button>
+      </div>
+      <div>Session ID: <strong id="sessionId">-</strong></div>
+    </div>
+
+    <div class="card">
+      <h3>2) Add Bench Exercise + Sets</h3>
+      <div class="row">
+        <input id="exerciseId" type="number" value="1" placeholder="Exercise ID" />
+        <button id="addExerciseBtn">Add Exercise</button>
+      </div>
+      <div>Session Exercise ID: <strong id="sessionExerciseId">-</strong></div>
+
+      <div class="row" style="margin-top: 0.75rem;">
+        <input id="setNumber" type="number" value="1" placeholder="Set #" />
+        <input id="reps" type="number" value="5" placeholder="Reps" />
+        <input id="loadKg" type="number" value="100" step="0.5" placeholder="Load kg" />
+        <label><input id="isTopSet" type="checkbox" /> Top set</label>
+        <button id="addSetBtn">Add Set</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>3) Fetch Live Metrics</h3>
+      <button id="refreshMetricsBtn">Refresh Metrics</button>
+      <pre id="metricsOutput">{}</pre>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

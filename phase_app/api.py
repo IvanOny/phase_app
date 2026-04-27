@@ -19,10 +19,23 @@ class PhaseApi:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
 
-    def handle(self, method: str, path: str, body: dict[str, Any] | None = None) -> ApiResponse:
+    def handle(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None = None,
+        query_params: dict[str, str] | None = None,
+    ) -> ApiResponse:
         body = body or {}
+        qp = query_params or {}
+
+        if method == "GET" and path == "/v1/phases":
+            return self.list_phases()
         if method == "POST" and path == "/v1/phases":
             return self.create_phase(body)
+
+        if method == "GET" and path == "/v1/sessions":
+            return self.list_sessions(qp)
         if method == "POST" and path == "/v1/sessions":
             return self.create_session(body)
         if method == "POST" and re.fullmatch(r"/v1/sessions/\d+/exercises", path):
@@ -38,6 +51,14 @@ class PhaseApi:
             return self.get_session_exercises(int(path.split("/")[3]))
         if method == "GET" and re.fullmatch(r"/v1/session-exercises/\d+/sets", path):
             return self.get_exercise_sets(int(path.split("/")[3]))
+
+        if method == "GET" and path == "/v1/exercises":
+            return self.list_exercises()
+
+        if method == "GET" and path == "/v1/benchmarks":
+            return self.list_benchmarks(qp)
+        if method == "POST" and path == "/v1/benchmarks":
+            return self.create_benchmark(body)
 
         if method == "GET" and re.fullmatch(r"/v1/metrics/sessions/\d+/bench-top-set-e1rm", path):
             return self.get_metric_top_set(int(path.split("/")[4]))
@@ -244,6 +265,188 @@ class PhaseApi:
             },
         )
 
+
+    def list_phases(self) -> ApiResponse:
+        rows = self.conn.execute(
+            "SELECT phase_id, phase_type, start_date, end_date, name, notes FROM phases ORDER BY start_date DESC"
+        ).fetchall()
+        return ApiResponse(200, {"items": [
+            {
+                "phaseId": r["phase_id"],
+                "phaseType": r["phase_type"],
+                "startDate": r["start_date"],
+                "endDate": r["end_date"],
+                "name": r["name"],
+                "notes": r["notes"],
+            }
+            for r in rows
+        ]})
+
+    def list_sessions(self, qp: dict[str, str]) -> ApiResponse:
+        if "phaseId" not in qp:
+            return ApiResponse(400, {"error": "validation_error", "missing": ["phaseId"]})
+        rows = self.conn.execute(
+            """
+            SELECT session_id, phase_id, session_date, session_type,
+                   elite_hrv_readiness, garmin_overnight_hrv, notes
+            FROM sessions WHERE phase_id=? ORDER BY session_date
+            """,
+            (int(qp["phaseId"]),),
+        ).fetchall()
+        return ApiResponse(200, {"items": [
+            {
+                "sessionId": r["session_id"],
+                "phaseId": r["phase_id"],
+                "sessionDate": r["session_date"],
+                "sessionType": r["session_type"],
+                "eliteHrvReadiness": r["elite_hrv_readiness"],
+                "garminOvernightHrv": r["garmin_overnight_hrv"],
+                "notes": r["notes"],
+            }
+            for r in rows
+        ]})
+
+    def list_exercises(self) -> ApiResponse:
+        rows = self.conn.execute(
+            "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight FROM exercises ORDER BY exercise_name"
+        ).fetchall()
+        return ApiResponse(200, {"items": [
+            {
+                "exerciseId": r["exercise_id"],
+                "exerciseName": r["exercise_name"],
+                "isBarbellBenchPress": bool(r["is_barbell_bench_press"]),
+                "isBodyweight": bool(r["is_bodyweight"]),
+            }
+            for r in rows
+        ]})
+
+    def list_benchmarks(self, qp: dict[str, str]) -> ApiResponse:
+        if "phaseId" not in qp:
+            return ApiResponse(400, {"error": "validation_error", "missing": ["phaseId"]})
+        phase_id = int(qp["phaseId"])
+
+        pullups = self.conn.execute(
+            """
+            SELECT b.benchmark_id, b.phase_id, b.benchmark_date, b.benchmark_type,
+                   p.reps, p.form_standard_version
+            FROM benchmarks b
+            JOIN benchmark_pullup_max_reps p ON b.benchmark_id = p.benchmark_id
+            WHERE b.phase_id=? AND b.benchmark_type='max_bodyweight_pullups'
+            ORDER BY b.benchmark_date
+            """,
+            (phase_id,),
+        ).fetchall()
+
+        runs = self.conn.execute(
+            """
+            SELECT b.benchmark_id, b.phase_id, b.benchmark_date, b.benchmark_type,
+                   r.avg_hr, r.target_hr, r.duration_min, r.pace_min_per_km, r.protocol_compliant
+            FROM benchmarks b
+            JOIN benchmark_run_aerobic_test r ON b.benchmark_id = r.benchmark_id
+            WHERE b.phase_id=? AND b.benchmark_type='run_aerobic_test'
+            ORDER BY b.benchmark_date
+            """,
+            (phase_id,),
+        ).fetchall()
+
+        items = [
+            {
+                "benchmarkId": r["benchmark_id"],
+                "phaseId": r["phase_id"],
+                "benchmarkDate": r["benchmark_date"],
+                "benchmarkType": r["benchmark_type"],
+                "reps": r["reps"],
+                "formStandardVersion": r["form_standard_version"],
+            }
+            for r in pullups
+        ] + [
+            {
+                "benchmarkId": r["benchmark_id"],
+                "phaseId": r["phase_id"],
+                "benchmarkDate": r["benchmark_date"],
+                "benchmarkType": r["benchmark_type"],
+                "avgHr": r["avg_hr"],
+                "targetHr": r["target_hr"],
+                "durationMin": r["duration_min"],
+                "paceMinPerKm": r["pace_min_per_km"],
+                "protocolCompliant": bool(r["protocol_compliant"]),
+            }
+            for r in runs
+        ]
+        items.sort(key=lambda x: x["benchmarkDate"])
+        return ApiResponse(200, {"items": items})
+
+    def create_benchmark(self, payload: dict[str, Any]) -> ApiResponse:
+        required = ["phaseId", "benchmarkDate", "benchmarkType"]
+        missing = [f for f in required if f not in payload]
+        if missing:
+            return ApiResponse(400, {"error": "validation_error", "missing": missing})
+        btype = payload["benchmarkType"]
+        if btype == "max_bodyweight_pullups":
+            if "reps" not in payload:
+                return ApiResponse(400, {"error": "validation_error", "missing": ["reps"]})
+            if "formStandardVersion" not in payload:
+                return ApiResponse(400, {"error": "validation_error", "missing": ["formStandardVersion"]})
+        elif btype == "run_aerobic_test":
+            if "avgHr" not in payload:
+                return ApiResponse(400, {"error": "validation_error", "missing": ["avgHr"]})
+            has_pace = "paceMinPerKm" in payload
+            has_dist = "distanceKm" in payload and "elapsedSec" in payload
+            if not has_pace and not has_dist:
+                return ApiResponse(400, {"error": "validation_error", "missing": ["paceMinPerKm"]})
+        else:
+            return ApiResponse(400, {"error": "validation_error", "detail": f"unknown benchmarkType: {btype}"})
+
+        try:
+            cursor = self.conn.execute(
+                "INSERT INTO benchmarks (phase_id, benchmark_date, benchmark_type, notes) VALUES (?, ?, ?, ?)",
+                (payload["phaseId"], payload["benchmarkDate"], btype, payload.get("notes")),
+            )
+            bid = cursor.lastrowid
+
+            if btype == "max_bodyweight_pullups":
+                self.conn.execute(
+                    "INSERT INTO benchmark_pullup_max_reps (benchmark_id, reps, form_standard_version) VALUES (?, ?, ?)",
+                    (bid, payload["reps"], payload["formStandardVersion"]),
+                )
+            else:
+                self.conn.execute(
+                    """
+                    INSERT INTO benchmark_run_aerobic_test
+                        (benchmark_id, target_hr, duration_min, avg_hr, pace_min_per_km, distance_km, elapsed_sec, protocol_compliant)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        bid,
+                        payload.get("targetHr", 140),
+                        payload.get("durationMin", 40),
+                        payload["avgHr"],
+                        payload.get("paceMinPerKm"),
+                        payload.get("distanceKm"),
+                        payload.get("elapsedSec"),
+                        int(payload.get("protocolCompliant", True)),
+                    ),
+                )
+            self.conn.commit()
+        except sqlite3.IntegrityError as exc:
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+
+        result: dict[str, Any] = {
+            "benchmarkId": bid,
+            "phaseId": payload["phaseId"],
+            "benchmarkDate": payload["benchmarkDate"],
+            "benchmarkType": btype,
+        }
+        if btype == "max_bodyweight_pullups":
+            result["reps"] = payload["reps"]
+            result["formStandardVersion"] = payload["formStandardVersion"]
+        else:
+            result["avgHr"] = payload["avgHr"]
+            result["targetHr"] = payload.get("targetHr", 140)
+            result["durationMin"] = payload.get("durationMin", 40)
+            result["paceMinPerKm"] = payload.get("paceMinPerKm")
+            result["protocolCompliant"] = bool(payload.get("protocolCompliant", True))
+        return ApiResponse(201, result)
 
     def get_metric_top_set(self, session_id: int) -> ApiResponse:
         payload = get_bench_top_set_e1rm(self.conn, session_id)

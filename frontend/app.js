@@ -55,3 +55,53 @@ document.getElementById('refreshMetricsBtn').addEventListener('click', async () 
   const volume = await get(`/v1/metrics/sessions/${sessionId}/bench-volume`);
   document.getElementById('metricsOutput').textContent = JSON.stringify({ topSet, volume }, null, 2);
 });
+
+// Populate phase dropdown on load
+(async () => {
+  const { items: phases } = await get('/v1/phases');
+  const select = document.getElementById('viewPhaseId');
+  for (const p of phases) {
+    const label = `${p.name ?? p.phaseType} (${p.startDate} → ${p.endDate})`;
+    const opt = document.createElement('option');
+    opt.value = p.phaseId;
+    opt.textContent = label;
+    select.appendChild(opt);
+  }
+})();
+
+document.getElementById('loadSessionsBtn').addEventListener('click', async () => {
+  const phaseId = document.getElementById('viewPhaseId').value;
+  const container = document.getElementById('sessionsTableContainer');
+  if (!phaseId) {
+    container.textContent = 'Please select a phase.';
+    return;
+  }
+  const { items: sessions } = await get(`/v1/sessions?phaseId=${phaseId}`);
+  if (!sessions.length) {
+    container.textContent = 'No sessions found.';
+    return;
+  }
+  const rows = sessions.map(s => `
+    <tr>
+      <td>${s.sessionDate}</td>
+      <td>${s.sessionType}</td>
+      <td>${s.eliteHrvReadiness ?? '—'}</td>
+      <td>${s.garminOvernightHrv ?? '—'}</td>
+      <td>${s.notes ?? '—'}</td>
+      <td class="muted">${s.sessionId}</td>
+    </tr>`).join('');
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+      <thead>
+        <tr style="text-align:left;border-bottom:2px solid #ddd;">
+          <th style="padding:0.4rem 0.6rem;">Date</th>
+          <th style="padding:0.4rem 0.6rem;">Type</th>
+          <th style="padding:0.4rem 0.6rem;">Elite HRV</th>
+          <th style="padding:0.4rem 0.6rem;">Garmin HRV</th>
+          <th style="padding:0.4rem 0.6rem;">Notes</th>
+          <th style="padding:0.4rem 0.6rem;">ID</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+});

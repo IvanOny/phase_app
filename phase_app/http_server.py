@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -10,7 +11,11 @@ from phase_app.db import get_connection, init_db, seed_minimal_bench_data
 
 FRONTEND_ROOT = Path(__file__).resolve().parent.parent / "frontend"
 
-CORS_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173"}
+CORS_ORIGINS = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://phase-app-yf5x.vercel.app",
+}
 
 
 class AppHandler(BaseHTTPRequestHandler):
@@ -71,8 +76,10 @@ class AppHandler(BaseHTTPRequestHandler):
 
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8000):
-    conn = get_connection("phase_app.db")
+def run_server(host: str = "0.0.0.0", port: int | None = None):
+    port = port or int(os.environ.get("PORT", 8000))
+    db_path = os.environ.get("DB_PATH", "phase_app.db")
+    conn = get_connection(db_path)
     init_db(conn)
     seed_minimal_bench_data(conn)
     AppHandler.api = PhaseApi(conn)

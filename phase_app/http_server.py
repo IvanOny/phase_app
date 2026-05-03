@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from phase_app.api import PhaseApi
-from phase_app.db import get_connection, init_db, seed_minimal_bench_data
+from phase_app.db_pg import get_connection, seed_minimal_bench_data
 
 FRONTEND_ROOT = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -78,9 +78,7 @@ class AppHandler(BaseHTTPRequestHandler):
 
 def run_server(host: str = "0.0.0.0", port: int | None = None):
     port = port or int(os.environ.get("PORT", 8000))
-    db_path = os.environ.get("DB_PATH", "phase_app.db")
-    conn = get_connection(db_path)
-    init_db(conn)
+    conn = get_connection()
     seed_minimal_bench_data(conn)
     AppHandler.api = PhaseApi(conn)
     server = ThreadingHTTPServer((host, port), AppHandler)

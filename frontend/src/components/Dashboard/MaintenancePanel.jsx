@@ -39,7 +39,9 @@ function BenchmarkRow({ benchmark, onUpdate, onDelete }) {
   const isRun = benchmark.benchmarkType === 'run_aerobic_test';
 
   function formatDate(d) {
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    if (!d) return '';
+    const [yyyy, mm, dd] = d.split('T')[0].split('-');
+    return `${dd}.${mm}.${yyyy}`;
   }
 
   function startEdit() {

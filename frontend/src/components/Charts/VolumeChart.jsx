@@ -10,8 +10,9 @@ import {
 import { useChartColors } from '../../hooks/useChartColors.js';
 
 function formatDate(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (!dateStr) return '';
+  const [, mm, dd] = dateStr.split('T')[0].split('-');
+  return `${dd}.${mm}`;
 }
 
 function formatVolume(v) {

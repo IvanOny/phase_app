@@ -746,9 +746,18 @@ class PhaseApi:
             '  ]\n'
             "}\n"
             "sessionType must be one of: heavy_bench, volume_bench, speed_bench, run, pull, other.\n"
-            "Rules: convert lbs to kg (multiply by 0.4536); use 0 for bodyweight; "
-            "set isTopSet=true for the heaviest working set if not explicitly marked; "
-            "sessionType: 'run' for cardio/run, 'pull' for pull-only, heavy/volume/speed_bench if bench dominant, else 'other'.\n"
+            "Rules:\n"
+            "- Convert lbs to kg (multiply by 0.4536). Use 0 for bodyweight exercises.\n"
+            "- Garmin Connect tables have columns: Set, Exercise Name, Time, Rest, Reps, Weight, Volume. "
+            "Use the Weight column for loadKg. Do NOT use the Volume column (Weight × Reps) — it is much larger.\n"
+            "- Non-resistance activities (Cardio, Walking, Running warm-up) have no sets: include them with sets: [].\n"
+            "- Warmup detection: for each exercise, sets at the start that are significantly lighter than the "
+            "working weight (typically ≤ 60% of the top set weight) should have isWorkingSet: false. "
+            "All other sets default to isWorkingSet: true.\n"
+            "- Top set: set isTopSet: true for the heaviest working set. In Garmin, bolded or highlighted rows indicate the top set. "
+            "For volume_bench sessions, never mark any set as isTopSet: true (volume work has no single top set).\n"
+            "- sessionType: 'run' for cardio/run, 'pull' for pull-only, 'volume_bench'/'heavy_bench'/'speed_bench' if bench dominant, else 'other'.\n"
+            "- Extract the exact session date shown in the screenshot.\n"
             'If this is not a workout screenshot, return: {"error": "not_a_workout"}'
         )
 
@@ -778,6 +787,9 @@ class PhaseApi:
 
         if "error" in parsed:
             return ApiResponse(422, {"error": "not_a_workout"})
+
+        if not isinstance(parsed.get("exercises"), list) or not parsed.get("sessionDate"):
+            return ApiResponse(422, {"error": "parse_error", "raw": raw})
 
         return ApiResponse(200, parsed)
 

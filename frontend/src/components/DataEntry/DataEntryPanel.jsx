@@ -7,12 +7,12 @@ import ExerciseCatalogForm from './ExerciseCatalogForm.jsx';
 import ScreenshotImportForm from './ScreenshotImportForm.jsx';
 
 const TABS = [
-  { id: 'phase',     label: 'Phase' },
+  { id: 'import',    label: 'Import' },
   { id: 'session',   label: 'Session' },
   { id: 'sets',      label: 'Sets' },
   { id: 'benchmark', label: 'Benchmark' },
   { id: 'exercises', label: 'Exercises' },
-  { id: 'import',    label: 'Import' },
+  { id: 'phase',     label: 'Phase' },
 ];
 
 export default function DataEntryPanel({

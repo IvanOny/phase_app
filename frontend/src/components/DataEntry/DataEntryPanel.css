@@ -70,10 +70,16 @@
   display: flex;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.panel-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .panel-tab {
-  flex: 1;
+  flex: 0 0 auto;
   padding: var(--space-3) var(--space-4);
   background: none;
   border: none;

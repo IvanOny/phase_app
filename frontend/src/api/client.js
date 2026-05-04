@@ -243,3 +243,38 @@ export async function getPhaseSummary(phaseId) {
   if (MOCK_MODE) return Promise.resolve(null);
   return apiFetch('GET', `/v1/metrics/phases/${phaseId}/summary`, undefined, { allow404: true });
 }
+
+// ---- Screenshot import ----
+
+export async function importScreenshot(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const [header, imageBase64] = e.target.result.split(',');
+      const mediaType = header.match(/data:([^;]+)/)[1];
+      if (MOCK_MODE) {
+        resolve({
+          sessionDate: new Date().toISOString().slice(0, 10),
+          sessionType: 'heavy_bench',
+          notes: null,
+          exercises: [{
+            exerciseName: 'Bench Press',
+            sets: [
+              { setNumber: 1, reps: 5, loadKg: 60, isTopSet: false, isWorkingSet: false },
+              { setNumber: 2, reps: 5, loadKg: 80, isTopSet: false, isWorkingSet: true },
+              { setNumber: 3, reps: 3, loadKg: 100, isTopSet: true, isWorkingSet: true },
+            ],
+          }],
+        });
+        return;
+      }
+      try {
+        resolve(await apiFetch('POST', '/v1/import/screenshot', { imageBase64, mediaType }));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}

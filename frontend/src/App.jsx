@@ -1,4 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
+
+const STORAGE_KEY = 'phase-app-theme';
+
+function useTheme() {
+  const [theme, setTheme] = useState(() => localStorage.getItem(STORAGE_KEY) || 'dark');
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
+    localStorage.setItem(STORAGE_KEY, theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(t => (t === 'dark' ? 'solarized-light' : 'dark'));
+  }, []);
+
+  return { theme, toggleTheme };
+}
 import Dashboard from './components/Dashboard/Dashboard.jsx';
 import DataEntryPanel from './components/DataEntry/DataEntryPanel.jsx';
 import {
@@ -19,6 +40,7 @@ import {
 } from './api/client.js';
 
 function App() {
+  const { theme, toggleTheme } = useTheme();
   const [phases, setPhases] = useState([]);
   const [selectedPhaseId, setSelectedPhaseId] = useState(null);
   const [sessionsMap, setSessionsMap] = useState({});
@@ -202,6 +224,8 @@ function App() {
         onDeleteSession={(sessionId) => handleDeleteSession(sessionId, selectedPhaseId)}
         onUpdateBenchmark={(benchmarkId, payload) => handleUpdateBenchmark(benchmarkId, selectedPhaseId, payload)}
         onDeleteBenchmark={(benchmarkId) => handleDeleteBenchmark(benchmarkId, selectedPhaseId)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <DataEntryPanel
         isOpen={panelOpen}

@@ -1,7 +1,7 @@
 .panel-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--backdrop);
   z-index: 200;
   opacity: 0;
   transition: opacity 0.2s;
@@ -108,8 +108,8 @@
 }
 
 .form-error {
-  background: rgba(248, 113, 113, 0.1);
-  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: var(--red-tint-10);
+  border: 1px solid var(--red-tint-40);
   border-radius: var(--radius-sm);
   color: var(--ready-red);
   font-size: 12px;
@@ -169,7 +169,7 @@
 }
 
 .set-row:nth-child(even) {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--row-stripe);
 }
 
 .set-flags {
@@ -185,12 +185,12 @@
 }
 
 .flag-top {
-  background: rgba(129, 140, 248, 0.2);
+  background: var(--accent-tint-20);
   color: var(--accent);
 }
 
 .flag-work {
-  background: rgba(74, 222, 128, 0.15);
+  background: var(--green-tint-15);
   color: var(--ready-green);
 }
 
@@ -201,9 +201,9 @@
   font-weight: 600;
   margin-bottom: var(--space-4);
   padding: var(--space-2) var(--space-3);
-  background: rgba(129, 140, 248, 0.1);
+  background: var(--accent-tint-10);
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(129, 140, 248, 0.25);
+  border: 1px solid var(--accent-tint-25);
 }
 
 /* Benchmark type toggle */
@@ -232,7 +232,7 @@
 }
 
 .toggle-btn.active {
-  background: rgba(129, 140, 248, 0.15);
+  background: var(--accent-tint-15);
   color: var(--accent);
 }
 
@@ -247,8 +247,8 @@
 
 /* Success toast */
 .panel-success {
-  background: rgba(74, 222, 128, 0.1);
-  border: 1px solid rgba(74, 222, 128, 0.3);
+  background: var(--green-tint-10);
+  border: 1px solid var(--green-tint-30);
   border-radius: var(--radius-sm);
   color: var(--ready-green);
   font-size: 12px;

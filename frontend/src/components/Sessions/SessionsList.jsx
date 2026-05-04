@@ -19,7 +19,9 @@ function readinessColor(r) {
 }
 
 function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  if (!dateStr) return '';
+  const [yyyy, mm, dd] = dateStr.split('T')[0].split('-');
+  return `${dd}.${mm}.${yyyy}`;
 }
 
 function toInputDate(dateStr) {

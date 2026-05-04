@@ -188,6 +188,14 @@
   font-weight: 700;
   padding: 1px 4px;
   border-radius: 3px;
+  border: none;
+  cursor: default;
+  font-family: inherit;
+  line-height: inherit;
+}
+
+button.flag-badge {
+  cursor: pointer;
 }
 
 .flag-top {
@@ -198,6 +206,12 @@
 .flag-work {
   background: var(--green-tint-15);
   color: var(--ready-green);
+}
+
+.flag-inactive {
+  background: transparent;
+  opacity: 0.35;
+  border: 1px solid currentColor;
 }
 
 /* Exercise active label */

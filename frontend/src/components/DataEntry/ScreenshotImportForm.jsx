@@ -74,6 +74,25 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     }));
   }
 
+  function removeExercise(exIdx) {
+    setEditedData(prev => ({
+      ...prev,
+      exercises: prev.exercises.filter((_, i) => i !== exIdx),
+    }));
+  }
+
+  function toggleSetFlag(exIdx, setIdx, field) {
+    setEditedData(prev => ({
+      ...prev,
+      exercises: prev.exercises.map((ex, i) =>
+        i !== exIdx ? ex : {
+          ...ex,
+          sets: ex.sets.map((s, j) => j !== setIdx ? s : { ...s, [field]: !s[field] }),
+        }
+      ),
+    }));
+  }
+
   async function resolveExerciseId(exerciseName) {
     const normalized = exerciseName.trim().toLowerCase();
     const match = exercises.find(ex => ex.exerciseName.toLowerCase() === normalized);
@@ -222,7 +241,15 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
 
       {editedData.exercises.map((ex, exIdx) => (
         <div key={exIdx} className="screenshot-exercise-block">
-          <div className="exercise-active-label">{ex.exerciseName}</div>
+          <div className="screenshot-exercise-header">
+            <div className="exercise-active-label">{ex.exerciseName}</div>
+            <button
+              type="button"
+              className="screenshot-remove-exercise"
+              onClick={() => removeExercise(exIdx)}
+              aria-label={`Remove ${ex.exerciseName}`}
+            >&#x2715;</button>
+          </div>
           <div className="sets-list">
             <div className="sets-list-header screenshot-sets-header">
               <span>Set</span>
@@ -250,8 +277,20 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
                   className="screenshot-set-input"
                 />
                 <span className="set-flags">
-                  {set.isTopSet && <span className="flag-badge flag-top">TOP</span>}
-                  {set.isWorkingSet && <span className="flag-badge flag-work">W</span>}
+                  <button
+                    type="button"
+                    className={`flag-badge flag-top${set.isTopSet ? '' : ' flag-inactive'}`}
+                    onClick={() => toggleSetFlag(exIdx, setIdx, 'isTopSet')}
+                    aria-pressed={set.isTopSet}
+                    title="Toggle top set"
+                  >TOP</button>
+                  <button
+                    type="button"
+                    className={`flag-badge flag-work${set.isWorkingSet ? '' : ' flag-inactive'}`}
+                    onClick={() => toggleSetFlag(exIdx, setIdx, 'isWorkingSet')}
+                    aria-pressed={set.isWorkingSet}
+                    title="Toggle working set"
+                  >W</button>
                 </span>
                 <button
                   type="button"

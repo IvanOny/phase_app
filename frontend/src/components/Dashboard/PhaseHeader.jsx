@@ -26,7 +26,11 @@ function toInputDate(dateStr) {
 }
 
 function formatDateRange(start, end) {
-  const fmt = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const fmt = d => {
+    if (!d) return '';
+    const [yyyy, mm, dd] = d.split('T')[0].split('-');
+    return `${dd}.${mm}.${yyyy}`;
+  };
   return `${fmt(start)} – ${fmt(end)}`;
 }
 

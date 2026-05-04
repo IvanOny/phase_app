@@ -1,10 +1,11 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   importScreenshot,
   createSession,
   createSessionExercise,
   createExercise,
   createExerciseSet,
+  getExercises,
 } from '../../api/client.js';
 import './ScreenshotImportForm.css';
 
@@ -32,6 +33,20 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     if (e.target.files[0]) processFile(e.target.files[0]);
   };
 
+  useEffect(() => {
+    function handlePaste(e) {
+      if (stage !== 'idle') return;
+      const items = Array.from(e.clipboardData?.items || []);
+      const imageItem = items.find(item => item.type.startsWith('image/'));
+      if (imageItem) {
+        const file = imageItem.getAsFile();
+        if (file) processFile(file);
+      }
+    }
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [stage]);
+
   async function processFile(file) {
     if (!file.type.startsWith('image/')) {
       setError('Please drop an image file (PNG, JPEG, or WEBP).');
@@ -41,6 +56,12 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     setStage('parsing');
     try {
       const result = await importScreenshot(file);
+      // Force year to current year — screenshots often show old years from the source app
+      if (result.sessionDate) {
+        const [, mm, dd] = result.sessionDate.split('-');
+        const currentYear = new Date().getFullYear();
+        result.sessionDate = `${currentYear}-${mm}-${dd}`;
+      }
       setEditedData(JSON.parse(JSON.stringify(result)));
       setStage('preview');
     } catch (err) {
@@ -97,9 +118,17 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     const normalized = exerciseName.trim().toLowerCase();
     const match = exercises.find(ex => ex.exerciseName.toLowerCase() === normalized);
     if (match) return match.exerciseId;
-    const created = await createExercise({ exerciseName: exerciseName.trim() });
-    onExerciseCreated?.(created);
-    return created.exerciseId;
+    try {
+      const created = await createExercise({ exerciseName: exerciseName.trim() });
+      onExerciseCreated?.(created);
+      return created.exerciseId;
+    } catch {
+      // Exercise may already exist (stale local list) — re-fetch and retry lookup
+      const all = await getExercises();
+      const found = all.find(ex => ex.exerciseName.toLowerCase() === normalized);
+      if (found) return found.exerciseId;
+      throw new Error(`Could not resolve exercise: ${exerciseName}`);
+    }
   }
 
   async function handleConfirm() {
@@ -178,8 +207,8 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
           ) : (
             <>
               <div className="screenshot-icon">&#128247;</div>
-              <p className="screenshot-hint">Drop a workout screenshot here</p>
-              <p className="screenshot-subhint">or click to browse &mdash; PNG, JPEG, WEBP</p>
+              <p className="screenshot-hint">Drop or paste a workout screenshot</p>
+              <p className="screenshot-subhint">drag &amp; drop, Ctrl+V, or click to browse &mdash; PNG, JPEG, WEBP</p>
             </>
           )}
         </div>

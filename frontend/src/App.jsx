@@ -8,6 +8,14 @@ import {
   getBenchVolume,
   getBenchmarksByPhase,
   getExercises,
+  updatePhase,
+  deletePhase,
+  updateSession,
+  deleteSession,
+  updateBenchmark,
+  deleteBenchmark,
+  createExercise,
+  updateExercise,
 } from './api/client.js';
 
 function App() {
@@ -98,6 +106,75 @@ function App() {
     });
   }
 
+  async function handleUpdatePhase(phaseId, payload) {
+    const updated = await updatePhase(phaseId, payload);
+    setPhases(prev => prev.map(p => p.phaseId === phaseId ? { ...p, ...updated } : p));
+    return updated;
+  }
+
+  async function handleDeletePhase(phaseId) {
+    await deletePhase(phaseId);
+    setPhases(prev => {
+      const next = prev.filter(p => p.phaseId !== phaseId);
+      if (selectedPhaseId === phaseId && next.length > 0) {
+        const latest = [...next].sort((a, b) => new Date(b.startDate) - new Date(a.startDate))[0];
+        setSelectedPhaseId(latest.phaseId);
+      } else if (next.length === 0) {
+        setSelectedPhaseId(null);
+      }
+      return next;
+    });
+    setSessionsMap(prev => { const n = { ...prev }; delete n[phaseId]; return n; });
+    setBenchmarksMap(prev => { const n = { ...prev }; delete n[phaseId]; return n; });
+  }
+
+  async function handleUpdateSession(sessionId, phaseId, payload) {
+    const updated = await updateSession(sessionId, payload);
+    setSessionsMap(prev => ({
+      ...prev,
+      [phaseId]: (prev[phaseId] || []).map(s => s.sessionId === sessionId ? { ...s, ...updated } : s),
+    }));
+    return updated;
+  }
+
+  async function handleDeleteSession(sessionId, phaseId) {
+    await deleteSession(sessionId);
+    setSessionsMap(prev => ({
+      ...prev,
+      [phaseId]: (prev[phaseId] || []).filter(s => s.sessionId !== sessionId),
+    }));
+    setE1rmMap(prev => { const n = { ...prev }; delete n[sessionId]; return n; });
+    setVolumeMap(prev => { const n = { ...prev }; delete n[sessionId]; return n; });
+  }
+
+  async function handleUpdateBenchmark(benchmarkId, phaseId, payload) {
+    await updateBenchmark(benchmarkId, payload);
+    // Re-fetch benchmarks for this phase to get fresh data including child table fields
+    const fresh = await getBenchmarksByPhase(phaseId);
+    setBenchmarksMap(prev => ({ ...prev, [phaseId]: fresh }));
+  }
+
+  async function handleDeleteBenchmark(benchmarkId, phaseId) {
+    await deleteBenchmark(benchmarkId);
+    setBenchmarksMap(prev => ({
+      ...prev,
+      [phaseId]: (prev[phaseId] || []).filter(b => b.benchmarkId !== benchmarkId),
+    }));
+  }
+
+  async function handleCreateExercise(payload) {
+    const ex = await createExercise(payload);
+    setExercises(prev => [...prev, ex].sort((a, b) => a.exerciseName.localeCompare(b.exerciseName)));
+    return ex;
+  }
+
+  async function handleUpdateExercise(exerciseId, payload) {
+    const updated = await updateExercise(exerciseId, payload);
+    setExercises(prev => prev.map(e => e.exerciseId === exerciseId ? { ...e, ...updated } : e)
+      .sort((a, b) => a.exerciseName.localeCompare(b.exerciseName)));
+    return updated;
+  }
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-secondary)' }}>
@@ -119,6 +196,12 @@ function App() {
         exercises={exercises}
         onSelectPhase={setSelectedPhaseId}
         onOpenPanel={() => setPanelOpen(true)}
+        onUpdatePhase={handleUpdatePhase}
+        onDeletePhase={handleDeletePhase}
+        onUpdateSession={(sessionId, payload) => handleUpdateSession(sessionId, selectedPhaseId, payload)}
+        onDeleteSession={(sessionId) => handleDeleteSession(sessionId, selectedPhaseId)}
+        onUpdateBenchmark={(benchmarkId, payload) => handleUpdateBenchmark(benchmarkId, selectedPhaseId, payload)}
+        onDeleteBenchmark={(benchmarkId) => handleDeleteBenchmark(benchmarkId, selectedPhaseId)}
       />
       <DataEntryPanel
         isOpen={panelOpen}
@@ -133,7 +216,10 @@ function App() {
           handleSessionLogged(session);
           setPanelOpen(false);
         }}
-        onSetsLogged={() => setPanelOpen(false)}
+        onSetsLogged={() => {
+          loadPhaseData(selectedPhaseId);
+          setPanelOpen(false);
+        }}
         onBenchmarkLogged={benchmark => {
           handleBenchmarkLogged(benchmark);
           setPanelOpen(false);
@@ -143,6 +229,8 @@ function App() {
           setSelectedPhaseId(phase.phaseId);
           setPanelOpen(false);
         }}
+        onExerciseCreated={handleCreateExercise}
+        onExerciseUpdated={handleUpdateExercise}
       />
     </>
   );

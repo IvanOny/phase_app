@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 function avg(arr) {
   if (!arr.length) return null;
   return arr.reduce((s, v) => s + v, 0) / arr.length;
@@ -10,6 +12,11 @@ function formatPace(minPerKm) {
   return `${mins}:${String(secs).padStart(2, '0')} /km`;
 }
 
+function toInputDate(dateStr) {
+  if (!dateStr) return '';
+  return new Date(dateStr).toISOString().slice(0, 10);
+}
+
 function Delta({ current, previous, higherIsBetter = true, unit = '' }) {
   if (current == null || previous == null) return null;
   const diff = current - previous;
@@ -20,6 +27,117 @@ function Delta({ current, previous, higherIsBetter = true, unit = '' }) {
     <span className={`delta ${positive ? 'delta--up' : 'delta--down'}`}>
       {positive ? '▲' : '▼'} {sign}{unit === 'pace' ? formatPace(Math.abs(diff)) : diff.toFixed(1)}{unit && unit !== 'pace' ? ` ${unit}` : ''}
     </span>
+  );
+}
+
+function BenchmarkRow({ benchmark, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  const isPullup = benchmark.benchmarkType === 'max_bodyweight_pullups';
+  const isRun = benchmark.benchmarkType === 'run_aerobic_test';
+
+  function formatDate(d) {
+    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  function startEdit() {
+    setForm({
+      benchmarkDate: toInputDate(benchmark.benchmarkDate),
+      notes: benchmark.notes || '',
+      ...(isPullup ? { reps: benchmark.reps ?? '' } : {}),
+      ...(isRun ? {
+        avgHr: benchmark.avgHr ?? '',
+        paceMinPerKm: benchmark.paceMinPerKm ?? '',
+      } : {}),
+    });
+    setEditing(true);
+  }
+
+  async function saveEdit() {
+    setSaving(true);
+    try {
+      const payload = {
+        benchmarkDate: form.benchmarkDate,
+        notes: form.notes || null,
+        ...(isPullup && form.reps !== '' ? { reps: Number(form.reps) } : {}),
+        ...(isRun && form.avgHr !== '' ? { avgHr: Number(form.avgHr) } : {}),
+        ...(isRun && form.paceMinPerKm !== '' ? { paceMinPerKm: Number(form.paceMinPerKm) } : {}),
+      };
+      await onUpdate(benchmark.benchmarkId, payload);
+      setEditing(false);
+    } catch {
+      alert('Failed to save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    const label = isPullup
+      ? `pull-up benchmark (${benchmark.reps} reps)`
+      : `run benchmark (${formatDate(benchmark.benchmarkDate)})`;
+    if (!confirm(`Delete ${label}?`)) return;
+    try {
+      await onDelete(benchmark.benchmarkId);
+    } catch {
+      alert('Failed to delete benchmark.');
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="benchmark-item benchmark-item--editing">
+        <div className="benchmark-edit-row">
+          <div className="form-group" style={{ margin: 0 }}>
+            <label>Date</label>
+            <input type="date" value={form.benchmarkDate} onChange={e => setForm(f => ({ ...f, benchmarkDate: e.target.value }))} className="inline-input" />
+          </div>
+          {isPullup && (
+            <div className="form-group" style={{ margin: 0 }}>
+              <label>Reps</label>
+              <input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 70 }} />
+            </div>
+          )}
+          {isRun && (
+            <>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Avg HR</label>
+                <input type="number" value={form.avgHr} onChange={e => setForm(f => ({ ...f, avgHr: e.target.value }))} className="inline-input" style={{ width: 70 }} />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label>Pace (min/km)</label>
+                <input type="number" step="0.01" value={form.paceMinPerKm} onChange={e => setForm(f => ({ ...f, paceMinPerKm: e.target.value }))} className="inline-input" style={{ width: 80 }} />
+              </div>
+            </>
+          )}
+          <div className="form-group" style={{ margin: 0, flexGrow: 1 }}>
+            <label>Notes</label>
+            <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button className="btn btn-primary" style={{ padding: '4px 12px', fontSize: 13 }} onClick={saveEdit} disabled={saving}>{saving ? 'Saving…' : '✓ Save'}</button>
+          <button className="btn btn-ghost" style={{ padding: '4px 12px', fontSize: 13 }} onClick={() => setEditing(false)}>✕ Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="benchmark-item">
+      <div className="benchmark-item-info">
+        <span className="benchmark-date">{formatDate(benchmark.benchmarkDate)}</span>
+        {isPullup && <span className="benchmark-value">{benchmark.reps} reps</span>}
+        {isRun && <span className="benchmark-value">{formatPace(benchmark.paceMinPerKm)} · {benchmark.avgHr} bpm</span>}
+        {benchmark.notes && <span className="benchmark-notes">{benchmark.notes}</span>}
+      </div>
+      <div className="benchmark-item-actions">
+        <button className="icon-btn" onClick={startEdit} title="Edit benchmark">✏</button>
+        <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete benchmark">🗑</button>
+      </div>
+    </div>
   );
 }
 
@@ -43,7 +161,7 @@ function MetricRow({ label, currentValue, previousValue, displayFn, higherIsBett
   );
 }
 
-export default function MaintenancePanel({ currentBenchmarks, previousBenchmarks }) {
+export default function MaintenancePanel({ currentBenchmarks, previousBenchmarks, onUpdateBenchmark, onDeleteBenchmark }) {
   const curPullups = currentBenchmarks.filter(b => b.benchmarkType === 'max_bodyweight_pullups');
   const prevPullups = previousBenchmarks.filter(b => b.benchmarkType === 'max_bodyweight_pullups');
   const curRuns = currentBenchmarks.filter(b => b.benchmarkType === 'run_aerobic_test');
@@ -79,6 +197,20 @@ export default function MaintenancePanel({ currentBenchmarks, previousBenchmarks
           prevCount={prevRuns.length || null}
         />
       </div>
+
+      {currentBenchmarks.length > 0 && (
+        <div className="benchmark-list">
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, fontWeight: 600 }}>Current phase benchmarks</div>
+          {currentBenchmarks.map(b => (
+            <BenchmarkRow
+              key={b.benchmarkId}
+              benchmark={b}
+              onUpdate={onUpdateBenchmark}
+              onDelete={onDeleteBenchmark}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -25,7 +25,7 @@ class AppHandler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin", "")
         if origin in CORS_ORIGINS:
             self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def _send_json(self, status: int, payload: dict):
@@ -63,15 +63,34 @@ class AppHandler(BaseHTTPRequestHandler):
         response = self.api.handle("GET", path, query_params=query)
         self._send_json(response.status, response.body)
 
-    def do_POST(self):
-        parsed = urlparse(self.path)
+    def _parse_json_body(self) -> dict | None:
         content_len = int(self.headers.get("Content-Length", "0"))
         body_blob = self.rfile.read(content_len) if content_len else b"{}"
         try:
-            payload = json.loads(body_blob.decode("utf-8"))
+            return json.loads(body_blob.decode("utf-8"))
         except json.JSONDecodeError:
-            return self._send_json(400, {"error": "invalid_json"})
+            self._send_json(400, {"error": "invalid_json"})
+            return None
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        payload = self._parse_json_body()
+        if payload is None:
+            return
         response = self.api.handle("POST", parsed.path, payload)
+        self._send_json(response.status, response.body)
+
+    def do_PATCH(self):
+        parsed = urlparse(self.path)
+        payload = self._parse_json_body()
+        if payload is None:
+            return
+        response = self.api.handle("PATCH", parsed.path, payload)
+        self._send_json(response.status, response.body)
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        response = self.api.handle("DELETE", parsed.path)
         self._send_json(response.status, response.body)
 
 

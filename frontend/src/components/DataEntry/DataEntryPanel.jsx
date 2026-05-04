@@ -3,12 +3,14 @@ import LogSessionForm from './LogSessionForm.jsx';
 import LogSetsForm from './LogSetsForm.jsx';
 import LogBenchmarkForm from './LogBenchmarkForm.jsx';
 import CreatePhaseForm from './CreatePhaseForm.jsx';
+import ExerciseCatalogForm from './ExerciseCatalogForm.jsx';
 
 const TABS = [
   { id: 'phase',     label: 'Phase' },
   { id: 'session',   label: 'Session' },
   { id: 'sets',      label: 'Sets' },
   { id: 'benchmark', label: 'Benchmark' },
+  { id: 'exercises', label: 'Exercises' },
 ];
 
 export default function DataEntryPanel({
@@ -24,6 +26,8 @@ export default function DataEntryPanel({
   onSetsLogged,
   onBenchmarkLogged,
   onPhaseCreated,
+  onExerciseCreated,
+  onExerciseUpdated,
 }) {
   return (
     <>
@@ -76,6 +80,13 @@ export default function DataEntryPanel({
               onBenchmarkLogged={benchmark => {
                 onBenchmarkLogged(benchmark);
               }}
+            />
+          )}
+          {activeTab === 'exercises' && (
+            <ExerciseCatalogForm
+              exercises={exercises}
+              onExerciseCreated={onExerciseCreated}
+              onExerciseUpdated={onExerciseUpdated}
             />
           )}
         </div>

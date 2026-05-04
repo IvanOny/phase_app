@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -103,6 +104,9 @@ class PhaseApi:
             return self.get_metric_bench_volume(int(path.split("/")[4]))
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/summary", path):
             return self.get_phase_summary(int(path.split("/")[4]))
+
+        if method == "POST" and path == "/v1/import/screenshot":
+            return self.import_screenshot(body)
 
         return ApiResponse(status=404, body={"error": "not_found"})
 
@@ -704,6 +708,78 @@ class PhaseApi:
         if payload is None:
             return ApiResponse(404, {"error": "not_found"})
         return ApiResponse(200, payload)
+
+    def import_screenshot(self, payload: dict[str, Any]) -> ApiResponse:
+        import base64
+        import anthropic
+
+        image_b64 = payload.get("imageBase64")
+        media_type = payload.get("mediaType", "image/png")
+
+        if not image_b64:
+            return ApiResponse(400, {"error": "validation_error", "missing": ["imageBase64"]})
+        try:
+            base64.b64decode(image_b64, validate=True)
+        except Exception:
+            return ApiResponse(400, {"error": "validation_error", "detail": "imageBase64 is not valid base64"})
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return ApiResponse(500, {"error": "server_error", "detail": "ANTHROPIC_API_KEY not configured"})
+
+        client = anthropic.Anthropic(api_key=api_key)
+        prompt = (
+            "You are parsing a workout screenshot from a fitness app (e.g. Garmin Connect, Strong, Hevy).\n"
+            "Extract all exercises and sets. Return ONLY valid JSON — no markdown, no commentary.\n"
+            "Schema:\n"
+            "{\n"
+            '  "sessionDate": "YYYY-MM-DD",\n'
+            '  "sessionType": "other",\n'
+            '  "notes": null,\n'
+            '  "exercises": [\n'
+            '    {\n'
+            '      "exerciseName": "Bench Press",\n'
+            '      "sets": [\n'
+            '        { "setNumber": 1, "reps": 5, "loadKg": 100.0, "isTopSet": false, "isWorkingSet": true }\n'
+            '      ]\n'
+            '    }\n'
+            '  ]\n'
+            "}\n"
+            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, run, pull, other.\n"
+            "Rules: convert lbs to kg (multiply by 0.4536); use 0 for bodyweight; "
+            "set isTopSet=true for the heaviest working set if not explicitly marked; "
+            "sessionType: 'run' for cardio/run, 'pull' for pull-only, heavy/volume/speed_bench if bench dominant, else 'other'.\n"
+            'If this is not a workout screenshot, return: {"error": "not_a_workout"}'
+        )
+
+        try:
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2048,
+                messages=[{"role": "user", "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
+                    {"type": "text", "text": prompt},
+                ]}],
+            )
+        except Exception as exc:
+            return ApiResponse(502, {"error": "upstream_error", "detail": str(exc)})
+
+        raw = message.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return ApiResponse(422, {"error": "parse_error", "raw": raw})
+
+        if "error" in parsed:
+            return ApiResponse(422, {"error": "not_a_workout"})
+
+        return ApiResponse(200, parsed)
 
 
 def to_http_payload(resp: ApiResponse) -> tuple[int, str]:

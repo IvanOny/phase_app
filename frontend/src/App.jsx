@@ -231,6 +231,11 @@ function App() {
         }}
         onExerciseCreated={handleCreateExercise}
         onExerciseUpdated={handleUpdateExercise}
+        onImportComplete={session => {
+          handleSessionLogged(session);
+          loadPhaseData(session.phaseId);
+          setPanelOpen(false);
+        }}
       />
     </>
   );

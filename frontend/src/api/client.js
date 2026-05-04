@@ -56,6 +56,23 @@ export async function createPhase(payload) {
   return apiFetch('POST', '/v1/phases', payload);
 }
 
+export async function updatePhase(phaseId, payload) {
+  if (MOCK_MODE) {
+    const idx = _phases.findIndex(p => p.phaseId === phaseId);
+    if (idx !== -1) _phases[idx] = { ..._phases[idx], ...payload };
+    return Promise.resolve(_phases[idx]);
+  }
+  return apiFetch('PATCH', `/v1/phases/${phaseId}`, payload);
+}
+
+export async function deletePhase(phaseId) {
+  if (MOCK_MODE) {
+    _phases = _phases.filter(p => p.phaseId !== phaseId);
+    return Promise.resolve({ deleted: true });
+  }
+  return apiFetch('DELETE', `/v1/phases/${phaseId}`);
+}
+
 // ---- Sessions ----
 
 export async function getSessionsByPhase(phaseId) {
@@ -74,6 +91,23 @@ export async function createSession(payload) {
   return apiFetch('POST', '/v1/sessions', payload);
 }
 
+export async function updateSession(sessionId, payload) {
+  if (MOCK_MODE) {
+    const idx = _sessions.findIndex(s => s.sessionId === sessionId);
+    if (idx !== -1) _sessions[idx] = { ..._sessions[idx], ...payload };
+    return Promise.resolve(_sessions[idx]);
+  }
+  return apiFetch('PATCH', `/v1/sessions/${sessionId}`, payload);
+}
+
+export async function deleteSession(sessionId) {
+  if (MOCK_MODE) {
+    _sessions = _sessions.filter(s => s.sessionId !== sessionId);
+    return Promise.resolve({ deleted: true });
+  }
+  return apiFetch('DELETE', `/v1/sessions/${sessionId}`);
+}
+
 // ---- Session Exercises ----
 
 export async function createSessionExercise(sessionId, payload) {
@@ -85,6 +119,16 @@ export async function createSessionExercise(sessionId, payload) {
   return apiFetch('POST', `/v1/sessions/${sessionId}/exercises`, payload);
 }
 
+export async function updateSessionExercise(sessionId, sessionExerciseId, payload) {
+  if (MOCK_MODE) return Promise.resolve({ sessionExerciseId, ...payload });
+  return apiFetch('PATCH', `/v1/sessions/${sessionId}/exercises/${sessionExerciseId}`, payload);
+}
+
+export async function deleteSessionExercise(sessionId, sessionExerciseId) {
+  if (MOCK_MODE) return Promise.resolve({ deleted: true });
+  return apiFetch('DELETE', `/v1/sessions/${sessionId}/exercises/${sessionExerciseId}`);
+}
+
 // ---- Sets ----
 
 export async function createExerciseSet(sessionExerciseId, payload) {
@@ -93,6 +137,16 @@ export async function createExerciseSet(sessionExerciseId, payload) {
     return Promise.resolve(set);
   }
   return apiFetch('POST', `/v1/session-exercises/${sessionExerciseId}/sets`, payload);
+}
+
+export async function updateExerciseSet(sessionExerciseId, exerciseSetId, payload) {
+  if (MOCK_MODE) return Promise.resolve({ exerciseSetId, sessionExerciseId, ...payload });
+  return apiFetch('PATCH', `/v1/session-exercises/${sessionExerciseId}/sets/${exerciseSetId}`, payload);
+}
+
+export async function deleteExerciseSet(sessionExerciseId, exerciseSetId) {
+  if (MOCK_MODE) return Promise.resolve({ deleted: true });
+  return apiFetch('DELETE', `/v1/session-exercises/${sessionExerciseId}/sets/${exerciseSetId}`);
 }
 
 export async function getSessionExercises(sessionId) {
@@ -110,6 +164,24 @@ export async function getExerciseSets(sessionExerciseId) {
 export async function getExercises() {
   if (MOCK_MODE) return Promise.resolve([..._exercises]);
   return apiFetchList('GET', '/v1/exercises');
+}
+
+export async function createExercise(payload) {
+  if (MOCK_MODE) {
+    const ex = { exerciseId: nextId(), ...payload };
+    _exercises.push(ex);
+    return Promise.resolve(ex);
+  }
+  return apiFetch('POST', '/v1/exercises', payload);
+}
+
+export async function updateExercise(exerciseId, payload) {
+  if (MOCK_MODE) {
+    const idx = _exercises.findIndex(e => e.exerciseId === exerciseId);
+    if (idx !== -1) _exercises[idx] = { ..._exercises[idx], ...payload };
+    return Promise.resolve(_exercises[idx]);
+  }
+  return apiFetch('PATCH', `/v1/exercises/${exerciseId}`, payload);
 }
 
 // ---- Metrics ----
@@ -146,4 +218,28 @@ export async function createBenchmark(payload) {
     return Promise.resolve(benchmark);
   }
   return apiFetch('POST', '/v1/benchmarks', payload);
+}
+
+export async function updateBenchmark(benchmarkId, payload) {
+  if (MOCK_MODE) {
+    const idx = _benchmarks.findIndex(b => b.benchmarkId === benchmarkId);
+    if (idx !== -1) _benchmarks[idx] = { ..._benchmarks[idx], ...payload };
+    return Promise.resolve(_benchmarks[idx]);
+  }
+  return apiFetch('PATCH', `/v1/benchmarks/${benchmarkId}`, payload);
+}
+
+export async function deleteBenchmark(benchmarkId) {
+  if (MOCK_MODE) {
+    _benchmarks = _benchmarks.filter(b => b.benchmarkId !== benchmarkId);
+    return Promise.resolve({ deleted: true });
+  }
+  return apiFetch('DELETE', `/v1/benchmarks/${benchmarkId}`);
+}
+
+// ---- Phase summary metrics ----
+
+export async function getPhaseSummary(phaseId) {
+  if (MOCK_MODE) return Promise.resolve(null);
+  return apiFetch('GET', `/v1/metrics/phases/${phaseId}/summary`, undefined, { allow404: true });
 }

@@ -28,8 +28,8 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--accent);
-  background: rgba(129, 140, 248, 0.12);
-  border: 1px solid rgba(129, 140, 248, 0.3);
+  background: var(--accent-tint-12);
+  border: 1px solid var(--accent-tint-30);
   border-radius: var(--radius-sm);
   padding: 2px var(--space-2);
 }
@@ -104,7 +104,7 @@
 
 .phase-nav-pill.active {
   border-color: var(--accent);
-  background: rgba(129, 140, 248, 0.1);
+  background: var(--accent-tint-10);
   color: var(--text-primary);
 }
 
@@ -140,8 +140,8 @@
 }
 
 .chart-tooltip {
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: var(--space-3);
   font-size: 13px;
@@ -400,7 +400,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 16px rgba(129, 140, 248, 0.4);
+  box-shadow: 0 4px 16px var(--accent-tint-40);
   transition: background 0.15s, transform 0.15s;
   z-index: 100;
 }
@@ -430,6 +430,10 @@
 
 .icon-btn--danger:hover {
   color: var(--ready-red);
+}
+
+.theme-toggle-btn {
+  font-size: 15px;
 }
 
 /* Inline input */
@@ -583,7 +587,7 @@
 }
 
 .filter-chip.active {
-  background: rgba(129, 140, 248, 0.15);
+  background: var(--accent-tint-15);
   border-color: var(--accent);
   color: var(--accent);
 }

@@ -30,7 +30,7 @@ function formatDateRange(start, end) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase }) {
+export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -137,6 +137,14 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase }) {
           </span>
         )}
         <div className="phase-actions">
+          <button
+            className="icon-btn theme-toggle-btn"
+            title={theme === 'dark' ? 'Switch to Solarized Light' : 'Switch to Dark'}
+            onClick={onToggleTheme}
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? '☀' : '🌙'}
+          </button>
           <button className="icon-btn" title="Edit phase" onClick={startEdit}>✏</button>
           <button className="icon-btn icon-btn--danger" title="Delete phase" onClick={handleDelete}>🗑</button>
         </div>

@@ -7,6 +7,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
+import { useChartColors } from '../../hooks/useChartColors.js';
 
 function formatDate(dateStr) {
   const d = new Date(dateStr);
@@ -32,6 +33,8 @@ function CustomTooltip({ active, payload }) {
 }
 
 export default function VolumeChart({ sessions, metricsMap }) {
+  const colors = useChartColors();
+
   const data = sessions
     .map(s => {
       const m = metricsMap[s.sessionId];
@@ -52,23 +55,23 @@ export default function VolumeChart({ sessions, metricsMap }) {
       {hasData ? (
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={data} margin={{ top: 8, right: 16, bottom: 24, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke={colors.border} vertical={false} />
             <XAxis
               dataKey="date"
               tickFormatter={formatDate}
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
-              axisLine={{ stroke: '#334155' }}
+              tick={{ fill: colors.textMuted, fontSize: 12 }}
+              axisLine={{ stroke: colors.border }}
               tickLine={false}
             />
             <YAxis
               tickFormatter={formatVolume}
-              tick={{ fill: '#94a3b8', fontSize: 12 }}
+              tick={{ fill: colors.textMuted, fontSize: 12 }}
               axisLine={false}
               tickLine={false}
               width={40}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(129,140,248,0.08)' }} />
-            <Bar dataKey="volume" fill="#818cf8" radius={[3, 3, 0, 0]} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: colors.accentTint }} />
+            <Bar dataKey="volume" fill={colors.accent} radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       ) : (

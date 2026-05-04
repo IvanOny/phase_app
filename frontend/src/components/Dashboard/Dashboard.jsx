@@ -24,6 +24,8 @@ export default function Dashboard({
   onDeleteSession,
   onUpdateBenchmark,
   onDeleteBenchmark,
+  theme,
+  onToggleTheme,
 }) {
   return (
     <div className="dashboard">
@@ -31,6 +33,8 @@ export default function Dashboard({
         phase={selectedPhase}
         onUpdatePhase={onUpdatePhase}
         onDeletePhase={onDeletePhase}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
       />
       <PhaseNav
         phases={phases}

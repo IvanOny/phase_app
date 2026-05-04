@@ -31,7 +31,14 @@ async function apiFetch(method, path, body, { allow404 = false } = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 404 && allow404) return null;
-  if (!res.ok) throw new Error(`API error ${res.status}: ${path}`);
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const err = await res.json();
+      detail = err.detail || err.message || err.error || '';
+    } catch { /* ignore */ }
+    throw new Error(detail ? `${detail} (${res.status})` : `API error ${res.status}: ${path}`);
+  }
   return res.json();
 }
 

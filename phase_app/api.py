@@ -33,6 +33,22 @@ class PhaseApi:
         body: dict[str, Any] | None = None,
         query_params: dict[str, str] | None = None,
     ) -> ApiResponse:
+        try:
+            return self._handle(method, path, body, query_params)
+        except Exception as exc:
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            return ApiResponse(500, {"error": "server_error", "detail": str(exc)})
+
+    def _handle(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None = None,
+        query_params: dict[str, str] | None = None,
+    ) -> ApiResponse:
         body = body or {}
         qp = query_params or {}
 
@@ -123,7 +139,7 @@ class PhaseApi:
                  payload.get("name"), payload.get("notes")),
             ).fetchone()
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(201, {
@@ -148,7 +164,7 @@ class PhaseApi:
                  payload.get("eliteHrvReadiness"), payload.get("garminOvernightHrv"), payload.get("notes")),
             ).fetchone()
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(201, {
@@ -173,7 +189,7 @@ class PhaseApi:
                 (session_id, payload["exerciseId"], payload["exerciseOrder"], payload.get("notes")),
             ).fetchone()
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(201, {
@@ -197,7 +213,7 @@ class PhaseApi:
                  int(payload.get("isTopSet", False)), int(payload.get("isWorkingSet", True))),
             ).fetchone()
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(201, {
@@ -394,7 +410,7 @@ class PhaseApi:
                      payload.get("elapsedSec"), int(payload.get("protocolCompliant", True))),
                 )
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
 
@@ -431,7 +447,7 @@ class PhaseApi:
             if row is None:
                 return ApiResponse(404, {"error": "not_found"})
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(200, {
@@ -473,7 +489,7 @@ class PhaseApi:
             if row is None:
                 return ApiResponse(404, {"error": "not_found"})
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(200, {
@@ -511,7 +527,7 @@ class PhaseApi:
             if row is None:
                 return ApiResponse(404, {"error": "not_found"})
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(200, {
@@ -554,7 +570,7 @@ class PhaseApi:
             if row is None:
                 return ApiResponse(404, {"error": "not_found"})
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(200, {
@@ -620,7 +636,7 @@ class PhaseApi:
                     (*run_updates.values(), benchmark_id),
                 )
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(200, {"benchmarkId": benchmark_id, "updated": True})
@@ -648,7 +664,7 @@ class PhaseApi:
                  int(payload.get("isBodyweight", False))),
             ).fetchone()
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(201, {
@@ -678,7 +694,7 @@ class PhaseApi:
             if row is None:
                 return ApiResponse(404, {"error": "not_found"})
             self.conn.commit()
-        except psycopg2.IntegrityError as exc:
+        except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(200, {

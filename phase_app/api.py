@@ -756,7 +756,10 @@ class PhaseApi:
             "All other sets default to isWorkingSet: true.\n"
             "- Top set: set isTopSet: true for the heaviest working set. In Garmin, bolded or highlighted rows indicate the top set. "
             "For volume_bench sessions, never mark any set as isTopSet: true (volume work has no single top set).\n"
-            "- sessionType: 'run' for cardio/run, 'pull' for pull-only, 'volume_bench'/'heavy_bench'/'speed_bench' if bench dominant, else 'other'.\n"
+            "- sessionType: derive primarily from the workout title/name shown in the screenshot "
+            "(e.g. 'volume bench' → 'volume_bench', 'heavy bench' → 'heavy_bench', 'speed bench' → 'speed_bench'). "
+            "If no title, infer from exercises: 'run' for cardio/run, 'pull' for pull-only, "
+            "'volume_bench'/'heavy_bench'/'speed_bench' if bench dominant, else 'other'.\n"
             "- Extract the exact session date shown in the screenshot.\n"
             'If this is not a workout screenshot, return: {"error": "not_a_workout"}'
         )

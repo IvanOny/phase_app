@@ -2,7 +2,9 @@ import { useState, useEffect, Fragment } from 'react';
 import {
   getSessionExercises,
   getExerciseSets,
+  createSessionExercise,
   deleteSessionExercise,
+  createExerciseSet,
   updateExerciseSet,
   deleteExerciseSet,
 } from '../../api/client.js';
@@ -93,6 +95,101 @@ function SetRow({ set, sessionExerciseId, onUpdated, onDeleted }) {
   );
 }
 
+// ---- Add-set inline form ----
+function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ loadKg: '', reps: '', isTopSet: false, isWorkingSet: true });
+  const [saving, setSaving] = useState(false);
+
+  async function handleAdd() {
+    if (!form.loadKg || !form.reps) return;
+    setSaving(true);
+    try {
+      const created = await createExerciseSet(sessionExerciseId, {
+        setNumber: nextSetNumber,
+        reps: Number(form.reps),
+        loadKg: Number(form.loadKg),
+        isTopSet: form.isTopSet,
+        isWorkingSet: form.isWorkingSet,
+      });
+      onAdded(created);
+      setForm({ loadKg: '', reps: '', isTopSet: false, isWorkingSet: true });
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <tr>
+        <td colSpan={6}>
+          <button className="add-inline-btn" onClick={() => setOpen(true)}>+ Add set</button>
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <tr className="set-row-editing">
+      <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{nextSetNumber}</td>
+      <td><input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="kg" autoFocus /></td>
+      <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" onKeyDown={e => e.key === 'Enter' && handleAdd()} /></td>
+      <td><input type="checkbox" checked={form.isTopSet} onChange={e => setForm(f => ({ ...f, isTopSet: e.target.checked }))} title="Top set" /></td>
+      <td><input type="checkbox" checked={form.isWorkingSet} onChange={e => setForm(f => ({ ...f, isWorkingSet: e.target.checked }))} title="Working set" /></td>
+      <td>
+        <button className="icon-btn" onClick={handleAdd} disabled={saving || !form.loadKg || !form.reps} title="Save set">✓</button>
+        <button className="icon-btn" onClick={() => setOpen(false)} title="Cancel">✕</button>
+      </td>
+    </tr>
+  );
+}
+
+// ---- Add-exercise inline form ----
+function AddExerciseRow({ sessionId, catalog, nextOrder, onAdded }) {
+  const [open, setOpen] = useState(false);
+  const [exerciseId, setExerciseId] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleAdd() {
+    if (!exerciseId) return;
+    setSaving(true);
+    try {
+      const se = await createSessionExercise(sessionId, {
+        exerciseId: Number(exerciseId),
+        exerciseOrder: nextOrder,
+      });
+      const exercise = catalog.find(e => e.exerciseId === Number(exerciseId));
+      onAdded({ ...se, exerciseName: exercise?.exerciseName ?? `Exercise ${exerciseId}`, sets: [] });
+      setExerciseId('');
+      setOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button className="add-inline-btn" style={{ marginTop: 8 }} onClick={() => setOpen(true)}>
+        + Add exercise
+      </button>
+    );
+  }
+
+  return (
+    <div className="add-exercise-row">
+      <select value={exerciseId} onChange={e => setExerciseId(e.target.value)} className="inline-input" autoFocus>
+        <option value="">Select exercise…</option>
+        {catalog.map(ex => (
+          <option key={ex.exerciseId} value={ex.exerciseId}>{ex.exerciseName}</option>
+        ))}
+      </select>
+      <button className="icon-btn" onClick={handleAdd} disabled={saving || !exerciseId} title="Add">✓</button>
+      <button className="icon-btn" onClick={() => setOpen(false)} title="Cancel">✕</button>
+    </div>
+  );
+}
+
 // ---- Expanded session detail with exercise/set edit ----
 function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted }) {
   const [data, setData] = useState(null);
@@ -141,6 +238,18 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted }) {
     ));
   }
 
+  function handleSetAdded(sessionExerciseId, newSet) {
+    setData(prev => prev.map(se =>
+      se.sessionExerciseId === sessionExerciseId
+        ? { ...se, sets: [...se.sets, newSet] }
+        : se
+    ));
+  }
+
+  function handleExerciseAdded(newSe) {
+    setData(prev => [...prev, newSe]);
+  }
+
   if (!data) {
     return (
       <tr>
@@ -151,20 +260,13 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted }) {
     );
   }
 
-  if (data.length === 0) {
-    return (
-      <tr>
-        <td colSpan={8} className="session-detail-cell">
-          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged.</span>
-        </td>
-      </tr>
-    );
-  }
-
   return (
     <tr>
       <td colSpan={8} className="session-detail-cell">
         <div className="session-detail">
+          {data.length === 0 && (
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
+          )}
           {data.map(se => (
             <div key={se.sessionExerciseId} className="exercise-block">
               <div className="exercise-block-header">
@@ -175,35 +277,42 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted }) {
                   onClick={() => handleDeleteExercise(se)}
                 >🗑</button>
               </div>
-              {se.sets.length > 0 ? (
-                <table className="sets-table">
-                  <thead>
-                    <tr>
-                      <th>Set</th>
-                      <th>Load (kg)</th>
-                      <th>Reps</th>
-                      <th>Top set</th>
-                      <th>Working</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {se.sets.map(set => (
-                      <SetRow
-                        key={set.exerciseSetId}
-                        set={set}
-                        sessionExerciseId={se.sessionExerciseId}
-                        onUpdated={updated => handleSetUpdated(se.sessionExerciseId, updated)}
-                        onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No sets logged.</span>
-              )}
+              <table className="sets-table">
+                <thead>
+                  <tr>
+                    <th>Set</th>
+                    <th>Load (kg)</th>
+                    <th>Reps</th>
+                    <th>Top set</th>
+                    <th>Working</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {se.sets.map(set => (
+                    <SetRow
+                      key={set.exerciseSetId}
+                      set={set}
+                      sessionExerciseId={se.sessionExerciseId}
+                      onUpdated={updated => handleSetUpdated(se.sessionExerciseId, updated)}
+                      onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
+                    />
+                  ))}
+                  <AddSetRow
+                    sessionExerciseId={se.sessionExerciseId}
+                    nextSetNumber={se.sets.length + 1}
+                    onAdded={newSet => handleSetAdded(se.sessionExerciseId, newSet)}
+                  />
+                </tbody>
+              </table>
             </div>
           ))}
+          <AddExerciseRow
+            sessionId={sessionId}
+            catalog={catalog}
+            nextOrder={data.length + 1}
+            onAdded={handleExerciseAdded}
+          />
         </div>
       </td>
     </tr>

@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import {
   LineChart,
   Line,
@@ -17,6 +18,16 @@ function formatDate(dateStr) {
 
 export default function E1rmChart({ sessions, metricsMap }) {
   const colors = useChartColors();
+  const [showInfo, setShowInfo] = useState(false);
+  const infoRef = useRef(null);
+
+  useEffect(() => {
+    function handle(e) {
+      if (infoRef.current && !infoRef.current.contains(e.target)) setShowInfo(false);
+    }
+    if (showInfo) document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [showInfo]);
 
   function readinessColor(r) {
     if (r == null) return colors.readyNone;
@@ -85,7 +96,18 @@ export default function E1rmChart({ sessions, metricsMap }) {
 
   return (
     <div className="chart-wrapper">
-      <div className="card-title">Heavy Strength — e1RM (kg)</div>
+      <div className="chart-title-row">
+        <span className="card-title">e1RM (kg)</span>
+        <div className="info-btn-wrap" ref={infoRef}>
+          <button className="info-btn" onClick={() => setShowInfo(v => !v)} aria-label="What is e1RM?">?</button>
+          {showInfo && (
+            <div className="info-popover">
+              <p><strong>Estimated 1-rep max</strong> — a weekly strength snapshot without the risk of true max testing. Each heavy session your top set is used to project peak strength.</p>
+              <p className="info-example">Example: 87.5 kg × 5 reps → e1RM <strong>100 kg</strong></p>
+            </div>
+          )}
+        </div>
+      </div>
       {hasData ? (
         <>
           <ResponsiveContainer width="100%" height={220}>

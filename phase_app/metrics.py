@@ -78,6 +78,7 @@ def get_phase_summary(conn: psycopg2.extensions.connection, phase_id: int) -> di
         )
         e1rm_rows = cur.fetchall()
         peak_e1rm = float(max(r["e1rm"] for r in e1rm_rows)) if e1rm_rows else None
+        lowest_e1rm = float(min(r["e1rm"] for r in e1rm_rows)) if e1rm_rows else None
         latest_e1rm = float(e1rm_rows[-1]["e1rm"]) if e1rm_rows else None
 
         cur.execute(
@@ -99,6 +100,7 @@ def get_phase_summary(conn: psycopg2.extensions.connection, phase_id: int) -> di
         "sessionCount": session_count,
         "avgHrv": avg_hrv,
         "peakE1rmKg": peak_e1rm,
+        "lowestE1rmKg": lowest_e1rm,
         "latestE1rmKg": latest_e1rm,
         "totalBenchVolumeKgReps": total_volume,
     }

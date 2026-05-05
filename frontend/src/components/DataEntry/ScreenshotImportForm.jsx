@@ -59,8 +59,9 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
       // Force year to current year — screenshots often show old years from the source app
       if (result.sessionDate) {
         const [, mm, dd] = result.sessionDate.split('-');
-        const currentYear = new Date().getFullYear();
-        result.sessionDate = `${currentYear}-${mm}-${dd}`;
+        result.sessionDate = `${new Date().getFullYear()}-${mm}-${dd}`;
+      } else {
+        result.sessionDate = new Date().toISOString().slice(0, 10);
       }
       setEditedData(JSON.parse(JSON.stringify(result)));
       setStage('preview');

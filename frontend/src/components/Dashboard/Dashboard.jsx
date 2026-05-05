@@ -26,6 +26,9 @@ export default function Dashboard({
   onDeleteBenchmark,
   theme,
   onToggleTheme,
+  isAuthenticated,
+  onLogout,
+  onLoginClick,
 }) {
   return (
     <div className="dashboard">
@@ -35,6 +38,9 @@ export default function Dashboard({
         onDeletePhase={onDeletePhase}
         theme={theme}
         onToggleTheme={onToggleTheme}
+        isAuthenticated={isAuthenticated}
+        onLogout={onLogout}
+        onLoginClick={onLoginClick}
       />
       <PhaseNav
         phases={phases}
@@ -51,20 +57,24 @@ export default function Dashboard({
         exercises={exercises}
         onUpdateSession={onUpdateSession}
         onDeleteSession={onDeleteSession}
+        isAuthenticated={isAuthenticated}
       />
       <MaintenancePanel
         currentBenchmarks={benchmarks}
         previousBenchmarks={previousBenchmarks}
         onUpdateBenchmark={onUpdateBenchmark}
         onDeleteBenchmark={onDeleteBenchmark}
+        isAuthenticated={isAuthenticated}
       />
-      <button
-        className="fab"
-        title="Log data"
-        onClick={onOpenPanel}
-      >
-        +
-      </button>
+      {isAuthenticated && (
+        <button
+          className="fab"
+          title="Log data"
+          onClick={onOpenPanel}
+        >
+          +
+        </button>
+      )}
     </div>
   );
 }

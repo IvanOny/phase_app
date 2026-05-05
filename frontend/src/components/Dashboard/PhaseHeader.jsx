@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
 const PHASE_LABELS = {
   bench: 'Bench',
@@ -39,6 +40,7 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (!phase) return null;
 
@@ -77,7 +79,6 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
   }
 
   async function handleDelete() {
-    if (!confirm(`Delete phase "${phase.name || phase.phaseType}"? This cannot be undone.`)) return;
     try {
       await onDeletePhase(phase.phaseId);
     } catch (e) {
@@ -152,7 +153,7 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
           {isAuthenticated ? (
             <>
               <button className="icon-btn" title="Edit phase" onClick={startEdit}>✏</button>
-              <button className="icon-btn icon-btn--danger" title="Delete phase" onClick={handleDelete}>🗑</button>
+              <button className="icon-btn icon-btn--danger" title="Delete phase" onClick={() => setConfirmOpen(true)}>🗑</button>
               <button className="icon-btn" title="Log out" onClick={onLogout} style={{ fontSize: 14 }}>⏏</button>
             </>
           ) : (
@@ -162,6 +163,13 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
           )}
         </div>
       </div>
+      {confirmOpen && (
+        <ConfirmDialog
+          message={`Delete phase "${phase.name || phase.phaseType}"? This cannot be undone.`}
+          onConfirm={async () => { setConfirmOpen(false); await handleDelete(); }}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      )}
     </div>
   );
 }

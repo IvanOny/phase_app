@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
 const TYPE_CONFIG = {
   bench:    { label: 'Push', color: 'var(--type-push)' },
@@ -23,6 +24,7 @@ export default function PhaseNav({
   const activePhase = phases.find(p => p.phaseId === selectedPhaseId);
   const [selectedType, setSelectedType] = useState(activePhase?.phaseType ?? 'bench');
   const [editingId, setEditingId] = useState(null);
+  const [confirmPhaseId, setConfirmPhaseId] = useState(null);
 
   useEffect(() => {
     if (activePhase) setSelectedType(activePhase.phaseType);
@@ -65,7 +67,7 @@ export default function PhaseNav({
 
   function handleDelete(phaseId, e) {
     e.stopPropagation();
-    onDeletePhase(phaseId);
+    setConfirmPhaseId(phaseId);
   }
 
   return (
@@ -167,6 +169,13 @@ export default function PhaseNav({
           + Add
         </button>
       </div>
+      {confirmPhaseId && (
+        <ConfirmDialog
+          message="Delete this phase? This cannot be undone."
+          onConfirm={async () => { const id = confirmPhaseId; setConfirmPhaseId(null); await onDeletePhase(id); }}
+          onCancel={() => setConfirmPhaseId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -56,13 +56,10 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     setStage('parsing');
     try {
       const result = await importScreenshot(file);
-      // Force year to current year — screenshots often show old years from the source app
-      if (result.sessionDate) {
-        const [, mm, dd] = result.sessionDate.split('-');
-        result.sessionDate = `${new Date().getFullYear()}-${mm}-${dd}`;
-      } else {
-        result.sessionDate = new Date().toISOString().slice(0, 10);
-      }
+      result.sessionDate = new Date().toISOString().slice(0, 10);
+      result.exercises = result.exercises
+        .map(ex => ({ ...ex, sets: ex.sets.filter(s => s.isWorkingSet) }))
+        .filter(ex => ex.sets.length > 0);
       setEditedData(JSON.parse(JSON.stringify(result)));
       setStage('preview');
     } catch (err) {
@@ -271,15 +268,6 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
 
       {editedData.exercises.map((ex, exIdx) => (
         <div key={exIdx} className="screenshot-exercise-block">
-          <div className="screenshot-exercise-header">
-            <div className="exercise-active-label">{ex.exerciseName}</div>
-            <button
-              type="button"
-              className="screenshot-remove-exercise"
-              onClick={() => removeExercise(exIdx)}
-              aria-label={`Remove ${ex.exerciseName}`}
-            >&#x2715;</button>
-          </div>
           <div className="sets-list">
             <div className="sets-list-header screenshot-sets-header">
               <span>Set</span>
@@ -332,6 +320,15 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
                 </button>
               </div>
             ))}
+          </div>
+          <div className="screenshot-exercise-header">
+            <div className="exercise-active-label">{ex.exerciseName}</div>
+            <button
+              type="button"
+              className="screenshot-remove-exercise"
+              onClick={() => removeExercise(exIdx)}
+              aria-label={`Remove ${ex.exerciseName}`}
+            >&#x2715;</button>
           </div>
         </div>
       ))}

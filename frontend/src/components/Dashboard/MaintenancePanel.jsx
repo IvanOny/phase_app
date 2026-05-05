@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
 function avg(arr) {
   if (!arr.length) return null;
@@ -34,6 +35,7 @@ function BenchmarkRow({ benchmark, onUpdate, onDelete, isAuthenticated }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const isPullup = benchmark.benchmarkType === 'max_bodyweight_pullups';
   const isRun = benchmark.benchmarkType === 'run_aerobic_test';
@@ -77,10 +79,6 @@ function BenchmarkRow({ benchmark, onUpdate, onDelete, isAuthenticated }) {
   }
 
   async function handleDelete() {
-    const label = isPullup
-      ? `pull-up benchmark (${benchmark.reps} reps)`
-      : `run benchmark (${formatDate(benchmark.benchmarkDate)})`;
-    if (!confirm(`Delete ${label}?`)) return;
     try {
       await onDelete(benchmark.benchmarkId);
     } catch {
@@ -138,8 +136,15 @@ function BenchmarkRow({ benchmark, onUpdate, onDelete, isAuthenticated }) {
       {isAuthenticated && (
         <div className="benchmark-item-actions">
           <button className="icon-btn" onClick={startEdit} title="Edit benchmark">✏</button>
-          <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete benchmark">🗑</button>
+          <button className="icon-btn icon-btn--danger" onClick={() => setConfirmOpen(true)} title="Delete benchmark">🗑</button>
         </div>
+      )}
+      {confirmOpen && (
+        <ConfirmDialog
+          message="Delete this benchmark?"
+          onConfirm={async () => { setConfirmOpen(false); await handleDelete(); }}
+          onCancel={() => setConfirmOpen(false)}
+        />
       )}
     </div>
   );

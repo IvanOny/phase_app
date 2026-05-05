@@ -112,15 +112,14 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
             """
             SELECT e.exercise_id, e.exercise_name,
                    s.session_id, s.session_date,
-                   ROUND(COALESCE(SUM(es.load_kg * es.reps), 0)::numeric, 2) AS volume_kg_reps
+                   es.set_number, es.load_kg, es.reps
             FROM sessions s
             JOIN session_exercises se ON se.session_id = s.session_id
             JOIN exercises e ON e.exercise_id = se.exercise_id
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
             WHERE s.phase_id = %s
-              AND es.is_working_set = 1
-            GROUP BY e.exercise_id, e.exercise_name, s.session_id, s.session_date
-            ORDER BY e.exercise_name, s.session_date
+              AND es.is_working_set = TRUE
+            ORDER BY e.exercise_name, s.session_date, es.set_number
             """,
             (phase_id,),
         )
@@ -133,14 +132,33 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
             exercises[eid] = {
                 "exerciseId": eid,
                 "exerciseName": row["exercise_name"],
-                "sessions": [],
+                "sessions": {},
             }
-        exercises[eid]["sessions"].append({
-            "sessionId": row["session_id"],
-            "sessionDate": str(row["session_date"]),
-            "volumeKgReps": float(row["volume_kg_reps"]),
-        })
-    return list(exercises.values())
+        sid = row["session_id"]
+        if sid not in exercises[eid]["sessions"]:
+            exercises[eid]["sessions"][sid] = {
+                "sessionId": sid,
+                "sessionDate": str(row["session_date"]),
+                "volumeKgReps": 0.0,
+                "topLoadKg": 0.0,
+                "sets": [],
+            }
+        sess = exercises[eid]["sessions"][sid]
+        load = float(row["load_kg"])
+        reps = int(row["reps"])
+        sess["volumeKgReps"] = round(sess["volumeKgReps"] + load * reps, 2)
+        if load > sess["topLoadKg"]:
+            sess["topLoadKg"] = load
+        sess["sets"].append({"loadKg": load, "reps": reps})
+
+    return [
+        {
+            "exerciseId": ex["exerciseId"],
+            "exerciseName": ex["exerciseName"],
+            "sessions": sorted(ex["sessions"].values(), key=lambda s: s["sessionDate"]),
+        }
+        for ex in exercises.values()
+    ]
 
 
 def get_bench_volume(conn: psycopg2.extensions.connection, session_id: int) -> dict[str, Any] | None:

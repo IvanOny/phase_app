@@ -16,9 +16,22 @@ function formatDate(dateStr) {
   return `${dd}.${mm}`;
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(pointer: coarse)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(pointer: coarse)');
+    const handler = e => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return isMobile;
+}
+
 export default function E1rmChart({ sessions, metricsMap }) {
   const colors = useChartColors();
+  const isMobile = useIsMobile();
   const [showInfo, setShowInfo] = useState(false);
+  const [selectedDot, setSelectedDot] = useState(null);
   const infoRef = useRef(null);
 
   useEffect(() => {
@@ -40,10 +53,10 @@ export default function E1rmChart({ sessions, metricsMap }) {
     if (val == null) return { r: 5, opacity: 1 };
     if (val >= 7) {
       const step = val - 7;
-      return { r: 7 + step * 2, opacity: Math.max(0.2, 0.85 - step * 0.18) };
+      return { r: 7 + step * 3, opacity: Math.max(0.2, 0.85 - step * 0.18) };
     }
     const step = 7 - val;
-    return { r: 5 + step * 2, opacity: Math.max(0.15, 0.85 - step * 0.15) };
+    return { r: 5 + step * 3, opacity: Math.max(0.15, 0.85 - step * 0.15) };
   }
 
   function ReadinessDot(props) {
@@ -60,6 +73,11 @@ export default function E1rmChart({ sessions, metricsMap }) {
         fillOpacity={opacity}
         stroke={colors.bgApp}
         strokeWidth={1.5}
+        style={{ cursor: isMobile ? 'pointer' : 'default' }}
+        onClick={() => {
+          if (!isMobile) return;
+          setSelectedDot(prev => prev?.date === payload.date ? null : payload);
+        }}
       />
     );
   }
@@ -141,17 +159,28 @@ export default function E1rmChart({ sessions, metricsMap }) {
                 tickLine={false}
                 width={40}
               />
-              <Tooltip content={<CustomTooltip />} />
+              {!isMobile && <Tooltip content={<CustomTooltip />} />}
               <Line
                 type="monotone"
                 dataKey="e1rmKg"
                 stroke={colors.accent}
                 strokeWidth={2}
                 dot={<ReadinessDot />}
-                activeDot={{ r: 7, fill: colors.accent }}
+                activeDot={isMobile ? false : { r: 7, fill: colors.accent }}
               />
             </LineChart>
           </ResponsiveContainer>
+          {isMobile && selectedDot && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', marginTop: 8, fontSize: 13 }}>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {formatDate(selectedDot.date)} · e1RM <strong style={{ color: 'var(--text-primary)' }}>{selectedDot.e1rmKg} kg</strong>
+                {selectedDot.eliteHrvReadiness != null && (
+                  <> · Readiness <strong style={{ color: readinessColor(selectedDot.eliteHrvReadiness) }}>{selectedDot.eliteHrvReadiness}</strong></>
+                )}
+              </span>
+              <button onClick={() => setSelectedDot(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: '0 0 0 8px' }}>✕</button>
+            </div>
+          )}
           <div className="readiness-legend">
             <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyGreen }} />Ready (≥7)</span>
             <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyYellow }} />Moderate (4–6)</span>

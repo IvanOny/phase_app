@@ -82,6 +82,15 @@ input, select, textarea {
   color: var(--text-primary);
 }
 
+.btn-danger {
+  background: var(--ready-red);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--ready-red) 85%, black);
+}
+
 .form-group {
   display: flex;
   flex-direction: column;

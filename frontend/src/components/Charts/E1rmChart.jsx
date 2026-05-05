@@ -32,19 +32,32 @@ export default function E1rmChart({ sessions, metricsMap }) {
   function readinessColor(r) {
     if (r == null) return colors.readyNone;
     if (r >= 7)   return colors.readyGreen;
-    if (r >= 5)   return colors.readyYellow;
+    if (r >= 4)   return colors.readyYellow;
     return colors.readyRed;
+  }
+
+  function readinessDotProps(val) {
+    if (val == null) return { r: 5, opacity: 1 };
+    if (val >= 7) {
+      const step = val - 7;
+      return { r: 7 + step * 2, opacity: Math.max(0.2, 0.85 - step * 0.18) };
+    }
+    const step = 7 - val;
+    return { r: 5 + step * 2, opacity: Math.max(0.15, 0.85 - step * 0.15) };
   }
 
   function ReadinessDot(props) {
     const { cx, cy, payload } = props;
-    const fill = readinessColor(payload.eliteHrvReadiness);
+    const val = payload.eliteHrvReadiness;
+    const fill = readinessColor(val);
+    const { r, opacity } = readinessDotProps(val);
     return (
       <circle
         cx={cx}
         cy={cy}
-        r={5}
+        r={r}
         fill={fill}
+        fillOpacity={opacity}
         stroke={colors.bgApp}
         strokeWidth={1.5}
       />
@@ -141,8 +154,8 @@ export default function E1rmChart({ sessions, metricsMap }) {
           </ResponsiveContainer>
           <div className="readiness-legend">
             <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyGreen }} />Ready (≥7)</span>
-            <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyYellow }} />Moderate (5–7)</span>
-            <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyRed }} />Low (&lt;5)</span>
+            <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyYellow }} />Moderate (4–6)</span>
+            <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyRed }} />Low (&lt;4)</span>
             <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyNone }} />No data</span>
           </div>
         </>

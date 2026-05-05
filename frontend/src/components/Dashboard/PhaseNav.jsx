@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const TYPE_CONFIG = {
   bench:    { label: 'Push', color: 'var(--type-push)' },
@@ -23,6 +23,10 @@ export default function PhaseNav({
   const activePhase = phases.find(p => p.phaseId === selectedPhaseId);
   const [selectedType, setSelectedType] = useState(activePhase?.phaseType ?? 'bench');
   const [editingId, setEditingId] = useState(null);
+
+  useEffect(() => {
+    if (activePhase) setSelectedType(activePhase.phaseType);
+  }, [activePhase?.phaseType]);
   const [editFields, setEditFields] = useState({});
 
   const typedPhases = phases

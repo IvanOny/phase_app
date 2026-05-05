@@ -48,7 +48,7 @@
   --row-stripe:      rgba(255, 255, 255, 0.02);
   --backdrop:        rgba(0, 0, 0, 0.5);
 
-  --type-push: #e05a2b;
+  --type-push: #7c3aed;
   --type-pull: #3b82f6;
   --type-run:  #22c55e;
 }
@@ -85,7 +85,7 @@
   --row-stripe:      rgba(0, 0, 0, 0.03);
   --backdrop:        rgba(88, 110, 117, 0.5);
 
-  --type-push: #c0440e;
+  --type-push: #6d28d9;
   --type-pull: #1d6cc4;
   --type-run:  #2a9a4a;
 }

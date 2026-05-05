@@ -22,8 +22,6 @@ export default function PhaseSummaryCard({ phaseId }) {
   if (!summary) return null;
 
   const peakE1rm = summary.peakE1rmKg != null ? `${summary.peakE1rmKg} kg` : null;
-  const latestE1rm = summary.latestE1rmKg != null ? `${summary.latestE1rmKg} kg` : null;
-  const showLatest = summary.latestE1rmKg != null && summary.latestE1rmKg !== summary.peakE1rmKg;
 
   let improvement = null;
   if (
@@ -38,7 +36,6 @@ export default function PhaseSummaryCard({ phaseId }) {
   return (
     <div className="phase-summary-card">
       <StatTile label="Peak e1RM" value={peakE1rm} />
-      {showLatest && <StatTile label="Latest e1RM" value={latestE1rm} />}
       {improvement && <StatTile label="Improvement" value={improvement} />}
     </div>
   );

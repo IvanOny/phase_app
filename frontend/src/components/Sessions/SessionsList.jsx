@@ -8,6 +8,7 @@ import {
   updateExerciseSet,
   deleteExerciseSet,
 } from '../../api/client.js';
+import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
 const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
 
@@ -39,6 +40,7 @@ function SetRow({ set, sessionExerciseId, onUpdated, onDeleted, isAuthenticated 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function startEdit() {
     setForm({ reps: set.reps, loadKg: set.loadKg, isTopSet: set.isTopSet, isWorkingSet: set.isWorkingSet });
@@ -62,7 +64,6 @@ function SetRow({ set, sessionExerciseId, onUpdated, onDeleted, isAuthenticated 
   }
 
   async function handleDelete() {
-    if (!confirm('Delete this set?')) return;
     await deleteExerciseSet(sessionExerciseId, set.exerciseSetId);
     onDeleted(set.exerciseSetId);
   }
@@ -84,21 +85,30 @@ function SetRow({ set, sessionExerciseId, onUpdated, onDeleted, isAuthenticated 
   }
 
   return (
-    <tr className={set.isTopSet ? 'top-set-row' : ''}>
-      <td>{set.setNumber}</td>
-      <td>{set.loadKg}</td>
-      <td>{set.reps}</td>
-      <td>{set.isTopSet ? '★' : ''}</td>
-      <td>{set.isWorkingSet ? '✓' : ''}</td>
-      <td className="row-actions">
-        {isAuthenticated && (
-          <>
-            <button className="icon-btn" onClick={startEdit} title="Edit set">✏</button>
-            <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete set">🗑</button>
-          </>
-        )}
-      </td>
-    </tr>
+    <>
+      <tr className={set.isTopSet ? 'top-set-row' : ''}>
+        <td>{set.setNumber}</td>
+        <td>{set.loadKg}</td>
+        <td>{set.reps}</td>
+        <td>{set.isTopSet ? '★' : ''}</td>
+        <td>{set.isWorkingSet ? '✓' : ''}</td>
+        <td className="row-actions">
+          {isAuthenticated && (
+            <>
+              <button className="icon-btn" onClick={startEdit} title="Edit set">✏</button>
+              <button className="icon-btn icon-btn--danger" onClick={() => setConfirmOpen(true)} title="Delete set">🗑</button>
+            </>
+          )}
+        </td>
+      </tr>
+      {confirmOpen && (
+        <ConfirmDialog
+          message="Delete this set?"
+          onConfirm={async () => { setConfirmOpen(false); await handleDelete(); }}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -200,6 +210,7 @@ function AddExerciseRow({ sessionId, catalog, nextOrder, onAdded }) {
 // ---- Expanded session detail with exercise/set edit ----
 function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAuthenticated }) {
   const [data, setData] = useState(null);
+  const [confirmExercise, setConfirmExercise] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -219,7 +230,6 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAut
   }
 
   async function handleDeleteExercise(se) {
-    if (!confirm(`Delete "${se.exerciseName}" and all its sets from this session?`)) return;
     try {
       await deleteSessionExercise(sessionId, se.sessionExerciseId);
       setData(prev => prev.filter(x => x.sessionExerciseId !== se.sessionExerciseId));
@@ -282,7 +292,7 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAut
                   <button
                     className="icon-btn icon-btn--danger"
                     title="Remove exercise from session"
-                    onClick={() => handleDeleteExercise(se)}
+                    onClick={() => setConfirmExercise(se)}
                   >🗑</button>
                 )}
               </div>
@@ -329,6 +339,13 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAut
           )}
         </div>
       </td>
+      {confirmExercise && (
+        <ConfirmDialog
+          message={`Delete "${confirmExercise.exerciseName}" and all its sets?`}
+          onConfirm={async () => { const se = confirmExercise; setConfirmExercise(null); await handleDeleteExercise(se); }}
+          onCancel={() => setConfirmExercise(null)}
+        />
+      )}
     </tr>
   );
 }
@@ -338,6 +355,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function startEdit(e) {
     e.stopPropagation();
@@ -369,9 +387,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
     }
   }
 
-  async function handleDelete(e) {
-    e.stopPropagation();
-    if (!confirm(`Delete session on ${formatDate(session.sessionDate)}?`)) return;
+  async function handleDelete() {
     await onDeleted(session.sessionId);
   }
 
@@ -417,7 +433,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
           {isAuthenticated && (
             <>
               <button className="icon-btn" onClick={startEdit} title="Edit session">✏</button>
-              <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete session">🗑</button>
+              <button className="icon-btn icon-btn--danger" onClick={e => { e.stopPropagation(); setConfirmOpen(true); }} title="Delete session">🗑</button>
             </>
           )}
         </td>
@@ -427,6 +443,13 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
           sessionId={session.sessionId}
           exercises={exercises}
           isAuthenticated={isAuthenticated}
+        />
+      )}
+      {confirmOpen && (
+        <ConfirmDialog
+          message={`Delete session on ${formatDate(session.sessionDate)}?`}
+          onConfirm={async () => { setConfirmOpen(false); await handleDelete(); }}
+          onCancel={() => setConfirmOpen(false)}
         />
       )}
     </Fragment>

@@ -278,6 +278,12 @@
 }
 
 /* Charts */
+@media (pointer: coarse) {
+  .recharts-wrapper {
+    touch-action: pan-y;
+  }
+}
+
 .chart-wrapper {
   background: var(--bg-card);
   border: 1px solid var(--border);

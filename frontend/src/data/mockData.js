@@ -73,45 +73,45 @@ export const MOCK_EXERCISES = [
   { exerciseId: 4, exerciseName: 'Dip',                 isBarbellBenchPress: false },
 ];
 
-// Exercise volumes by phase — exerciseId → { exerciseName, sessions: [{sessionId, sessionDate, volumeKgReps}] }
+// Exercise volumes by phase — exerciseId → { exerciseName, sessions: [{sessionId, sessionDate, volumeKgReps, topLoadKg, sets}] }
 export const MOCK_EXERCISE_VOLUMES = {
   1: [
     {
       exerciseId: 1,
       exerciseName: 'Barbell Bench Press',
       sessions: [
-        { sessionId: 101, sessionDate: '2026-01-08', volumeKgReps: 2450 },
-        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 3200 },
-        { sessionId: 102, sessionDate: '2026-01-22', volumeKgReps: 2700 },
-        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 3400 },
-        { sessionId: 103, sessionDate: '2026-02-05', volumeKgReps: 3100 },
-        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 3700 },
-        { sessionId: 104, sessionDate: '2026-02-19', volumeKgReps: 2200 },
-        { sessionId: 110, sessionDate: '2026-02-26', volumeKgReps: 3900 },
-        { sessionId: 105, sessionDate: '2026-03-05', volumeKgReps: 3400 },
-        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 4100 },
-        { sessionId: 106, sessionDate: '2026-03-19', volumeKgReps: 3800 },
+        { sessionId: 101, sessionDate: '2026-01-08', volumeKgReps: 2450, topLoadKg: 80, sets: [{ loadKg: 80, reps: 8 }, { loadKg: 80, reps: 8 }, { loadKg: 75, reps: 7 }] },
+        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 3200, topLoadKg: 85, sets: [{ loadKg: 85, reps: 8 }, { loadKg: 85, reps: 8 }, { loadKg: 80, reps: 8 }, { loadKg: 80, reps: 8 }] },
+        { sessionId: 102, sessionDate: '2026-01-22', volumeKgReps: 2700, topLoadKg: 82.5, sets: [{ loadKg: 82.5, reps: 8 }, { loadKg: 82.5, reps: 7 }, { loadKg: 80, reps: 7 }] },
+        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 3400, topLoadKg: 87.5, sets: [{ loadKg: 87.5, reps: 8 }, { loadKg: 87.5, reps: 8 }, { loadKg: 85, reps: 8 }, { loadKg: 85, reps: 7 }] },
+        { sessionId: 103, sessionDate: '2026-02-05', volumeKgReps: 3100, topLoadKg: 85, sets: [{ loadKg: 85, reps: 8 }, { loadKg: 85, reps: 8 }, { loadKg: 82.5, reps: 8 }, { loadKg: 80, reps: 7 }] },
+        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 3700, topLoadKg: 90, sets: [{ loadKg: 90, reps: 8 }, { loadKg: 90, reps: 8 }, { loadKg: 87.5, reps: 8 }, { loadKg: 85, reps: 7 }] },
+        { sessionId: 104, sessionDate: '2026-02-19', volumeKgReps: 2200, topLoadKg: 80, sets: [{ loadKg: 80, reps: 7 }, { loadKg: 80, reps: 7 }, { loadKg: 75, reps: 8 }] },
+        { sessionId: 110, sessionDate: '2026-02-26', volumeKgReps: 3900, topLoadKg: 92.5, sets: [{ loadKg: 92.5, reps: 8 }, { loadKg: 92.5, reps: 8 }, { loadKg: 90, reps: 8 }, { loadKg: 87.5, reps: 7 }] },
+        { sessionId: 105, sessionDate: '2026-03-05', volumeKgReps: 3400, topLoadKg: 90, sets: [{ loadKg: 90, reps: 8 }, { loadKg: 90, reps: 8 }, { loadKg: 87.5, reps: 8 }, { loadKg: 85, reps: 6 }] },
+        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 4100, topLoadKg: 95, sets: [{ loadKg: 95, reps: 8 }, { loadKg: 95, reps: 8 }, { loadKg: 92.5, reps: 8 }, { loadKg: 90, reps: 8 }] },
+        { sessionId: 106, sessionDate: '2026-03-19', volumeKgReps: 3800, topLoadKg: 92.5, sets: [{ loadKg: 92.5, reps: 8 }, { loadKg: 92.5, reps: 8 }, { loadKg: 90, reps: 8 }, { loadKg: 87.5, reps: 7 }] },
       ],
     },
     {
       exerciseId: 3,
       exerciseName: 'Incline DB Press',
       sessions: [
-        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 1200 },
-        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 1350 },
-        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 1500 },
-        { sessionId: 110, sessionDate: '2026-02-26', volumeKgReps: 1600 },
-        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 1750 },
+        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 1200, topLoadKg: 30, sets: [{ loadKg: 30, reps: 12 }, { loadKg: 30, reps: 12 }, { loadKg: 30, reps: 16 }] },
+        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 1350, topLoadKg: 32, sets: [{ loadKg: 32, reps: 12 }, { loadKg: 32, reps: 12 }, { loadKg: 30, reps: 13 }] },
+        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 1500, topLoadKg: 34, sets: [{ loadKg: 34, reps: 12 }, { loadKg: 34, reps: 12 }, { loadKg: 32, reps: 14 }] },
+        { sessionId: 110, sessionDate: '2026-02-26', volumeKgReps: 1600, topLoadKg: 36, sets: [{ loadKg: 36, reps: 12 }, { loadKg: 36, reps: 12 }, { loadKg: 34, reps: 13 }] },
+        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 1750, topLoadKg: 36, sets: [{ loadKg: 36, reps: 14 }, { loadKg: 36, reps: 13 }, { loadKg: 36, reps: 11 }] },
       ],
     },
     {
       exerciseId: 4,
       exerciseName: 'Dip',
       sessions: [
-        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 800 },
-        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 900 },
-        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 950 },
-        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 1050 },
+        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 800, topLoadKg: 10, sets: [{ loadKg: 10, reps: 12 }, { loadKg: 10, reps: 12 }, { loadKg: 10, reps: 10 }] },
+        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 900, topLoadKg: 12.5, sets: [{ loadKg: 12.5, reps: 12 }, { loadKg: 12.5, reps: 12 }, { loadKg: 10, reps: 12 }] },
+        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 950, topLoadKg: 15, sets: [{ loadKg: 15, reps: 12 }, { loadKg: 15, reps: 11 }, { loadKg: 12.5, reps: 12 }] },
+        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 1050, topLoadKg: 17.5, sets: [{ loadKg: 17.5, reps: 12 }, { loadKg: 17.5, reps: 12 }, { loadKg: 15, reps: 10 }] },
       ],
     },
   ],
@@ -120,8 +120,8 @@ export const MOCK_EXERCISE_VOLUMES = {
       exerciseId: 2,
       exerciseName: 'Pull-up',
       sessions: [
-        { sessionId: 201, sessionDate: '2026-04-07', volumeKgReps: 560 },
-        { sessionId: 202, sessionDate: '2026-04-21', volumeKgReps: 630 },
+        { sessionId: 201, sessionDate: '2026-04-07', volumeKgReps: 560, topLoadKg: 10, sets: [{ loadKg: 10, reps: 8 }, { loadKg: 10, reps: 8 }, { loadKg: 10, reps: 8 }] },
+        { sessionId: 202, sessionDate: '2026-04-21', volumeKgReps: 630, topLoadKg: 12.5, sets: [{ loadKg: 12.5, reps: 8 }, { loadKg: 12.5, reps: 8 }, { loadKg: 10, reps: 8 }] },
       ],
     },
   ],

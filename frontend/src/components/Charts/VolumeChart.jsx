@@ -6,6 +6,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  LabelList,
   ResponsiveContainer,
 } from 'recharts';
 import { useChartColors } from '../../hooks/useChartColors.js';
@@ -24,11 +25,16 @@ function formatVolume(v) {
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
+  const sets = d.sets ?? [];
   return (
     <div className="chart-tooltip">
-      <div className="tooltip-date">{formatDate(d.date)}</div>
-      <div className="tooltip-row">
-        <span>Volume</span>
+      {sets.map((s, i) => (
+        <div key={i} className="tooltip-row">
+          <span>{s.loadKg}×{s.reps}</span>
+        </div>
+      ))}
+      <div className="tooltip-row" style={{ marginTop: 4, borderTop: '1px solid var(--border)', paddingTop: 4 }}>
+        <span>Total</span>
         <strong>{d.volume.toLocaleString()} kg·reps</strong>
       </div>
     </div>
@@ -49,21 +55,16 @@ export default function VolumeChart({ sessions, exerciseVolumes }) {
     }
   }, [exerciseVolumes]);
 
-  const volumeBenchIds = new Set(
-    sessions.filter(s => s.sessionType === 'volume_bench').map(s => s.sessionId)
-  );
-
   const selectedExercise = exerciseVolumes.find(e => e.exerciseId === selectedExerciseId);
 
   const data = (selectedExercise?.sessions ?? [])
-    .filter(s => volumeBenchIds.has(s.sessionId))
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
-    .map(s => ({ date: s.sessionDate, volume: s.volumeKgReps }));
+    .map(s => ({ date: s.sessionDate, volume: s.volumeKgReps, topLoadKg: s.topLoadKg ?? null, sets: s.sets ?? [] }));
 
   const hasData = data.length > 0;
   const title = selectedExercise
-    ? `Volume bench — ${selectedExercise.exerciseName} (kg·reps)`
-    : 'Volume bench (kg·reps)';
+    ? `Volume — ${selectedExercise.exerciseName} (kg·reps)`
+    : 'Volume (kg·reps)';
 
   return (
     <div className="chart-wrapper">
@@ -84,7 +85,7 @@ export default function VolumeChart({ sessions, exerciseVolumes }) {
       </div>
       {hasData ? (
         <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={data} margin={{ top: 8, right: 16, bottom: 24, left: 0 }}>
+          <BarChart data={data} margin={{ top: 20, right: 16, bottom: 24, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke={colors.border} vertical={false} />
             <XAxis
               dataKey="date"
@@ -101,14 +102,21 @@ export default function VolumeChart({ sessions, exerciseVolumes }) {
               width={40}
             />
             <Tooltip content={<CustomTooltip />} cursor={{ fill: colors.accentTint }} />
-            <Bar dataKey="volume" fill={colors.accent} radius={[3, 3, 0, 0]} />
+            <Bar dataKey="volume" fill={colors.accent} radius={[3, 3, 0, 0]}>
+              <LabelList
+                dataKey="topLoadKg"
+                position="top"
+                formatter={v => (v ? `${v}kg` : '')}
+                style={{ fontSize: 10, fill: colors.textMuted }}
+              />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       ) : (
         <div className="chart-empty">
           {exerciseVolumes.length === 0
             ? 'No volume data for this phase'
-            : 'No volume bench sessions for selected exercise'}
+            : 'No sessions for selected exercise'}
         </div>
       )}
     </div>

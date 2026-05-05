@@ -7,8 +7,8 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function CreatePhaseForm({ onPhaseCreated }) {
-  const [phaseType, setPhaseType] = useState('bench');
+export default function CreatePhaseForm({ initialPhaseType, onPhaseCreated }) {
+  const [phaseType, setPhaseType] = useState(initialPhaseType || 'bench');
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(today());
   const [endDate, setEndDate] = useState('');

@@ -54,6 +54,7 @@ function App() {
   const [exercises, setExercises] = useState([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState('session');
+  const [initialPhaseType, setInitialPhaseType] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -201,6 +202,12 @@ function App() {
     return updated;
   }
 
+  function handleAddPhase(phaseType) {
+    setInitialPhaseType(phaseType);
+    setPanelTab('phase');
+    setPanelOpen(true);
+  }
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-secondary)' }}>
@@ -228,6 +235,7 @@ function App() {
         exercises={exercises}
         onSelectPhase={setSelectedPhaseId}
         onOpenPanel={() => setPanelOpen(true)}
+        onAddPhase={handleAddPhase}
         onUpdatePhase={handleUpdatePhase}
         onDeletePhase={handleDeletePhase}
         onUpdateSession={(sessionId, payload) => handleUpdateSession(sessionId, selectedPhaseId, payload)}
@@ -243,9 +251,10 @@ function App() {
       {isAuthenticated && (
         <DataEntryPanel
           isOpen={panelOpen}
-          onClose={() => setPanelOpen(false)}
+          onClose={() => { setPanelOpen(false); setInitialPhaseType(null); }}
           activeTab={panelTab}
           onTabChange={setPanelTab}
+          initialPhaseType={initialPhaseType}
           phases={phases}
           selectedPhaseId={selectedPhaseId}
           sessions={sessions}

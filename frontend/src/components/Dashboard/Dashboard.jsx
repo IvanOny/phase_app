@@ -18,6 +18,7 @@ export default function Dashboard({
   exercises,
   onSelectPhase,
   onOpenPanel,
+  onAddPhase,
   onUpdatePhase,
   onDeletePhase,
   onUpdateSession,
@@ -46,6 +47,9 @@ export default function Dashboard({
         phases={phases}
         selectedPhaseId={selectedPhase?.phaseId}
         onSelect={onSelectPhase}
+        onAddPhase={onAddPhase}
+        onUpdatePhase={onUpdatePhase}
+        onDeletePhase={onDeletePhase}
       />
       {selectedPhase && <PhaseSummaryCard phaseId={selectedPhase.phaseId} />}
       <E1rmChart sessions={sessions} metricsMap={e1rmMap} />

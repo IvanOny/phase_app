@@ -20,6 +20,7 @@ export default function DataEntryPanel({
   onClose,
   activeTab,
   onTabChange,
+  initialPhaseType,
   phases,
   selectedPhaseId,
   sessions,
@@ -58,7 +59,10 @@ export default function DataEntryPanel({
 
         <div className="panel-body">
           {activeTab === 'phase' && (
-            <CreatePhaseForm onPhaseCreated={phase => { onPhaseCreated(phase); onClose(); }} />
+            <CreatePhaseForm
+              initialPhaseType={initialPhaseType}
+              onPhaseCreated={phase => { onPhaseCreated(phase); onClose(); }}
+            />
           )}
           {activeTab === 'session' && (
             <LogSessionForm

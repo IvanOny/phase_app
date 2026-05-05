@@ -5,6 +5,7 @@ import {
   MOCK_VOLUME_METRICS,
   MOCK_BENCHMARKS,
   MOCK_EXERCISES,
+  MOCK_EXERCISE_VOLUMES,
 } from '../data/mockData.js';
 
 const MOCK_MODE = import.meta.env.VITE_MOCK_MODE === 'true';
@@ -234,6 +235,13 @@ export async function getBenchVolume(sessionId) {
     return Promise.resolve(m || null);
   }
   return apiFetch('GET', `/v1/metrics/sessions/${sessionId}/bench-volume`, undefined, { allow404: true });
+}
+
+export async function getPhaseExerciseVolumes(phaseId) {
+  if (MOCK_MODE) {
+    return Promise.resolve(MOCK_EXERCISE_VOLUMES[phaseId] || []);
+  }
+  return apiFetchList('GET', `/v1/metrics/phases/${phaseId}/exercise-volumes`);
 }
 
 // ---- Benchmarks ----

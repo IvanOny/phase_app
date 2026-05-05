@@ -13,6 +13,7 @@ export default function Dashboard({
   sessions,
   e1rmMap,
   volumeMap,
+  exerciseVolumes,
   benchmarks,
   previousBenchmarks,
   exercises,
@@ -53,7 +54,7 @@ export default function Dashboard({
       />
       {selectedPhase && <PhaseSummaryCard phaseId={selectedPhase.phaseId} />}
       <E1rmChart sessions={sessions} metricsMap={e1rmMap} />
-      <VolumeChart sessions={sessions} metricsMap={volumeMap} />
+      <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} />
       <SessionsList
         sessions={sessions}
         e1rmMap={e1rmMap}

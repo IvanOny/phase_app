@@ -16,14 +16,19 @@ export const MOCK_PHASES = [
 ];
 
 export const MOCK_SESSIONS = [
-  { sessionId: 101, phaseId: 1, sessionDate: '2026-01-08', sessionType: 'heavy_bench', eliteHrvReadiness: 8.1, garminOvernightHrv: 62.0 },
-  { sessionId: 102, phaseId: 1, sessionDate: '2026-01-22', sessionType: 'heavy_bench', eliteHrvReadiness: 6.3, garminOvernightHrv: 54.5 },
-  { sessionId: 103, phaseId: 1, sessionDate: '2026-02-05', sessionType: 'heavy_bench', eliteHrvReadiness: 7.8, garminOvernightHrv: 60.2 },
-  { sessionId: 104, phaseId: 1, sessionDate: '2026-02-19', sessionType: 'heavy_bench', eliteHrvReadiness: 4.5, garminOvernightHrv: 48.1 },
-  { sessionId: 105, phaseId: 1, sessionDate: '2026-03-05', sessionType: 'heavy_bench', eliteHrvReadiness: 7.2, garminOvernightHrv: 58.7 },
-  { sessionId: 106, phaseId: 1, sessionDate: '2026-03-19', sessionType: 'heavy_bench', eliteHrvReadiness: 8.5, garminOvernightHrv: 65.3 },
-  { sessionId: 201, phaseId: 2, sessionDate: '2026-04-07', sessionType: 'pull',        eliteHrvReadiness: 7.0, garminOvernightHrv: 57.4 },
-  { sessionId: 202, phaseId: 2, sessionDate: '2026-04-21', sessionType: 'pull',        eliteHrvReadiness: 6.8, garminOvernightHrv: 55.9 },
+  { sessionId: 101, phaseId: 1, sessionDate: '2026-01-08', sessionType: 'heavy_bench',  eliteHrvReadiness: 8.1, garminOvernightHrv: 62.0 },
+  { sessionId: 107, phaseId: 1, sessionDate: '2026-01-15', sessionType: 'volume_bench', eliteHrvReadiness: 7.5, garminOvernightHrv: 60.0 },
+  { sessionId: 102, phaseId: 1, sessionDate: '2026-01-22', sessionType: 'heavy_bench',  eliteHrvReadiness: 6.3, garminOvernightHrv: 54.5 },
+  { sessionId: 108, phaseId: 1, sessionDate: '2026-01-29', sessionType: 'volume_bench', eliteHrvReadiness: 7.0, garminOvernightHrv: 58.0 },
+  { sessionId: 103, phaseId: 1, sessionDate: '2026-02-05', sessionType: 'heavy_bench',  eliteHrvReadiness: 7.8, garminOvernightHrv: 60.2 },
+  { sessionId: 109, phaseId: 1, sessionDate: '2026-02-12', sessionType: 'volume_bench', eliteHrvReadiness: 8.0, garminOvernightHrv: 63.0 },
+  { sessionId: 104, phaseId: 1, sessionDate: '2026-02-19', sessionType: 'heavy_bench',  eliteHrvReadiness: 4.5, garminOvernightHrv: 48.1 },
+  { sessionId: 110, phaseId: 1, sessionDate: '2026-02-26', sessionType: 'volume_bench', eliteHrvReadiness: 6.5, garminOvernightHrv: 55.0 },
+  { sessionId: 105, phaseId: 1, sessionDate: '2026-03-05', sessionType: 'heavy_bench',  eliteHrvReadiness: 7.2, garminOvernightHrv: 58.7 },
+  { sessionId: 111, phaseId: 1, sessionDate: '2026-03-12', sessionType: 'volume_bench', eliteHrvReadiness: 7.8, garminOvernightHrv: 61.0 },
+  { sessionId: 106, phaseId: 1, sessionDate: '2026-03-19', sessionType: 'heavy_bench',  eliteHrvReadiness: 8.5, garminOvernightHrv: 65.3 },
+  { sessionId: 201, phaseId: 2, sessionDate: '2026-04-07', sessionType: 'pull',         eliteHrvReadiness: 7.0, garminOvernightHrv: 57.4 },
+  { sessionId: 202, phaseId: 2, sessionDate: '2026-04-21', sessionType: 'pull',         eliteHrvReadiness: 6.8, garminOvernightHrv: 55.9 },
 ];
 
 export const MOCK_E1RM_METRICS = {
@@ -67,3 +72,57 @@ export const MOCK_EXERCISES = [
   { exerciseId: 3, exerciseName: 'Incline DB Press',    isBarbellBenchPress: false },
   { exerciseId: 4, exerciseName: 'Dip',                 isBarbellBenchPress: false },
 ];
+
+// Exercise volumes by phase — exerciseId → { exerciseName, sessions: [{sessionId, sessionDate, volumeKgReps}] }
+export const MOCK_EXERCISE_VOLUMES = {
+  1: [
+    {
+      exerciseId: 1,
+      exerciseName: 'Barbell Bench Press',
+      sessions: [
+        { sessionId: 101, sessionDate: '2026-01-08', volumeKgReps: 2450 },
+        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 3200 },
+        { sessionId: 102, sessionDate: '2026-01-22', volumeKgReps: 2700 },
+        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 3400 },
+        { sessionId: 103, sessionDate: '2026-02-05', volumeKgReps: 3100 },
+        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 3700 },
+        { sessionId: 104, sessionDate: '2026-02-19', volumeKgReps: 2200 },
+        { sessionId: 110, sessionDate: '2026-02-26', volumeKgReps: 3900 },
+        { sessionId: 105, sessionDate: '2026-03-05', volumeKgReps: 3400 },
+        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 4100 },
+        { sessionId: 106, sessionDate: '2026-03-19', volumeKgReps: 3800 },
+      ],
+    },
+    {
+      exerciseId: 3,
+      exerciseName: 'Incline DB Press',
+      sessions: [
+        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 1200 },
+        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 1350 },
+        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 1500 },
+        { sessionId: 110, sessionDate: '2026-02-26', volumeKgReps: 1600 },
+        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 1750 },
+      ],
+    },
+    {
+      exerciseId: 4,
+      exerciseName: 'Dip',
+      sessions: [
+        { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 800 },
+        { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 900 },
+        { sessionId: 109, sessionDate: '2026-02-12', volumeKgReps: 950 },
+        { sessionId: 111, sessionDate: '2026-03-12', volumeKgReps: 1050 },
+      ],
+    },
+  ],
+  2: [
+    {
+      exerciseId: 2,
+      exerciseName: 'Pull-up',
+      sessions: [
+        { sessionId: 201, sessionDate: '2026-04-07', volumeKgReps: 560 },
+        { sessionId: 202, sessionDate: '2026-04-21', volumeKgReps: 630 },
+      ],
+    },
+  ],
+};

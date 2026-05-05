@@ -29,6 +29,7 @@ import {
   getSessionsByPhase,
   getBenchE1rm,
   getBenchVolume,
+  getPhaseExerciseVolumes,
   getBenchmarksByPhase,
   getExercises,
   updatePhase,
@@ -50,6 +51,7 @@ function App() {
   const [sessionsMap, setSessionsMap] = useState({});
   const [e1rmMap, setE1rmMap] = useState({});
   const [volumeMap, setVolumeMap] = useState({});
+  const [exerciseVolumesMap, setExerciseVolumesMap] = useState({});
   const [benchmarksMap, setBenchmarksMap] = useState({});
   const [exercises, setExercises] = useState([]);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -73,12 +75,14 @@ function App() {
 
   const loadPhaseData = useCallback(async (phaseId) => {
     if (!phaseId) return;
-    const [sessions, benchmarks] = await Promise.all([
+    const [sessions, benchmarks, exerciseVolumes] = await Promise.all([
       getSessionsByPhase(phaseId),
       getBenchmarksByPhase(phaseId),
+      getPhaseExerciseVolumes(phaseId),
     ]);
     setSessionsMap(prev => ({ ...prev, [phaseId]: sessions }));
     setBenchmarksMap(prev => ({ ...prev, [phaseId]: benchmarks }));
+    setExerciseVolumesMap(prev => ({ ...prev, [phaseId]: exerciseVolumes }));
 
     const metricResults = await Promise.all(
       sessions.map(async s => {
@@ -232,6 +236,7 @@ function App() {
         sessions={sessions}
         e1rmMap={e1rmMap}
         volumeMap={volumeMap}
+        exerciseVolumes={exerciseVolumesMap[selectedPhaseId] || []}
         benchmarks={benchmarks}
         previousBenchmarks={previousBenchmarks}
         exercises={exercises}

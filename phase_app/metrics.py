@@ -106,6 +106,43 @@ def get_phase_summary(conn: psycopg2.extensions.connection, phase_id: int) -> di
     }
 
 
+def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: int) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT e.exercise_id, e.exercise_name,
+                   s.session_id, s.session_date,
+                   ROUND(COALESCE(SUM(es.load_kg * es.reps), 0)::numeric, 2) AS volume_kg_reps
+            FROM sessions s
+            JOIN session_exercises se ON se.session_id = s.session_id
+            JOIN exercises e ON e.exercise_id = se.exercise_id
+            JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+            WHERE s.phase_id = %s
+              AND es.is_working_set = 1
+            GROUP BY e.exercise_id, e.exercise_name, s.session_id, s.session_date
+            ORDER BY e.exercise_name, s.session_date
+            """,
+            (phase_id,),
+        )
+        rows = cur.fetchall()
+
+    exercises: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        eid = row["exercise_id"]
+        if eid not in exercises:
+            exercises[eid] = {
+                "exerciseId": eid,
+                "exerciseName": row["exercise_name"],
+                "sessions": [],
+            }
+        exercises[eid]["sessions"].append({
+            "sessionId": row["session_id"],
+            "sessionDate": str(row["session_date"]),
+            "volumeKgReps": float(row["volume_kg_reps"]),
+        })
+    return list(exercises.values())
+
+
 def get_bench_volume(conn: psycopg2.extensions.connection, session_id: int) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(

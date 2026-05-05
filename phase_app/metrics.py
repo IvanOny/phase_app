@@ -118,7 +118,7 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
             JOIN exercises e ON e.exercise_id = se.exercise_id
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
             WHERE s.phase_id = %s
-              AND es.is_working_set = TRUE
+              AND es.is_working_set = 1
             ORDER BY e.exercise_name, s.session_date, es.set_number
             """,
             (phase_id,),

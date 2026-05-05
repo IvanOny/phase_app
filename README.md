@@ -1,4 +1,4 @@
-# Phase App Vertical Slice
+# Phase App Vertical Slice 
 
 This repository now includes a runnable 1-week MVP vertical slice for:
 - logging bench sessions and sets

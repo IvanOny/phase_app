@@ -10,6 +10,12 @@ import {
 const MOCK_MODE = import.meta.env.VITE_MOCK_MODE === 'true';
 const BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
+const TOKEN_KEY = 'phase-app-token';
+
+function getStoredToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 // Mutable in-memory store (resets on page refresh)
 let _phases = MOCK_PHASES.map(p => ({ ...p }));
 let _sessions = MOCK_SESSIONS.map(s => ({ ...s }));
@@ -25,11 +31,21 @@ function nextId() {
 }
 
 async function apiFetch(method, path, body, { allow404 = false } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (method !== 'GET') {
+    const token = getStoredToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    window.dispatchEvent(new Event('auth:logout'));
+    throw new Error('Session expired. Please log in again.');
+  }
   if (res.status === 404 && allow404) return null;
   if (!res.ok) {
     let detail = '';
@@ -40,6 +56,17 @@ async function apiFetch(method, path, body, { allow404 = false } = {}) {
     throw new Error(detail ? `${detail} (${res.status})` : `API error ${res.status}: ${path}`);
   }
   return res.json();
+}
+
+export async function loginApi(username, password) {
+  const res = await fetch(`${BASE}/v1/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) throw new Error('Invalid credentials');
+  const data = await res.json();
+  return data.token;
 }
 
 async function apiFetchList(method, path, body) {

@@ -34,7 +34,7 @@ function formatType(type) {
 }
 
 // ---- Set row with inline edit ----
-function SetRow({ set, sessionExerciseId, onUpdated, onDeleted }) {
+function SetRow({ set, sessionExerciseId, onUpdated, onDeleted, isAuthenticated }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -90,8 +90,12 @@ function SetRow({ set, sessionExerciseId, onUpdated, onDeleted }) {
       <td>{set.isTopSet ? '★' : ''}</td>
       <td>{set.isWorkingSet ? '✓' : ''}</td>
       <td className="row-actions">
-        <button className="icon-btn" onClick={startEdit} title="Edit set">✏</button>
-        <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete set">🗑</button>
+        {isAuthenticated && (
+          <>
+            <button className="icon-btn" onClick={startEdit} title="Edit set">✏</button>
+            <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete set">🗑</button>
+          </>
+        )}
       </td>
     </tr>
   );
@@ -193,7 +197,7 @@ function AddExerciseRow({ sessionId, catalog, nextOrder, onAdded }) {
 }
 
 // ---- Expanded session detail with exercise/set edit ----
-function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted }) {
+function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAuthenticated }) {
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -273,11 +277,13 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted }) {
             <div key={se.sessionExerciseId} className="exercise-block">
               <div className="exercise-block-header">
                 <div className="exercise-name">{se.exerciseName}</div>
-                <button
-                  className="icon-btn icon-btn--danger"
-                  title="Remove exercise from session"
-                  onClick={() => handleDeleteExercise(se)}
-                >🗑</button>
+                {isAuthenticated && (
+                  <button
+                    className="icon-btn icon-btn--danger"
+                    title="Remove exercise from session"
+                    onClick={() => handleDeleteExercise(se)}
+                  >🗑</button>
+                )}
               </div>
               <table className="sets-table">
                 <thead>
@@ -298,23 +304,28 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted }) {
                       sessionExerciseId={se.sessionExerciseId}
                       onUpdated={updated => handleSetUpdated(se.sessionExerciseId, updated)}
                       onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
+                      isAuthenticated={isAuthenticated}
                     />
                   ))}
-                  <AddSetRow
-                    sessionExerciseId={se.sessionExerciseId}
-                    nextSetNumber={se.sets.length + 1}
-                    onAdded={newSet => handleSetAdded(se.sessionExerciseId, newSet)}
-                  />
+                  {isAuthenticated && (
+                    <AddSetRow
+                      sessionExerciseId={se.sessionExerciseId}
+                      nextSetNumber={se.sets.length + 1}
+                      onAdded={newSet => handleSetAdded(se.sessionExerciseId, newSet)}
+                    />
+                  )}
                 </tbody>
               </table>
             </div>
           ))}
-          <AddExerciseRow
-            sessionId={sessionId}
-            catalog={catalog}
-            nextOrder={data.length + 1}
-            onAdded={handleExerciseAdded}
-          />
+          {isAuthenticated && (
+            <AddExerciseRow
+              sessionId={sessionId}
+              catalog={catalog}
+              nextOrder={data.length + 1}
+              onAdded={handleExerciseAdded}
+            />
+          )}
         </div>
       </td>
     </tr>
@@ -322,7 +333,7 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted }) {
 }
 
 // ---- Session row with inline edit ----
-function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises }) {
+function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, isAuthenticated }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -404,14 +415,19 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
         <td>{e1rm ? e1rm.topSetE1rmKg : '—'}</td>
         <td>{vol ? vol.benchVolumeKgReps : '—'}</td>
         <td className="row-actions" onClick={e => e.stopPropagation()}>
-          <button className="icon-btn" onClick={startEdit} title="Edit session">✏</button>
-          <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete session">🗑</button>
+          {isAuthenticated && (
+            <>
+              <button className="icon-btn" onClick={startEdit} title="Edit session">✏</button>
+              <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete session">🗑</button>
+            </>
+          )}
         </td>
       </tr>
       {isOpen && (
         <SessionDetail
           sessionId={session.sessionId}
           exercises={exercises}
+          isAuthenticated={isAuthenticated}
         />
       )}
     </Fragment>
@@ -461,7 +477,7 @@ function FilterBar({ filters, onChange }) {
   );
 }
 
-export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, onUpdateSession, onDeleteSession }) {
+export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, onUpdateSession, onDeleteSession, isAuthenticated }) {
   const [expanded, setExpanded] = useState(new Set());
   const [filters, setFilters] = useState({ types: SESSION_TYPES, fromDate: '', toDate: '' });
 
@@ -514,6 +530,7 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
                   onUpdated={onUpdateSession}
                   onDeleted={onDeleteSession}
                   exercises={exercises}
+                  isAuthenticated={isAuthenticated}
                 />
               ))}
             </tbody>

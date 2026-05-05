@@ -30,7 +30,7 @@ function Delta({ current, previous, higherIsBetter = true, unit = '' }) {
   );
 }
 
-function BenchmarkRow({ benchmark, onUpdate, onDelete }) {
+function BenchmarkRow({ benchmark, onUpdate, onDelete, isAuthenticated }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -135,10 +135,12 @@ function BenchmarkRow({ benchmark, onUpdate, onDelete }) {
         {isRun && <span className="benchmark-value">{formatPace(benchmark.paceMinPerKm)} · {benchmark.avgHr} bpm</span>}
         {benchmark.notes && <span className="benchmark-notes">{benchmark.notes}</span>}
       </div>
-      <div className="benchmark-item-actions">
-        <button className="icon-btn" onClick={startEdit} title="Edit benchmark">✏</button>
-        <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete benchmark">🗑</button>
-      </div>
+      {isAuthenticated && (
+        <div className="benchmark-item-actions">
+          <button className="icon-btn" onClick={startEdit} title="Edit benchmark">✏</button>
+          <button className="icon-btn icon-btn--danger" onClick={handleDelete} title="Delete benchmark">🗑</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -163,7 +165,7 @@ function MetricRow({ label, currentValue, previousValue, displayFn, higherIsBett
   );
 }
 
-export default function MaintenancePanel({ currentBenchmarks, previousBenchmarks, onUpdateBenchmark, onDeleteBenchmark }) {
+export default function MaintenancePanel({ currentBenchmarks, previousBenchmarks, onUpdateBenchmark, onDeleteBenchmark, isAuthenticated }) {
   const curPullups = currentBenchmarks.filter(b => b.benchmarkType === 'max_bodyweight_pullups');
   const prevPullups = previousBenchmarks.filter(b => b.benchmarkType === 'max_bodyweight_pullups');
   const curRuns = currentBenchmarks.filter(b => b.benchmarkType === 'run_aerobic_test');
@@ -209,6 +211,7 @@ export default function MaintenancePanel({ currentBenchmarks, previousBenchmarks
               benchmark={b}
               onUpdate={onUpdateBenchmark}
               onDelete={onDeleteBenchmark}
+              isAuthenticated={isAuthenticated}
             />
           ))}
         </div>

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from './auth/useAuth.js';
+import LoginModal from './auth/LoginModal.jsx';
 
 const STORAGE_KEY = 'phase-app-theme';
 
@@ -41,6 +43,8 @@ import {
 
 function App() {
   const { theme, toggleTheme } = useTheme();
+  const { isAuthenticated, login, logout } = useAuth();
+  const [showLogin, setShowLogin] = useState(false);
   const [phases, setPhases] = useState([]);
   const [selectedPhaseId, setSelectedPhaseId] = useState(null);
   const [sessionsMap, setSessionsMap] = useState({});
@@ -214,6 +218,12 @@ function App() {
 
   return (
     <>
+      {showLogin && (
+        <LoginModal
+          onLogin={login}
+          onClose={() => setShowLogin(false)}
+        />
+      )}
       <Dashboard
         phases={phases}
         selectedPhase={selectedPhase}
@@ -234,42 +244,47 @@ function App() {
         onDeleteBenchmark={(benchmarkId) => handleDeleteBenchmark(benchmarkId, selectedPhaseId)}
         theme={theme}
         onToggleTheme={toggleTheme}
+        isAuthenticated={isAuthenticated}
+        onLogout={logout}
+        onLoginClick={() => setShowLogin(true)}
       />
-      <DataEntryPanel
-        isOpen={panelOpen}
-        onClose={() => { setPanelOpen(false); setInitialPhaseType(null); }}
-        activeTab={panelTab}
-        onTabChange={setPanelTab}
-        initialPhaseType={initialPhaseType}
-        phases={phases}
-        selectedPhaseId={selectedPhaseId}
-        sessions={sessions}
-        exercises={exercises}
-        onSessionLogged={session => {
-          handleSessionLogged(session);
-          setPanelOpen(false);
-        }}
-        onSetsLogged={() => {
-          loadPhaseData(selectedPhaseId);
-          setPanelOpen(false);
-        }}
-        onBenchmarkLogged={benchmark => {
-          handleBenchmarkLogged(benchmark);
-          setPanelOpen(false);
-        }}
-        onPhaseCreated={phase => {
-          setPhases(prev => [...prev, phase]);
-          setSelectedPhaseId(phase.phaseId);
-          setPanelOpen(false);
-        }}
-        onExerciseCreated={handleCreateExercise}
-        onExerciseUpdated={handleUpdateExercise}
-        onImportComplete={session => {
-          handleSessionLogged(session);
-          loadPhaseData(session.phaseId);
-          setPanelOpen(false);
-        }}
-      />
+      {isAuthenticated && (
+        <DataEntryPanel
+          isOpen={panelOpen}
+          onClose={() => { setPanelOpen(false); setInitialPhaseType(null); }}
+          activeTab={panelTab}
+          onTabChange={setPanelTab}
+          initialPhaseType={initialPhaseType}
+          phases={phases}
+          selectedPhaseId={selectedPhaseId}
+          sessions={sessions}
+          exercises={exercises}
+          onSessionLogged={session => {
+            handleSessionLogged(session);
+            setPanelOpen(false);
+          }}
+          onSetsLogged={() => {
+            loadPhaseData(selectedPhaseId);
+            setPanelOpen(false);
+          }}
+          onBenchmarkLogged={benchmark => {
+            handleBenchmarkLogged(benchmark);
+            setPanelOpen(false);
+          }}
+          onPhaseCreated={phase => {
+            setPhases(prev => [...prev, phase]);
+            setSelectedPhaseId(phase.phaseId);
+            setPanelOpen(false);
+          }}
+          onExerciseCreated={handleCreateExercise}
+          onExerciseUpdated={handleUpdateExercise}
+          onImportComplete={session => {
+            handleSessionLogged(session);
+            loadPhaseData(session.phaseId);
+            setPanelOpen(false);
+          }}
+        />
+      )}
     </>
   );
 }

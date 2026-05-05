@@ -62,8 +62,10 @@ function App() {
       setPhases(ps);
       setExercises(exs);
       if (ps.length > 0) {
-        const latest = [...ps].sort((a, b) => new Date(b.startDate) - new Date(a.startDate))[0];
-        setSelectedPhaseId(latest.phaseId);
+        const today = new Date().toISOString().slice(0, 10);
+        const active = ps.find(p => p.startDate <= today && (!p.endDate || p.endDate >= today));
+        const fallback = [...ps].sort((a, b) => new Date(b.startDate) - new Date(a.startDate))[0];
+        setSelectedPhaseId((active ?? fallback).phaseId);
       }
       setLoading(false);
     });

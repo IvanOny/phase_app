@@ -9,7 +9,7 @@ from flask import Flask, request, jsonify, make_response
 import psycopg2
 
 from phase_app.api import PhaseApi
-from phase_app.db_pg import get_connection, seed_minimal_bench_data
+from phase_app.db_pg import get_connection
 
 app = Flask(__name__)
 
@@ -26,7 +26,6 @@ def _get_api() -> PhaseApi:
     global _conn
     if _conn is None or _conn.closed:
         _conn = get_connection()
-        seed_minimal_bench_data(_conn)
     return PhaseApi(_conn)
 
 

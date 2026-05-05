@@ -34,7 +34,7 @@ function formatDateRange(start, end) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme }) {
+export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme, isAuthenticated, onLogout, onLoginClick }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -149,8 +149,17 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
           >
             {theme === 'dark' ? '☀' : '🌙'}
           </button>
-          <button className="icon-btn" title="Edit phase" onClick={startEdit}>✏</button>
-          <button className="icon-btn icon-btn--danger" title="Delete phase" onClick={handleDelete}>🗑</button>
+          {isAuthenticated ? (
+            <>
+              <button className="icon-btn" title="Edit phase" onClick={startEdit}>✏</button>
+              <button className="icon-btn icon-btn--danger" title="Delete phase" onClick={handleDelete}>🗑</button>
+              <button className="icon-btn" title="Log out" onClick={onLogout} style={{ fontSize: 14 }}>⏏</button>
+            </>
+          ) : (
+            <button className="btn btn-ghost" title="Log in" onClick={onLoginClick} style={{ fontSize: 13, padding: '3px 10px' }}>
+              Log in
+            </button>
+          )}
         </div>
       </div>
     </div>

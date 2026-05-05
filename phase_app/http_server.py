@@ -26,7 +26,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if origin in CORS_ORIGINS:
             self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
     def _send_json(self, status: int, payload: dict):
         blob = json.dumps(payload).encode("utf-8")
@@ -63,6 +63,12 @@ class AppHandler(BaseHTTPRequestHandler):
         response = self.api.handle("GET", path, query_params=query)
         self._send_json(response.status, response.body)
 
+    def _check_auth(self, method: str, path: str) -> bool:
+        from phase_app.auth import require_auth
+        secret = os.environ.get("TOKEN_SECRET", "")
+        auth_header = self.headers.get("Authorization")
+        return require_auth(method, path, auth_header, secret)
+
     def _parse_json_body(self) -> dict | None:
         content_len = int(self.headers.get("Content-Length", "0"))
         body_blob = self.rfile.read(content_len) if content_len else b"{}"
@@ -74,6 +80,8 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
+        if not self._check_auth("POST", parsed.path):
+            return self._send_json(401, {"error": "unauthorized"})
         payload = self._parse_json_body()
         if payload is None:
             return
@@ -82,6 +90,8 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_PATCH(self):
         parsed = urlparse(self.path)
+        if not self._check_auth("PATCH", parsed.path):
+            return self._send_json(401, {"error": "unauthorized"})
         payload = self._parse_json_body()
         if payload is None:
             return
@@ -90,6 +100,8 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
+        if not self._check_auth("DELETE", parsed.path):
+            return self._send_json(401, {"error": "unauthorized"})
         response = self.api.handle("DELETE", parsed.path)
         self._send_json(response.status, response.body)
 

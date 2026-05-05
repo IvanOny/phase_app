@@ -124,7 +124,23 @@ class PhaseApi:
         if method == "POST" and path == "/v1/import/screenshot":
             return self.import_screenshot(body)
 
+        if method == "POST" and path == "/v1/auth/login":
+            return self.login(body)
+
         return ApiResponse(status=404, body={"error": "not_found"})
+
+    def login(self, payload: dict[str, Any]) -> ApiResponse:
+        from phase_app.auth import check_credentials, issue_token
+        username = payload.get("username", "")
+        password = payload.get("password", "")
+        if not check_credentials(username, password):
+            return ApiResponse(401, {"error": "invalid_credentials"})
+        secret = os.environ.get("TOKEN_SECRET", "")
+        if not secret:
+            return ApiResponse(500, {"error": "server_misconfigured", "detail": "TOKEN_SECRET not set"})
+        ttl = int(os.environ.get("TOKEN_TTL_SECONDS", "0"))
+        token = issue_token(secret, ttl)
+        return ApiResponse(200, {"token": token})
 
     def create_phase(self, payload: dict[str, Any]) -> ApiResponse:
         required = ["phaseType", "startDate", "endDate"]

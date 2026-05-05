@@ -120,6 +120,8 @@ class PhaseApi:
             return self.get_metric_bench_volume(int(path.split("/")[4]))
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/summary", path):
             return self.get_phase_summary(int(path.split("/")[4]))
+        if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/exercise-volumes", path):
+            return self.get_phase_exercise_volumes(int(path.split("/")[4]))
 
         if method == "POST" and path == "/v1/import/screenshot":
             return self.import_screenshot(body)
@@ -740,6 +742,11 @@ class PhaseApi:
         if payload is None:
             return ApiResponse(404, {"error": "not_found"})
         return ApiResponse(200, payload)
+
+    def get_phase_exercise_volumes(self, phase_id: int) -> ApiResponse:
+        from phase_app.metrics import get_phase_exercise_volumes
+        items = get_phase_exercise_volumes(self.conn, phase_id)
+        return ApiResponse(200, {"items": items})
 
     def import_screenshot(self, payload: dict[str, Any]) -> ApiResponse:
         import base64

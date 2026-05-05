@@ -20,8 +20,9 @@ function readinessColor(r) {
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
-  const [yyyy, mm, dd] = dateStr.split('T')[0].split('-');
-  return `${dd}.${mm}.${yyyy}`;
+  const m = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  return String(dateStr);
 }
 
 function toInputDate(dateStr) {
@@ -386,7 +387,6 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
             </select>
           </td>
           <td><input type="number" min="0" max="10" step="0.1" value={form.eliteHrvReadiness} onChange={e => setForm(f => ({ ...f, eliteHrvReadiness: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="—" /></td>
-          <td><input type="number" min="0" step="0.1" value={form.garminOvernightHrv} onChange={e => setForm(f => ({ ...f, garminOvernightHrv: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="—" /></td>
           <td colSpan={2}>
             <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ width: '100%' }} placeholder="Notes…" />
           </td>
@@ -411,7 +411,6 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
         <td style={{ color: readinessColor(session.eliteHrvReadiness) }}>
           {session.eliteHrvReadiness ?? '—'}
         </td>
-        <td>{session.garminOvernightHrv ?? '—'}</td>
         <td>{e1rm ? e1rm.topSetE1rmKg : '—'}</td>
         <td>{vol ? vol.benchVolumeKgReps : '—'}</td>
         <td className="row-actions" onClick={e => e.stopPropagation()}>
@@ -512,7 +511,6 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
                 <th>Date</th>
                 <th>Type</th>
                 <th>Elite HRV</th>
-                <th>Garmin HRV</th>
                 <th>e1RM (kg)</th>
                 <th>Volume (kg·reps)</th>
                 <th></th>

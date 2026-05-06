@@ -29,7 +29,7 @@ export default function LogSessionForm({ phases, selectedPhaseId, onSessionLogge
     setError(null);
 
     if (eliteHrv !== '' && (Number(eliteHrv) < 0 || Number(eliteHrv) > 10)) {
-      setError('Elite HRV readiness must be between 0 and 10');
+      setError('Readiness must be between 0 and 10');
       return;
     }
 
@@ -82,7 +82,7 @@ export default function LogSessionForm({ phases, selectedPhaseId, onSessionLogge
 
       <div className="form-row">
         <div className="form-group">
-          <label>Elite HRV Readiness (0–10)</label>
+          <label>Readiness (0–10)</label>
           <input
             type="number"
             min="0"

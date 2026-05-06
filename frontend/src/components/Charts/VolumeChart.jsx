@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   BarChart,
   Bar,
@@ -10,6 +10,17 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useChartColors } from '../../hooks/useChartColors.js';
+
+const BENCH_TYPE_MAP = {
+  heavy:  'heavy_bench',
+  volume: 'volume_bench',
+  speed:  'speed_bench',
+};
+
+function normDate(d) {
+  if (!d) return '';
+  return String(d).split('T')[0];
+}
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -41,9 +52,10 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
-export default function VolumeChart({ sessions, exerciseVolumes }) {
+export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   const colors = useChartColors();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
+  const [benchFilters, setBenchFilters] = useState(['all']);
 
   useEffect(() => {
     if (exerciseVolumes.length > 0 && selectedExerciseId === null) {
@@ -55,16 +67,62 @@ export default function VolumeChart({ sessions, exerciseVolumes }) {
     }
   }, [exerciseVolumes]);
 
+  // Reset bench filter when exercise changes
+  useEffect(() => {
+    setBenchFilters(['all']);
+  }, [selectedExerciseId]);
+
   const selectedExercise = exerciseVolumes.find(e => e.exerciseId === selectedExerciseId);
+  const exerciseInfo = exercises?.find(e => e.exerciseId === selectedExerciseId);
+  const isBenchPress = exerciseInfo?.isBarbellBenchPress === true;
+
+  // date → sessionType map for filtering by bench type
+  const sessionTypeByDate = useMemo(() => {
+    const map = {};
+    (sessions ?? []).forEach(s => {
+      const key = normDate(s.sessionDate);
+      if (key) map[key] = s.sessionType;
+    });
+    return map;
+  }, [sessions]);
+
+  function toggleBenchFilter(type) {
+    if (type === 'all') {
+      setBenchFilters(['all']);
+    } else {
+      setBenchFilters(prev => {
+        const withoutAll = prev.filter(f => f !== 'all');
+        const hasType = withoutAll.includes(type);
+        const next = hasType ? withoutAll.filter(f => f !== type) : [...withoutAll, type];
+        return next.length === 0 ? ['all'] : next;
+      });
+    }
+  }
 
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
-    .map(s => ({ date: s.sessionDate, volume: s.volumeKgReps, topLoadKg: s.topLoadKg ?? null, sets: s.sets ?? [] }));
+    .map(s => {
+      const dateKey = normDate(s.sessionDate);
+      return {
+        date: s.sessionDate,
+        volume: s.volumeKgReps,
+        topLoadKg: s.topLoadKg ?? null,
+        sets: s.sets ?? [],
+        sessionType: sessionTypeByDate[dateKey] ?? null,
+      };
+    })
+    .filter(s => {
+      if (!isBenchPress) return true;
+      if (benchFilters.includes('all')) return true;
+      return benchFilters.some(f => BENCH_TYPE_MAP[f] === s.sessionType);
+    });
 
   const hasData = data.length > 0;
   const title = selectedExercise
     ? `Volume — ${selectedExercise.exerciseName} (kg·reps)`
     : 'Volume (kg·reps)';
+
+  const allBenchSelected = ['heavy', 'volume', 'speed'].every(t => benchFilters.includes(t));
 
   return (
     <div className="chart-wrapper">
@@ -83,9 +141,28 @@ export default function VolumeChart({ sessions, exerciseVolumes }) {
           </select>
         )}
       </div>
+      {isBenchPress && (
+        <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+          {['all', 'heavy', 'volume', 'speed'].map(type => {
+            const isActive = type === 'all'
+              ? benchFilters.includes('all') || allBenchSelected
+              : benchFilters.includes(type) && !benchFilters.includes('all');
+            return (
+              <button
+                key={type}
+                className={`filter-chip${isActive ? ' active' : ''}`}
+                onClick={() => toggleBenchFilter(type)}
+                style={{ fontSize: 11, padding: '1px 8px' }}
+              >
+                {type}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {hasData ? (
         <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={data} margin={{ top: 20, right: 16, bottom: 24, left: 0 }}>
+          <BarChart data={data} margin={{ top: 20, right: 16, bottom: 24, left: 0 }} barSize={24}>
             <CartesianGrid strokeDasharray="3 3" stroke={colors.border} vertical={false} />
             <XAxis
               dataKey="date"

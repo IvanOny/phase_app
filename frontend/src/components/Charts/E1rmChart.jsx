@@ -10,6 +10,20 @@ import {
 } from 'recharts';
 import { useChartColors } from '../../hooks/useChartColors.js';
 
+// 10-color gradient: red (1) → orange → yellow → lime → green (10), base is 7
+const READINESS_COLORS = [
+  '#ef4444', // 1
+  '#f97316', // 2
+  '#fb923c', // 3
+  '#fbbf24', // 4
+  '#facc15', // 5
+  '#a3e635', // 6
+  '#4ade80', // 7 — base
+  '#22c55e', // 8
+  '#10b981', // 9
+  '#059669', // 10
+];
+
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const [, mm, dd] = dateStr.split('T')[0].split('-');
@@ -44,19 +58,17 @@ export default function E1rmChart({ sessions, metricsMap }) {
 
   function readinessColor(r) {
     if (r == null) return colors.readyNone;
-    if (r >= 7)   return colors.readyGreen;
-    if (r >= 4)   return colors.readyYellow;
-    return colors.readyRed;
+    const idx = Math.round(Math.max(1, Math.min(10, r))) - 1;
+    return READINESS_COLORS[idx];
   }
 
   function readinessDotProps(val) {
-    if (val == null) return { r: 5, opacity: 1 };
-    if (val >= 7) {
-      const step = val - 7;
-      return { r: 7 + step * 3, opacity: Math.max(0.2, 0.85 - step * 0.18) };
-    }
-    const step = 7 - val;
-    return { r: 5 + step * 3, opacity: Math.max(0.15, 0.85 - step * 0.15) };
+    if (val == null) return { r: 5, opacity: 0.5 };
+    const dist = Math.abs(Math.round(Math.max(1, Math.min(10, val))) - 7);
+    return {
+      r: 5 + dist * 2.5,
+      opacity: Math.max(0.4, 1.0 - dist * 0.1),
+    };
   }
 
   function ReadinessDot(props) {
@@ -182,10 +194,15 @@ export default function E1rmChart({ sessions, metricsMap }) {
             </div>
           )}
           <div className="readiness-legend">
-            <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyGreen }} />Ready (≥7)</span>
-            <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyYellow }} />Moderate (4–6)</span>
-            <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyRed }} />Low (&lt;4)</span>
-            <span className="legend-item"><span className="legend-dot" style={{ background: colors.readyNone }} />No data</span>
+            {READINESS_COLORS.map((color, i) => (
+              <span key={i} className="legend-item">
+                <span className="legend-dot" style={{ background: color, width: 10, height: 10 }} />
+                {i + 1}
+              </span>
+            ))}
+            <span className="legend-item">
+              <span className="legend-dot" style={{ background: colors.readyNone }} />—
+            </span>
           </div>
         </>
       ) : (

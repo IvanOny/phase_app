@@ -12,6 +12,25 @@ import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
 const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
 
+const TYPE_COLORS = {
+  heavy_bench:  '#7c3aed',
+  volume_bench: '#a855f7',
+  speed_bench:  '#ec4899',
+  run:          '#22c55e',
+  pull:         '#3b82f6',
+  other:        '#64748b',
+};
+
+const EXERCISE_PALETTE = [
+  '#818cf8', '#34d399', '#f97316', '#fbbf24',
+  '#a78bfa', '#fb7185', '#38bdf8', '#4ade80',
+  '#fb923c', '#e879f9', '#2dd4bf', '#facc15',
+];
+
+function exerciseColor(exerciseId) {
+  return EXERCISE_PALETTE[((exerciseId ?? 0) - 1) % EXERCISE_PALETTE.length];
+}
+
 function readinessColor(r) {
   if (r == null) return 'var(--text-muted)';
   if (r >= 7) return 'var(--ready-green)';
@@ -287,7 +306,10 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAut
           {data.map(se => (
             <div key={se.sessionExerciseId} className="exercise-block">
               <div className="exercise-block-header">
-                <div className="exercise-name">{se.exerciseName}</div>
+                <div className="exercise-name" style={{ color: exerciseColor(se.exerciseId) }}>
+                  <span className="exercise-color-dot" style={{ background: exerciseColor(se.exerciseId) }} />
+                  {se.exerciseName}
+                </div>
                 {isAuthenticated && (
                   <button
                     className="icon-btn icon-btn--danger"
@@ -423,7 +445,10 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
           <div>{formatDate(session.sessionDate)}</div>
           {session.notes && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{session.notes}</div>}
         </td>
-        <td className="session-type">{formatType(session.sessionType)}</td>
+        <td className="session-type">
+          <span className="type-dot" style={{ background: TYPE_COLORS[session.sessionType] ?? '#64748b' }} />
+          {formatType(session.sessionType)}
+        </td>
         <td style={{ color: readinessColor(session.eliteHrvReadiness) }}>
           {session.eliteHrvReadiness ?? '—'}
         </td>
@@ -533,7 +558,7 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
                 <th></th>
                 <th>Date</th>
                 <th>Type</th>
-                <th>Elite HRV</th>
+                <th>Readiness</th>
                 <th>e1RM (kg)</th>
                 <th>Volume (kg·reps)</th>
                 <th></th>

@@ -20,6 +20,18 @@ function daysRemaining(endDate) {
   return Math.ceil((end - now) / (1000 * 60 * 60 * 24));
 }
 
+function phaseProgress(startDate, endDate) {
+  if (!startDate || !endDate) return null;
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const total = end - start;
+  if (total <= 0) return null;
+  const elapsed = now - start;
+  return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+}
+
 function toInputDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -47,6 +59,7 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
   const days = daysRemaining(phase.endDate);
   const isComplete = days < 0;
   const label = PHASE_LABELS[phase.phaseType] || phase.phaseType;
+  const pct = phaseProgress(phase.startDate, phase.endDate);
 
   function startEdit() {
     setForm({
@@ -126,8 +139,17 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
 
   return (
     <div className="phase-header">
+      {pct !== null && (
+        <div className="phase-progress">
+          <div className="phase-progress-bar">
+            <div className="phase-progress-fill" style={{ width: `${pct}%` }}>
+              <span className="phase-progress-label">{pct}%</span>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="phase-header-row">
       <div className="phase-header-left">
-        <span className="phase-type-badge">{label}</span>
         <h1 className="phase-name">{phase.name}</h1>
         <p className="phase-dates">{formatDateRange(phase.startDate, phase.endDate)}</p>
         {phase.notes && <p className="phase-notes">{phase.notes}</p>}
@@ -162,6 +184,7 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
             </button>
           )}
         </div>
+      </div>
       </div>
       {confirmOpen && (
         <ConfirmDialog

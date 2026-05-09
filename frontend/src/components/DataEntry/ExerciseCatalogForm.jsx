@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
-function ExerciseRow({ exercise, onUpdate }) {
+function ExerciseRow({ exercise, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function startEdit() {
     setForm({
@@ -52,18 +54,28 @@ function ExerciseRow({ exercise, onUpdate }) {
   }
 
   return (
-    <tr>
-      <td>{exercise.exerciseName}</td>
-      <td style={{ textAlign: 'center' }}>{exercise.isBarbellBenchPress ? '✓' : ''}</td>
-      <td style={{ textAlign: 'center' }}>{exercise.isBodyweight ? '✓' : ''}</td>
-      <td>
-        <button className="icon-btn" onClick={startEdit} title="Edit exercise">✏</button>
-      </td>
-    </tr>
+    <>
+      <tr>
+        <td>{exercise.exerciseName}</td>
+        <td style={{ textAlign: 'center' }}>{exercise.isBarbellBenchPress ? '✓' : ''}</td>
+        <td style={{ textAlign: 'center' }}>{exercise.isBodyweight ? '✓' : ''}</td>
+        <td>
+          <button className="icon-btn" onClick={startEdit} title="Edit exercise">✏</button>
+          <button className="icon-btn icon-btn--danger" onClick={() => setConfirmOpen(true)} title="Delete exercise">🗑</button>
+        </td>
+      </tr>
+      {confirmOpen && (
+        <ConfirmDialog
+          message={`Delete "${exercise.exerciseName}"? This cannot be undone.`}
+          onConfirm={async () => { setConfirmOpen(false); await onDelete(exercise.exerciseId); }}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
-export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onExerciseUpdated }) {
+export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onExerciseUpdated, onExerciseDeleted }) {
   const [newName, setNewName] = useState('');
   const [newIsBench, setNewIsBench] = useState(false);
   const [newIsBodyweight, setNewIsBodyweight] = useState(false);
@@ -103,7 +115,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
         </thead>
         <tbody>
           {exercises.map(ex => (
-            <ExerciseRow key={ex.exerciseId} exercise={ex} onUpdate={onExerciseUpdated} />
+            <ExerciseRow key={ex.exerciseId} exercise={ex} onUpdate={onExerciseUpdated} onDelete={onExerciseDeleted} />
           ))}
         </tbody>
       </table>

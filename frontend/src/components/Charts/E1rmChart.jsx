@@ -5,23 +5,22 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
   ResponsiveContainer,
 } from 'recharts';
 import { useChartColors } from '../../hooks/useChartColors.js';
 
-// 10-color gradient: red (1) → orange → yellow → lime → green (10), base is 7
+// 10-color gradient: red (1) → orange → amber → yellow → lime → green (10), base is 7
 const READINESS_COLORS = [
-  '#ef4444', // 1
-  '#f97316', // 2
-  '#fb923c', // 3
-  '#fbbf24', // 4
-  '#facc15', // 5
-  '#a3e635', // 6
-  '#4ade80', // 7 — base
-  '#22c55e', // 8
-  '#10b981', // 9
-  '#059669', // 10
+  '#ef4444', // 1 — red
+  '#f97316', // 2 — orange
+  '#f59e0b', // 3 — amber
+  '#eab308', // 4 — yellow
+  '#0891b2', // 5 — cyan (darkest)
+  '#0d9488', // 6 — teal
+  '#10b981', // 7 — emerald (base)
+  '#22c55e', // 8 — green
+  '#4ade80', // 9 — light green
+  '#a3e635', // 10 — lime (lightest)
 ];
 
 function formatDate(dateStr) {
@@ -30,22 +29,12 @@ function formatDate(dateStr) {
   return `${dd}.${mm}`;
 }
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(pointer: coarse)').matches);
-  useEffect(() => {
-    const mq = window.matchMedia('(pointer: coarse)');
-    const handler = e => setIsMobile(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-  return isMobile;
-}
 
 export default function E1rmChart({ sessions, metricsMap }) {
   const colors = useChartColors();
-  const isMobile = useIsMobile();
   const [showInfo, setShowInfo] = useState(false);
-  const [selectedDot, setSelectedDot] = useState(null);
+  const [tooltip, setTooltip] = useState(null); // { x, y, data }
+  const chartRef = useRef(null);
   const infoRef = useRef(null);
 
   useEffect(() => {
@@ -66,8 +55,8 @@ export default function E1rmChart({ sessions, metricsMap }) {
     if (val == null) return { r: 5, opacity: 0.5 };
     const dist = Math.abs(Math.round(Math.max(1, Math.min(10, val))) - 7);
     return {
-      r: 5 + dist * 2.5,
-      opacity: Math.max(0.4, 1.0 - dist * 0.1),
+      r: 5 + dist * 4,
+      opacity: Math.min(1.0, 0.65 + dist * 0.12),
     };
   }
 
@@ -85,38 +74,17 @@ export default function E1rmChart({ sessions, metricsMap }) {
         fillOpacity={opacity}
         stroke={colors.bgApp}
         strokeWidth={1.5}
-        style={{ cursor: isMobile ? 'pointer' : 'default' }}
+        style={{ cursor: 'pointer' }}
         onClick={() => {
-          if (!isMobile) return;
-          setSelectedDot(prev => prev?.date === payload.date ? null : payload);
+          if (!chartRef.current) return;
+          const rect = chartRef.current.getBoundingClientRect();
+          const svgRect = chartRef.current.querySelector('svg')?.getBoundingClientRect();
+          if (!svgRect) return;
+          const x = svgRect.left - rect.left + cx;
+          const y = svgRect.top - rect.top + cy;
+          setTooltip(prev => prev?.data.date === payload.date ? null : { x, y, data: payload });
         }}
       />
-    );
-  }
-
-  function CustomTooltip({ active, payload }) {
-    if (!active || !payload?.length) return null;
-    const d = payload[0].payload;
-    return (
-      <div className="chart-tooltip">
-        <div className="tooltip-date">{formatDate(d.date)}</div>
-        <div className="tooltip-row">
-          <span>e1RM</span>
-          <strong>{d.e1rmKg} kg</strong>
-        </div>
-        <div className="tooltip-row">
-          <span>Top set</span>
-          <strong>{d.topSetLoadKg} kg × {d.topSetReps}</strong>
-        </div>
-        {d.eliteHrvReadiness != null && (
-          <div className="tooltip-row">
-            <span>Readiness</span>
-            <strong style={{ color: readinessColor(d.eliteHrvReadiness) }}>
-              {d.eliteHrvReadiness}
-            </strong>
-          </div>
-        )}
-      </div>
     );
   }
 
@@ -153,56 +121,62 @@ export default function E1rmChart({ sessions, metricsMap }) {
       </div>
       {hasData ? (
         <>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data} margin={{ top: 8, right: 16, bottom: 24, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
-              <XAxis
-                dataKey="date"
-                tickFormatter={formatDate}
-                tick={{ fill: colors.textMuted, fontSize: 12 }}
-                axisLine={{ stroke: colors.border }}
-                tickLine={false}
-              />
-              <YAxis
-                domain={['dataMin - 5', 'dataMax + 5']}
-                tickFormatter={v => `${v}`}
-                tick={{ fill: colors.textMuted, fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-                width={40}
-              />
-              {!isMobile && <Tooltip content={<CustomTooltip />} />}
-              <Line
-                type="monotone"
-                dataKey="e1rmKg"
-                stroke={colors.accent}
-                strokeWidth={2}
-                dot={<ReadinessDot />}
-                activeDot={isMobile ? false : { r: 7, fill: colors.accent }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-          {isMobile && selectedDot && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', marginTop: 8, fontSize: 13 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {formatDate(selectedDot.date)} · e1RM <strong style={{ color: 'var(--text-primary)' }}>{selectedDot.e1rmKg} kg</strong>
-                {selectedDot.eliteHrvReadiness != null && (
-                  <> · Readiness <strong style={{ color: readinessColor(selectedDot.eliteHrvReadiness) }}>{selectedDot.eliteHrvReadiness}</strong></>
+          <div ref={chartRef} style={{ position: 'relative' }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={data} margin={{ top: 8, right: 16, bottom: 24, left: 0 }} tabIndex={-1}>
+                <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={formatDate}
+                  tick={{ fill: colors.textMuted, fontSize: 12 }}
+                  axisLine={{ stroke: colors.border }}
+                  tickLine={false}
+                />
+                <YAxis
+                  domain={['dataMin - 5', 'dataMax + 5']}
+                  tickFormatter={v => `${v}`}
+                  tick={{ fill: colors.textMuted, fontSize: 12 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={40}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="e1rmKg"
+                  stroke={colors.accent}
+                  strokeWidth={2}
+                  dot={<ReadinessDot />}
+                  activeDot={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+            {tooltip && (
+              <div
+                className="chart-tooltip"
+                style={{
+                  position: 'absolute',
+                  left: tooltip.x,
+                  top: tooltip.y,
+                  transform: 'translate(-50%, -110%)',
+                  width: 'fit-content',
+                  minWidth: 0,
+                  cursor: 'pointer',
+                  zIndex: 10,
+                }}
+                onClick={() => setTooltip(null)}
+              >
+                <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>e1RM</div>
+                <div style={{ fontWeight: 600 }}>{tooltip.data.e1rmKg} kg</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>top set</div>
+                <div style={{ fontWeight: 600 }}>{tooltip.data.topSetLoadKg}×{tooltip.data.topSetReps}</div>
+                {tooltip.data.eliteHrvReadiness != null && (
+                  <>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>readiness</div>
+                    <div style={{ fontWeight: 600, color: readinessColor(tooltip.data.eliteHrvReadiness) }}>{tooltip.data.eliteHrvReadiness}</div>
+                  </>
                 )}
-              </span>
-              <button onClick={() => setSelectedDot(null)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, padding: '0 0 0 8px' }}>✕</button>
-            </div>
-          )}
-          <div className="readiness-legend">
-            {READINESS_COLORS.map((color, i) => (
-              <span key={i} className="legend-item">
-                <span className="legend-dot" style={{ background: color, width: 10, height: 10 }} />
-                {i + 1}
-              </span>
-            ))}
-            <span className="legend-item">
-              <span className="legend-dot" style={{ background: colors.readyNone }} />—
-            </span>
+              </div>
+            )}
           </div>
         </>
       ) : (

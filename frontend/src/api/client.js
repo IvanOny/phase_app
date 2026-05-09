@@ -210,6 +210,11 @@ export async function createExercise(payload) {
   return apiFetch('POST', '/v1/exercises', payload);
 }
 
+export async function deleteExercise(exerciseId) {
+  if (MOCK_MODE) return Promise.resolve({ deleted: true });
+  return apiFetch('DELETE', `/v1/exercises/${exerciseId}`);
+}
+
 export async function updateExercise(exerciseId, payload) {
   if (MOCK_MODE) {
     const idx = _exercises.findIndex(e => e.exerciseId === exerciseId);

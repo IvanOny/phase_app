@@ -26,6 +26,7 @@ export default function Dashboard({
   onDeleteSession,
   onUpdateBenchmark,
   onDeleteBenchmark,
+  summaryKey,
   theme,
   onToggleTheme,
   isAuthenticated,
@@ -44,15 +45,7 @@ export default function Dashboard({
         onLogout={onLogout}
         onLoginClick={onLoginClick}
       />
-      <PhaseNav
-        phases={phases}
-        selectedPhaseId={selectedPhase?.phaseId}
-        onSelect={onSelectPhase}
-        onAddPhase={onAddPhase}
-        onUpdatePhase={onUpdatePhase}
-        onDeletePhase={onDeletePhase}
-      />
-      {selectedPhase && <PhaseSummaryCard phaseId={selectedPhase.phaseId} />}
+      {selectedPhase && <PhaseSummaryCard phaseId={selectedPhase.phaseId} refreshKey={summaryKey} />}
       <E1rmChart sessions={sessions} metricsMap={e1rmMap} />
       <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} exercises={exercises} />
       <SessionsList
@@ -70,6 +63,14 @@ export default function Dashboard({
         onUpdateBenchmark={onUpdateBenchmark}
         onDeleteBenchmark={onDeleteBenchmark}
         isAuthenticated={isAuthenticated}
+      />
+      <PhaseNav
+        phases={phases}
+        selectedPhaseId={selectedPhase?.phaseId}
+        onSelect={onSelectPhase}
+        onAddPhase={onAddPhase}
+        onUpdatePhase={onUpdatePhase}
+        onDeletePhase={onDeletePhase}
       />
       {isAuthenticated && (
         <button

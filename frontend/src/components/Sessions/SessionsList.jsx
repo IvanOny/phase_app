@@ -227,7 +227,7 @@ function AddExerciseRow({ sessionId, catalog, nextOrder, onAdded }) {
 }
 
 // ---- Expanded session detail with exercise/set edit ----
-function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAuthenticated }) {
+function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExerciseDeleted, isAuthenticated }) {
   const [data, setData] = useState(null);
   const [confirmExercise, setConfirmExercise] = useState(null);
 
@@ -303,7 +303,7 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAut
           {data.length === 0 && (
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
           )}
-          {data.map(se => (
+          {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => (
             <div key={se.sessionExerciseId} className="exercise-block">
               <div className="exercise-block-header">
                 <div className="exercise-name" style={{ color: exerciseColor(se.exerciseId) }}>
@@ -373,7 +373,7 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAut
 }
 
 // ---- Session row with inline edit ----
-function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, isAuthenticated }) {
+function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, filterExerciseId, isAuthenticated }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -467,6 +467,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
         <SessionDetail
           sessionId={session.sessionId}
           exercises={exercises}
+          filterExerciseId={filterExerciseId}
           isAuthenticated={isAuthenticated}
         />
       )}
@@ -482,7 +483,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
 }
 
 // ---- Filter bar ----
-function FilterBar({ filters, onChange }) {
+function FilterBar({ filters, onChange, exercises }) {
   const types = SESSION_TYPES;
 
   function toggleType(type) {
@@ -491,6 +492,8 @@ function FilterBar({ filters, onChange }) {
       : [...filters.types, type];
     onChange({ ...filters, types: next });
   }
+
+  const isActive = filters.types.length < SESSION_TYPES.length || filters.fromDate || filters.toDate || filters.exerciseId;
 
   return (
     <div className="sessions-filter-bar">
@@ -507,15 +510,28 @@ function FilterBar({ filters, onChange }) {
         ))}
       </div>
       <div className="filter-section">
+        <span className="filter-label">Exercise:</span>
+        <select
+          value={filters.exerciseId}
+          onChange={e => onChange({ ...filters, exerciseId: e.target.value })}
+          className="inline-input"
+        >
+          <option value="">All</option>
+          {exercises.map(ex => (
+            <option key={ex.exerciseId} value={ex.exerciseId}>{ex.exerciseName}</option>
+          ))}
+        </select>
+      </div>
+      <div className="filter-section">
         <span className="filter-label">From:</span>
         <input type="date" value={filters.fromDate} onChange={e => onChange({ ...filters, fromDate: e.target.value })} className="inline-input filter-date" />
         <span className="filter-label">To:</span>
         <input type="date" value={filters.toDate} onChange={e => onChange({ ...filters, toDate: e.target.value })} className="inline-input filter-date" />
       </div>
-      {(filters.types.length < SESSION_TYPES.length || filters.fromDate || filters.toDate) && (
+      {isActive && (
         <button
           className="filter-chip"
-          onClick={() => onChange({ types: SESSION_TYPES, fromDate: '', toDate: '' })}
+          onClick={() => onChange({ types: SESSION_TYPES, fromDate: '', toDate: '', exerciseId: '' })}
         >
           Clear filters
         </button>
@@ -526,7 +542,17 @@ function FilterBar({ filters, onChange }) {
 
 export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, onUpdateSession, onDeleteSession, isAuthenticated }) {
   const [expanded, setExpanded] = useState(new Set());
-  const [filters, setFilters] = useState({ types: SESSION_TYPES, fromDate: '', toDate: '' });
+  const [filters, setFilters] = useState({ types: SESSION_TYPES, fromDate: '', toDate: '', exerciseId: '' });
+  const [sessionExercisesMap, setSessionExercisesMap] = useState({});
+
+  useEffect(() => {
+    sessions.forEach(s => {
+      if (sessionExercisesMap[s.sessionId] !== undefined) return;
+      getSessionExercises(s.sessionId).then(exes => {
+        setSessionExercisesMap(prev => ({ ...prev, [s.sessionId]: exes.map(e => e.exerciseId) }));
+      });
+    });
+  }, [sessions]);
 
   function toggleRow(sessionId) {
     setExpanded(prev => {
@@ -540,12 +566,18 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
     .filter(s => filters.types.includes(s.sessionType))
     .filter(s => !filters.fromDate || s.sessionDate >= filters.fromDate)
     .filter(s => !filters.toDate || s.sessionDate <= filters.toDate)
+    .filter(s => {
+      if (!filters.exerciseId) return true;
+      const exIds = sessionExercisesMap[s.sessionId];
+      if (exIds === undefined) return true;
+      return exIds.includes(Number(filters.exerciseId));
+    })
     .sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate));
 
   return (
     <div className="chart-wrapper">
       <div className="card-title">Sessions ({sessions.length})</div>
-      <FilterBar filters={filters} onChange={setFilters} />
+      <FilterBar filters={filters} onChange={setFilters} exercises={exercises} />
       {filtered.length === 0 ? (
         <div className="chart-empty">
           {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}
@@ -576,6 +608,7 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
                   onUpdated={onUpdateSession}
                   onDeleted={onDeleteSession}
                   exercises={exercises}
+                  filterExerciseId={filters.exerciseId}
                   isAuthenticated={isAuthenticated}
                 />
               ))}

@@ -104,6 +104,8 @@ class PhaseApi:
             return self.create_exercise(body)
         if method == "PATCH" and re.fullmatch(r"/v1/exercises/\d+", path):
             return self.update_exercise(int(path.split("/")[3]), body)
+        if method == "DELETE" and re.fullmatch(r"/v1/exercises/\d+", path):
+            return self.delete_exercise(int(path.split("/")[3]))
 
         if method == "GET" and path == "/v1/benchmarks":
             return self.list_benchmarks(qp)
@@ -722,6 +724,21 @@ class PhaseApi:
             "isBodyweight": bool(row["is_bodyweight"]),
         })
 
+    def delete_exercise(self, exercise_id: int) -> ApiResponse:
+        try:
+            cur = self._exec(
+                "DELETE FROM exercises WHERE exercise_id = %s RETURNING exercise_id",
+                (exercise_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return ApiResponse(404, {"error": "not_found"})
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(200, {"deleted": True, "exerciseId": exercise_id})
+
     def get_phase_summary(self, phase_id: int) -> ApiResponse:
         from phase_app.metrics import get_phase_summary
         payload = get_phase_summary(self.conn, phase_id)
@@ -830,7 +847,7 @@ class PhaseApi:
         if "error" in parsed:
             return ApiResponse(422, {"error": "not_a_workout"})
 
-        if not isinstance(parsed.get("exercises"), list) or not parsed.get("sessionDate"):
+        if not isinstance(parsed.get("exercises"), list):
             return ApiResponse(422, {"error": "parse_error", "raw": raw})
 
         return ApiResponse(200, parsed)

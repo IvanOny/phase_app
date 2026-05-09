@@ -31,6 +31,7 @@ export default function DataEntryPanel({
   onPhaseCreated,
   onExerciseCreated,
   onExerciseUpdated,
+  onExerciseDeleted,
   onImportComplete,
 }) {
   return (
@@ -94,6 +95,7 @@ export default function DataEntryPanel({
               exercises={exercises}
               onExerciseCreated={onExerciseCreated}
               onExerciseUpdated={onExerciseUpdated}
+              onExerciseDeleted={onExerciseDeleted}
             />
           )}
           {activeTab === 'import' && (

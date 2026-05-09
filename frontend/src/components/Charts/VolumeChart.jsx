@@ -1,11 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
   LabelList,
   ResponsiveContainer,
 } from 'recharts';
@@ -33,29 +32,12 @@ function formatVolume(v) {
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
 }
 
-function CustomTooltip({ active, payload }) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  const sets = d.sets ?? [];
-  return (
-    <div className="chart-tooltip">
-      {sets.map((s, i) => (
-        <div key={i} className="tooltip-row">
-          <span>{s.loadKg}×{s.reps}</span>
-        </div>
-      ))}
-      <div className="tooltip-row" style={{ marginTop: 4, borderTop: '1px solid var(--border)', paddingTop: 4 }}>
-        <span>Total</span>
-        <strong>{d.volume.toLocaleString()} kg·reps</strong>
-      </div>
-    </div>
-  );
-}
-
 export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   const colors = useChartColors();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
   const [benchFilters, setBenchFilters] = useState(['all']);
+  const [tooltip, setTooltip] = useState(null); // { x, y, data }
+  const chartRef = useRef(null);
 
   useEffect(() => {
     if (exerciseVolumes.length > 0 && selectedExerciseId === null) {
@@ -67,16 +49,15 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
     }
   }, [exerciseVolumes]);
 
-  // Reset bench filter when exercise changes
   useEffect(() => {
     setBenchFilters(['all']);
+    setTooltip(null);
   }, [selectedExerciseId]);
 
   const selectedExercise = exerciseVolumes.find(e => e.exerciseId === selectedExerciseId);
   const exerciseInfo = exercises?.find(e => e.exerciseId === selectedExerciseId);
   const isBenchPress = exerciseInfo?.isBarbellBenchPress === true;
 
-  // date → sessionType map for filtering by bench type
   const sessionTypeByDate = useMemo(() => {
     const map = {};
     (sessions ?? []).forEach(s => {
@@ -99,15 +80,19 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
     }
   }
 
+  const isBodyweight = exerciseInfo?.isBodyweight === true;
+
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
     .map(s => {
       const dateKey = normDate(s.sessionDate);
+      const sets = s.sets ?? [];
+      const totalReps = sets.reduce((sum, set) => sum + set.reps, 0);
       return {
         date: s.sessionDate,
-        volume: s.volumeKgReps,
-        topLoadKg: s.topLoadKg ?? null,
-        sets: s.sets ?? [],
+        volume: isBodyweight ? totalReps : s.volumeKgReps,
+        topLoadKg: isBodyweight ? null : (s.topLoadKg ?? null),
+        sets,
         sessionType: sessionTypeByDate[dateKey] ?? null,
       };
     })
@@ -118,11 +103,20 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
     });
 
   const hasData = data.length > 0;
+  const unit = isBodyweight ? 'reps' : 'kg·reps';
   const title = selectedExercise
-    ? `Volume — ${selectedExercise.exerciseName} (kg·reps)`
-    : 'Volume (kg·reps)';
+    ? `Volume — ${selectedExercise.exerciseName} (${unit})`
+    : `Volume (${unit})`;
 
   const allBenchSelected = ['heavy', 'volume', 'speed'].every(t => benchFilters.includes(t));
+
+  function handleBarClick(barData, _index, event) {
+    if (!chartRef.current) return;
+    const rect = chartRef.current.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    setTooltip(prev => prev?.data.date === barData.date ? null : { x, y, data: barData });
+  }
 
   return (
     <div className="chart-wrapper">
@@ -161,34 +155,60 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
         </div>
       )}
       {hasData ? (
-        <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={data} margin={{ top: 20, right: 16, bottom: 24, left: 0 }} barSize={24}>
-            <CartesianGrid strokeDasharray="3 3" stroke={colors.border} vertical={false} />
-            <XAxis
-              dataKey="date"
-              tickFormatter={formatDate}
-              tick={{ fill: colors.textMuted, fontSize: 12 }}
-              axisLine={{ stroke: colors.border }}
-              tickLine={false}
-            />
-            <YAxis
-              tickFormatter={formatVolume}
-              tick={{ fill: colors.textMuted, fontSize: 12 }}
-              axisLine={false}
-              tickLine={false}
-              width={40}
-            />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: colors.accentTint }} />
-            <Bar dataKey="volume" fill={colors.accent} radius={[3, 3, 0, 0]}>
-              <LabelList
-                dataKey="topLoadKg"
-                position="top"
-                formatter={v => (v ? `${v}kg` : '')}
-                style={{ fontSize: 10, fill: colors.textMuted }}
+        <div ref={chartRef} style={{ position: 'relative' }}>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={data} margin={{ top: 20, right: 16, bottom: 24, left: 0 }} barSize={24} tabIndex={-1}>
+              <CartesianGrid strokeDasharray="3 3" stroke={colors.border} vertical={false} />
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDate}
+                tick={{ fill: colors.textMuted, fontSize: 12 }}
+                axisLine={{ stroke: colors.border }}
+                tickLine={false}
               />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+              <YAxis
+                tickFormatter={formatVolume}
+                tick={{ fill: colors.textMuted, fontSize: 12 }}
+                axisLine={false}
+                tickLine={false}
+                width={40}
+              />
+              <Bar dataKey="volume" fill={colors.accent} radius={[3, 3, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }}>
+                <LabelList
+                  dataKey="topLoadKg"
+                  position="top"
+                  formatter={v => (v ? `${v}kg` : '')}
+                  style={{ fontSize: 10, fill: colors.textMuted }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          {tooltip && (
+            <div
+              className="chart-tooltip"
+              style={{
+                position: 'absolute',
+                left: tooltip.x,
+                top: tooltip.y,
+                transform: 'translate(-50%, -110%)',
+                width: 'fit-content',
+                minWidth: 0,
+                cursor: 'pointer',
+                zIndex: 10,
+              }}
+              onClick={() => setTooltip(null)}
+            >
+              {tooltip.data.sets.map((s, i) => (
+                <div key={i}>{isBodyweight ? `${s.reps} reps` : `${s.loadKg}×${s.reps}`}</div>
+              ))}
+              <div style={{ marginTop: 4, borderTop: '1px solid var(--border)', paddingTop: 4 }}>
+                <div>Total</div>
+                <strong>{tooltip.data.volume.toLocaleString()}</strong>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{unit}</div>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
         <div className="chart-empty">
           {exerciseVolumes.length === 0

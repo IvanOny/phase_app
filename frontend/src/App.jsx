@@ -40,6 +40,7 @@ import {
   deleteBenchmark,
   createExercise,
   updateExercise,
+  deleteExercise,
 } from './api/client.js';
 
 function App() {
@@ -54,6 +55,7 @@ function App() {
   const [exerciseVolumesMap, setExerciseVolumesMap] = useState({});
   const [benchmarksMap, setBenchmarksMap] = useState({});
   const [exercises, setExercises] = useState([]);
+  const [summaryKey, setSummaryKey] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState('session');
   const [initialPhaseType, setInitialPhaseType] = useState(null);
@@ -201,6 +203,11 @@ function App() {
     return ex;
   }
 
+  async function handleDeleteExercise(exerciseId) {
+    await deleteExercise(exerciseId);
+    setExercises(prev => prev.filter(e => e.exerciseId !== exerciseId));
+  }
+
   async function handleUpdateExercise(exerciseId, payload) {
     const updated = await updateExercise(exerciseId, payload);
     setExercises(prev => prev.map(e => e.exerciseId === exerciseId ? { ...e, ...updated } : e)
@@ -249,6 +256,7 @@ function App() {
         onDeleteSession={(sessionId) => handleDeleteSession(sessionId, selectedPhaseId)}
         onUpdateBenchmark={(benchmarkId, payload) => handleUpdateBenchmark(benchmarkId, selectedPhaseId, payload)}
         onDeleteBenchmark={(benchmarkId) => handleDeleteBenchmark(benchmarkId, selectedPhaseId)}
+        summaryKey={summaryKey}
         theme={theme}
         onToggleTheme={toggleTheme}
         isAuthenticated={isAuthenticated}
@@ -272,6 +280,7 @@ function App() {
           }}
           onSetsLogged={() => {
             loadPhaseData(selectedPhaseId);
+            setSummaryKey(k => k + 1);
             setPanelOpen(false);
           }}
           onBenchmarkLogged={benchmark => {
@@ -285,9 +294,11 @@ function App() {
           }}
           onExerciseCreated={handleCreateExercise}
           onExerciseUpdated={handleUpdateExercise}
+          onExerciseDeleted={handleDeleteExercise}
           onImportComplete={session => {
             handleSessionLogged(session);
             loadPhaseData(session.phaseId);
+            setSummaryKey(k => k + 1);
             setPanelOpen(false);
           }}
         />

@@ -10,6 +10,12 @@
 /* Phase Header */
 .phase-header {
   display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.phase-header-row {
+  display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
@@ -284,6 +290,19 @@
   }
 }
 
+.recharts-wrapper,
+.recharts-wrapper > svg,
+.recharts-surface,
+.recharts-wrapper *:focus,
+.recharts-wrapper *:focus-visible {
+  outline: none !important;
+}
+
+.chart-wrapper:focus-within {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 .chart-wrapper {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -370,7 +389,7 @@
   border-radius: var(--radius-md);
   padding: var(--space-3);
   font-size: 13px;
-  min-width: 160px;
+  width: fit-content;
 }
 
 .tooltip-date {
@@ -748,6 +767,40 @@
   gap: var(--space-2);
 }
 
+.phase-progress {
+  width: 100%;
+  margin-bottom: var(--space-3);
+}
+
+.phase-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--accent-tint-12);
+  border-radius: 3px;
+  overflow: visible;
+  position: relative;
+}
+
+.phase-progress-fill {
+  height: 100%;
+  min-width: 32px;
+  background: linear-gradient(90deg, var(--accent-tint-30), var(--accent));
+  border-radius: 3px;
+  position: relative;
+  transition: width 0.4s ease;
+}
+
+.phase-progress-label {
+  position: absolute;
+  right: 0;
+  top: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
 .phase-notes {
   font-size: 13px;
   color: var(--text-muted);
@@ -757,6 +810,7 @@
 /* Phase summary card */
 .phase-summary-card {
   display: flex;
+  align-items: stretch;
   gap: var(--space-4);
   flex-wrap: wrap;
 }
@@ -769,7 +823,14 @@
   padding: var(--space-3) var(--space-4);
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 4px;
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.improvement-tile {
+  border-width: 1px;
+  border-style: solid;
 }
 
 .summary-tile-value {

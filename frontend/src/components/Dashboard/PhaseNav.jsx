@@ -20,6 +20,7 @@ export default function PhaseNav({
   onAddPhase,
   onUpdatePhase,
   onDeletePhase,
+  isAuthenticated,
 }) {
   const activePhase = phases.find(p => p.phaseId === selectedPhaseId);
   const [selectedType, setSelectedType] = useState(activePhase?.phaseType ?? 'bench');
@@ -142,32 +143,36 @@ export default function PhaseNav({
               onKeyDown={e => e.key === 'Enter' && onSelect(phase.phaseId)}
             >
               <span className="pill-name">{phase.name || '(unnamed)'}</span>
-              <span className="pill-actions">
-                <button
-                  className="pill-action-btn"
-                  title="Edit"
-                  onClick={e => startEdit(phase, e)}
-                  aria-label="Edit phase"
-                >✎</button>
-                <button
-                  className="pill-action-btn pill-action-btn--danger"
-                  title="Delete"
-                  onClick={e => handleDelete(phase.phaseId, e)}
-                  aria-label="Delete phase"
-                >×</button>
-              </span>
+              {isAuthenticated && (
+                <span className="pill-actions">
+                  <button
+                    className="pill-action-btn"
+                    title="Edit"
+                    onClick={e => startEdit(phase, e)}
+                    aria-label="Edit phase"
+                  >✎</button>
+                  <button
+                    className="pill-action-btn pill-action-btn--danger"
+                    title="Delete"
+                    onClick={e => handleDelete(phase.phaseId, e)}
+                    aria-label="Delete phase"
+                  >×</button>
+                </span>
+              )}
             </div>
           );
         })}
 
-        <button
-          className="phase-pill-add"
-          style={{ '--tab-color': TYPE_CONFIG[selectedType].color }}
-          onClick={() => onAddPhase(selectedType)}
-          title={`Add ${TYPE_CONFIG[selectedType].label} phase`}
-        >
-          + Add
-        </button>
+        {isAuthenticated && (
+          <button
+            className="phase-pill-add"
+            style={{ '--tab-color': TYPE_CONFIG[selectedType].color }}
+            onClick={() => onAddPhase(selectedType)}
+            title={`Add ${TYPE_CONFIG[selectedType].label} phase`}
+          >
+            + Add
+          </button>
+        )}
       </div>
       {confirmPhaseId && (
         <ConfirmDialog

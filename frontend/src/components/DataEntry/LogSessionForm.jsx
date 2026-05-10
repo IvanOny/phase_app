@@ -14,7 +14,7 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function LogSessionForm({ phases, selectedPhaseId, onSessionLogged }) {
+export default function LogSessionForm({ phases, selectedPhaseId, sessions = [], onSessionLogged }) {
   const [phaseId, setPhaseId] = useState(selectedPhaseId || (phases[0]?.phaseId ?? ''));
   const [date, setDate] = useState(today());
   const [sessionType, setSessionType] = useState('heavy_bench');
@@ -23,16 +23,17 @@ export default function LogSessionForm({ phases, selectedPhaseId, onSessionLogge
   const [notes, setNotes] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [conflict, setConflict] = useState(null); // existing session with same date+type
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError(null);
+  function resetForm() {
+    setDate(today());
+    setEliteHrv('');
+    setGarminHrv('');
+    setNotes('');
+    setConflict(null);
+  }
 
-    if (eliteHrv !== '' && (Number(eliteHrv) < 0 || Number(eliteHrv) > 10)) {
-      setError('Readiness must be between 0 and 10');
-      return;
-    }
-
+  async function doCreate() {
     setSubmitting(true);
     try {
       const session = await createSession({
@@ -44,15 +45,38 @@ export default function LogSessionForm({ phases, selectedPhaseId, onSessionLogge
         notes: notes || null,
       });
       onSessionLogged(session);
-      setDate(today());
-      setEliteHrv('');
-      setGarminHrv('');
-      setNotes('');
+      resetForm();
     } catch (err) {
       setError(err.message);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+
+    if (eliteHrv !== '' && (Number(eliteHrv) < 0 || Number(eliteHrv) > 10)) {
+      setError('Readiness must be between 0 and 10');
+      return;
+    }
+
+    // Check for a single existing session with same phase/date/type
+    const matches = sessions.filter(
+      s => s.phaseId === Number(phaseId) && s.sessionDate === date && s.sessionType === sessionType
+    );
+    if (matches.length === 1) {
+      setConflict(matches[0]);
+      return;
+    }
+
+    await doCreate();
+  }
+
+  function handleAppend() {
+    onSessionLogged(conflict);
+    resetForm();
   }
 
   return (
@@ -117,9 +141,28 @@ export default function LogSessionForm({ phases, selectedPhaseId, onSessionLogge
 
       {error && <div className="form-error">{error}</div>}
 
-      <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={submitting}>
-        {submitting ? 'Saving…' : 'Log Session'}
-      </button>
+      {conflict ? (
+        <div className="session-conflict">
+          <p className="session-conflict-msg">
+            A <strong>{sessionType.replace(/_/g, ' ')}</strong> session already exists on {date}. What would you like to do?
+          </p>
+          <div className="session-conflict-actions">
+            <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={handleAppend}>
+              Append to existing
+            </button>
+            <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={doCreate} disabled={submitting}>
+              {submitting ? 'Saving…' : 'Create separate'}
+            </button>
+          </div>
+          <button type="button" className="btn-link" onClick={() => setConflict(null)}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={submitting}>
+          {submitting ? 'Saving…' : 'Log Session'}
+        </button>
+      )}
     </form>
   );
 }

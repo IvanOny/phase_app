@@ -1,7 +1,6 @@
 import './DataEntryPanel.css';
 import LogSessionForm from './LogSessionForm.jsx';
 import LogSetsForm from './LogSetsForm.jsx';
-import LogBenchmarkForm from './LogBenchmarkForm.jsx';
 import CreatePhaseForm from './CreatePhaseForm.jsx';
 import ExerciseCatalogForm from './ExerciseCatalogForm.jsx';
 import ScreenshotImportForm from './ScreenshotImportForm.jsx';
@@ -10,7 +9,6 @@ const TABS = [
   { id: 'import',    label: 'Import' },
   { id: 'session',   label: 'Session' },
   { id: 'sets',      label: 'Sets' },
-  { id: 'benchmark', label: 'Benchmark' },
   { id: 'exercises', label: 'Exercises' },
   { id: 'phase',     label: 'Phase' },
 ];
@@ -27,7 +25,6 @@ export default function DataEntryPanel({
   exercises,
   onSessionLogged,
   onSetsLogged,
-  onBenchmarkLogged,
   onPhaseCreated,
   onExerciseCreated,
   onExerciseUpdated,
@@ -69,6 +66,7 @@ export default function DataEntryPanel({
             <LogSessionForm
               phases={phases}
               selectedPhaseId={selectedPhaseId}
+              sessions={sessions}
               onSessionLogged={session => {
                 onSessionLogged(session);
               }}
@@ -79,15 +77,6 @@ export default function DataEntryPanel({
               sessions={sessions}
               exercises={exercises}
               onSetsLogged={onSetsLogged}
-            />
-          )}
-          {activeTab === 'benchmark' && (
-            <LogBenchmarkForm
-              phases={phases}
-              selectedPhaseId={selectedPhaseId}
-              onBenchmarkLogged={benchmark => {
-                onBenchmarkLogged(benchmark);
-              }}
             />
           )}
           {activeTab === 'exercises' && (

@@ -36,7 +36,7 @@ CREATE TABLE sessions (
         CHECK (elite_hrv_readiness IS NULL OR (elite_hrv_readiness >= 0 AND elite_hrv_readiness <= 10)),
     CONSTRAINT chk_garmin_overnight_hrv_nonnegative
         CHECK (garmin_overnight_hrv IS NULL OR garmin_overnight_hrv >= 0),
-    CONSTRAINT uq_sessions_phase_date_type UNIQUE (phase_id, session_date, session_type)
+    -- no unique constraint on (phase_id, session_date, session_type): multiple sessions per day/type are allowed
 );
 
 CREATE INDEX idx_sessions_phase_date

@@ -14,8 +14,7 @@ export default function Dashboard({
   e1rmMap,
   volumeMap,
   exerciseVolumes,
-  benchmarks,
-  previousBenchmarks,
+  maintenanceData,
   exercises,
   onSelectPhase,
   onOpenPanel,
@@ -24,8 +23,6 @@ export default function Dashboard({
   onDeletePhase,
   onUpdateSession,
   onDeleteSession,
-  onUpdateBenchmark,
-  onDeleteBenchmark,
   summaryKey,
   theme,
   onToggleTheme,
@@ -45,9 +42,35 @@ export default function Dashboard({
         onLogout={onLogout}
         onLoginClick={onLoginClick}
       />
-      {selectedPhase && <PhaseSummaryCard phaseId={selectedPhase.phaseId} refreshKey={summaryKey} />}
-      <E1rmChart sessions={sessions} metricsMap={e1rmMap} />
-      <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} exercises={exercises} />
+      {sessions.length === 0 ? (
+        <div className="phase-no-data">
+          <p>Дасть ся чути.</p>
+          <p>То ще треба дожити.</p>
+        </div>
+      ) : (
+        <>
+          {selectedPhase && (() => {
+            const sorted = [...phases].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+            const idx = sorted.findIndex(p => p.phaseId === selectedPhase.phaseId);
+            const prevPhaseId = idx > 0 ? sorted[idx - 1].phaseId : undefined;
+            const bestSet = sessions.reduce((best, s) => {
+              const m = e1rmMap[s.sessionId];
+              if (!m || !m.topSetE1rmKg) return best;
+              if (!best || m.topSetE1rmKg > best.e1rmKg) {
+                return { loadKg: m.topSetLoadKg, reps: m.topSetReps, e1rmKg: m.topSetE1rmKg };
+              }
+              return best;
+            }, null);
+            return <PhaseSummaryCard phaseId={selectedPhase.phaseId} previousPhaseId={prevPhaseId} bestSet={bestSet} refreshKey={summaryKey} />;
+          })()}
+          <E1rmChart sessions={sessions} metricsMap={e1rmMap} />
+          <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} exercises={exercises} />
+          <MaintenancePanel
+            maintenanceData={maintenanceData}
+            currentPhaseType={selectedPhase?.phaseType}
+          />
+        </>
+      )}
       <SessionsList
         sessions={sessions}
         e1rmMap={e1rmMap}
@@ -57,13 +80,6 @@ export default function Dashboard({
         onDeleteSession={onDeleteSession}
         isAuthenticated={isAuthenticated}
       />
-      <MaintenancePanel
-        currentBenchmarks={benchmarks}
-        previousBenchmarks={previousBenchmarks}
-        onUpdateBenchmark={onUpdateBenchmark}
-        onDeleteBenchmark={onDeleteBenchmark}
-        isAuthenticated={isAuthenticated}
-      />
       <PhaseNav
         phases={phases}
         selectedPhaseId={selectedPhase?.phaseId}
@@ -71,6 +87,7 @@ export default function Dashboard({
         onAddPhase={onAddPhase}
         onUpdatePhase={onUpdatePhase}
         onDeletePhase={onDeletePhase}
+        isAuthenticated={isAuthenticated}
       />
       {isAuthenticated && (
         <button

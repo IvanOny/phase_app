@@ -34,6 +34,18 @@ def _get_api() -> PhaseApi:
     global _conn
     if _conn is None or _conn.closed:
         _conn = get_connection()
+        return PhaseApi(_conn)
+    # Ping to catch connections silently dropped by Supabase idle timeout.
+    # psycopg2 reports closed=0 even when the server has closed the socket,
+    # so we need an explicit round-trip to detect stale warm instances.
+    try:
+        _conn.cursor().execute("SELECT 1")
+    except Exception:
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = get_connection()
     return PhaseApi(_conn)
 
 

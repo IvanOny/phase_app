@@ -126,6 +126,8 @@ class PhaseApi:
             return self.get_phase_exercise_volumes(int(path.split("/")[4]))
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/maintenance", path):
             return self.get_phase_maintenance_metrics(int(path.split("/")[4]))
+        if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/session-bench-metrics", path):
+            return self.get_session_bench_metrics(int(path.split("/")[4]))
 
         if method == "POST" and path == "/v1/import/screenshot":
             return self.import_screenshot(body)
@@ -766,6 +768,10 @@ class PhaseApi:
         from phase_app.metrics import get_phase_exercise_volumes
         items = get_phase_exercise_volumes(self.conn, phase_id)
         return ApiResponse(200, {"items": items})
+
+    def get_session_bench_metrics(self, phase_id: int) -> ApiResponse:
+        from phase_app.metrics import get_session_bench_metrics
+        return ApiResponse(200, get_session_bench_metrics(self.conn, phase_id))
 
     def get_phase_maintenance_metrics(self, phase_id: int) -> ApiResponse:
         from phase_app.metrics import get_phase_maintenance

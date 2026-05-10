@@ -254,6 +254,11 @@ export async function getPhaseMaintenanceMetrics(phaseId) {
 
 // ---- Phase summary metrics ----
 
+export async function getPhaseSessionBenchMetrics(phaseId) {
+  if (MOCK_MODE) return Promise.resolve({ e1rm: {}, volume: {} });
+  return apiFetch('GET', `/v1/metrics/phases/${phaseId}/session-bench-metrics`);
+}
+
 export async function getPhaseSummary(phaseId) {
   if (MOCK_MODE) return Promise.resolve(null);
   return apiFetch('GET', `/v1/metrics/phases/${phaseId}/summary`, undefined, { allow404: true });

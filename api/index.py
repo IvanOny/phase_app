@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re as _re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,11 +14,18 @@ from phase_app.db_pg import get_connection
 
 app = Flask(__name__)
 
-CORS_ORIGINS = {
+_CORS_EXACT = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://phase-app-yf5x.vercel.app",
+    "https://phase-app-ivory.vercel.app",
 }
+_CORS_PATTERN = _re.compile(r"^https://phase-app(-[a-z0-9]+)*\.vercel\.app$")
+
+
+def _cors_allowed(origin: str) -> bool:
+    return origin in _CORS_EXACT or bool(_CORS_PATTERN.match(origin))
+
 
 _conn: psycopg2.extensions.connection | None = None
 
@@ -32,7 +40,7 @@ def _get_api() -> PhaseApi:
 @app.after_request
 def add_cors(response):
     origin = request.headers.get("Origin", "")
-    if origin in CORS_ORIGINS:
+    if _cors_allowed(origin):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"

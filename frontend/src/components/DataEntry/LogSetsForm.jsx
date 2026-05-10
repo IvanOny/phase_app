@@ -78,6 +78,25 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
 
   const selectedExercise = exercises.find(ex => ex.exerciseId === Number(exerciseId));
 
+  // label sessions — add a counter suffix when multiple share the same date+type
+  const sessionLabels = (() => {
+    const groups = {};
+    sessions.forEach(s => {
+      const key = `${s.sessionDate}|${s.sessionType}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(s);
+    });
+    const labels = {};
+    Object.values(groups).forEach(group => {
+      const sorted = [...group].sort((a, b) => a.sessionId - b.sessionId);
+      sorted.forEach((s, i) => {
+        const base = `${s.sessionDate} — ${s.sessionType.replace(/_/g, ' ')}`;
+        labels[s.sessionId] = group.length > 1 ? `${base} (${i + 1})` : base;
+      });
+    });
+    return labels;
+  })();
+
   return (
     <div>
       <div className="form-group">
@@ -90,7 +109,7 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
           <option value="">Select session…</option>
           {[...sessions].sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate)).map(s => (
             <option key={s.sessionId} value={s.sessionId}>
-              {s.sessionDate} — {s.sessionType.replace(/_/g, ' ')}
+              {sessionLabels[s.sessionId]}
             </option>
           ))}
         </select>

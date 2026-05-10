@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useExpandable } from '../../hooks/useExpandable.js';
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
 const PHASE_LABELS = {
@@ -49,6 +50,7 @@ function formatDateRange(start, end) {
 
 export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme, isAuthenticated, onLogout, onLoginClick }) {
   const [editing, setEditing] = useState(false);
+  const [showDays, toggleDays, headerRef] = useExpandable('phase-days');
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -60,6 +62,10 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
   const isComplete = days < 0;
   const label = PHASE_LABELS[phase.phaseType] || phase.phaseType;
   const pct = phaseProgress(phase.startDate, phase.endDate);
+  const start = new Date(phase.startDate);
+  const end = new Date(phase.endDate);
+  const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+  const dayNum = totalDays - days;
 
   function startEdit() {
     setForm({
@@ -138,7 +144,7 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
   }
 
   return (
-    <div className="phase-header">
+    <div ref={headerRef} className="phase-header">
       {pct !== null && (
         <div className="phase-progress">
           <div className="phase-progress-bar">
@@ -151,18 +157,7 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
       <div className="phase-header-row">
       <div className="phase-header-left">
         <h1 className="phase-name">{phase.name}</h1>
-        <p className="phase-dates">{formatDateRange(phase.startDate, phase.endDate)}</p>
         {phase.notes && <p className="phase-notes">{phase.notes}</p>}
-      </div>
-      <div className="phase-header-right">
-        {isComplete ? (
-          <span className="days-badge days-badge--done">Completed</span>
-        ) : (
-          <span className="days-badge">
-            <span className="days-number">{days}</span>
-            <span className="days-label">days left</span>
-          </span>
-        )}
         <div className="phase-actions">
           <button
             className="icon-btn theme-toggle-btn"
@@ -185,7 +180,23 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
           )}
         </div>
       </div>
+      <div className="phase-header-right">
+        {isComplete ? (
+          <span className="days-badge days-badge--done">Completed</span>
+        ) : (
+          <button className={`days-badge${showDays ? ' days-badge--open' : ''}`} onClick={toggleDays} style={{ cursor: 'pointer' }}>
+            <span className="days-number">{days}</span>
+            <span className="days-label">days left</span>
+          </button>
+        )}
       </div>
+      </div>
+      {showDays && (
+        <div className="e1rm-explanation" style={{ marginTop: 'var(--space-2)' }}>
+          <p>{formatDateRange(phase.startDate, phase.endDate)}</p>
+          <p>Day {dayNum} of {totalDays} — <strong>{days} days</strong> remaining (<strong>{pct}%</strong> complete)</p>
+        </div>
+      )}
       {confirmOpen && (
         <ConfirmDialog
           message={`Delete phase "${phase.name || phase.phaseType}"? This cannot be undone.`}

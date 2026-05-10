@@ -66,6 +66,7 @@ def get_phase_summary(conn: psycopg2.extensions.connection, phase_id: int) -> di
         cur.execute(
             """
             SELECT ROUND((es.load_kg * (1 + es.reps / 30.0))::numeric, 2) AS e1rm,
+                   es.load_kg, es.reps,
                    s.session_date
             FROM sessions s
             JOIN session_exercises se ON se.session_id = s.session_id
@@ -77,7 +78,21 @@ def get_phase_summary(conn: psycopg2.extensions.connection, phase_id: int) -> di
             (phase_id,),
         )
         e1rm_rows = cur.fetchall()
-        peak_e1rm = float(max(r["e1rm"] for r in e1rm_rows)) if e1rm_rows else None
+        peak_e1rm = None
+        peak_load_kg = None
+        peak_reps = None
+        start_e1rm = None
+        start_load_kg = None
+        start_reps = None
+        if e1rm_rows:
+            peak_row = max(e1rm_rows, key=lambda r: r["e1rm"])
+            peak_e1rm = float(peak_row["e1rm"])
+            peak_load_kg = float(peak_row["load_kg"])
+            peak_reps = int(peak_row["reps"])
+            first_row = e1rm_rows[0]
+            start_e1rm = float(first_row["e1rm"])
+            start_load_kg = float(first_row["load_kg"])
+            start_reps = int(first_row["reps"])
         lowest_e1rm = float(min(r["e1rm"] for r in e1rm_rows)) if e1rm_rows else None
         latest_e1rm = float(e1rm_rows[-1]["e1rm"]) if e1rm_rows else None
 
@@ -100,6 +115,11 @@ def get_phase_summary(conn: psycopg2.extensions.connection, phase_id: int) -> di
         "sessionCount": session_count,
         "avgHrv": avg_hrv,
         "peakE1rmKg": peak_e1rm,
+        "peakTopSetLoadKg": peak_load_kg,
+        "peakTopSetReps": peak_reps,
+        "startE1rmKg": start_e1rm,
+        "startTopSetLoadKg": start_load_kg,
+        "startTopSetReps": start_reps,
         "lowestE1rmKg": lowest_e1rm,
         "latestE1rmKg": latest_e1rm,
         "totalBenchVolumeKgReps": total_volume,
@@ -159,6 +179,85 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
         }
         for ex in exercises.values()
     ]
+
+
+def get_phase_maintenance(conn: psycopg2.extensions.connection, phase_id: int) -> dict[str, Any]:
+    with conn.cursor() as cur:
+        # Bodyweight top sets per session (pull-ups focus)
+        cur.execute(
+            """
+            SELECT s.session_id, s.session_date, e.exercise_name,
+                   MAX(es.reps) AS top_reps
+            FROM sessions s
+            JOIN session_exercises se ON se.session_id = s.session_id
+            JOIN exercises e ON e.exercise_id = se.exercise_id
+            JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+            WHERE s.phase_id = %s
+              AND e.is_bodyweight = 1
+              AND es.is_top_set = 1
+            GROUP BY s.session_id, s.session_date, e.exercise_name
+            ORDER BY s.session_date
+            """,
+            (phase_id,),
+        )
+        bw_rows = cur.fetchall()
+
+        # Run sessions (no exercises needed)
+        cur.execute(
+            "SELECT session_id, session_date FROM sessions "
+            "WHERE phase_id = %s AND session_type = 'run' ORDER BY session_date",
+            (phase_id,),
+        )
+        run_rows = cur.fetchall()
+
+        # Barbell bench press top sets per session
+        cur.execute(
+            """
+            SELECT s.session_id, s.session_date, es.load_kg, es.reps,
+                   ROUND((es.load_kg * (1 + es.reps / 30.0))::numeric, 2) AS e1rm_kg
+            FROM sessions s
+            JOIN session_exercises se ON se.session_id = s.session_id
+            JOIN exercises e ON e.exercise_id = se.exercise_id
+            JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+            WHERE s.phase_id = %s
+              AND e.is_barbell_bench_press = 1
+              AND es.is_top_set = 1
+            ORDER BY s.session_date, es.load_kg DESC
+            """,
+            (phase_id,),
+        )
+        bench_rows = cur.fetchall()
+
+    # One entry per session, highest e1rm wins
+    bench_by_session: dict[int, dict[str, Any]] = {}
+    for r in bench_rows:
+        sid = r["session_id"]
+        e1rm = float(r["e1rm_kg"])
+        if sid not in bench_by_session or e1rm > bench_by_session[sid]["e1rmKg"]:
+            bench_by_session[sid] = {
+                "sessionId": sid,
+                "sessionDate": str(r["session_date"]),
+                "loadKg": float(r["load_kg"]),
+                "reps": int(r["reps"]),
+                "e1rmKg": e1rm,
+            }
+
+    return {
+        "pullups": [
+            {
+                "sessionId": r["session_id"],
+                "sessionDate": str(r["session_date"]),
+                "exerciseName": r["exercise_name"],
+                "topReps": int(r["top_reps"]),
+            }
+            for r in bw_rows
+        ],
+        "run": [
+            {"sessionId": r["session_id"], "sessionDate": str(r["session_date"])}
+            for r in run_rows
+        ],
+        "bench": sorted(bench_by_session.values(), key=lambda x: x["sessionDate"]),
+    }
 
 
 def get_bench_volume(conn: psycopg2.extensions.connection, session_id: int) -> dict[str, Any] | None:

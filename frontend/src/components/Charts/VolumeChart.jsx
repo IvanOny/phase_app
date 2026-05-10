@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useTooltip } from '../../hooks/useExpandable.js';
 import {
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -9,6 +11,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useChartColors } from '../../hooks/useChartColors.js';
+
+const BENCH_TYPES = ['heavy', 'volume', 'speed'];
 
 const BENCH_TYPE_MAP = {
   heavy:  'heavy_bench',
@@ -35,9 +39,9 @@ function formatVolume(v) {
 export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   const colors = useChartColors();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
-  const [benchFilters, setBenchFilters] = useState(['all']);
-  const [tooltip, setTooltip] = useState(null); // { x, y, data }
-  const chartRef = useRef(null);
+  const [benchFilters, setBenchFilters] = useState(BENCH_TYPES);
+  const [tooltip, openTooltip, chartRef] = useTooltip('chart-volume');
+  const [hoveredDate, setHoveredDate] = useState(null);
 
   useEffect(() => {
     if (exerciseVolumes.length > 0 && selectedExerciseId === null) {
@@ -50,8 +54,8 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   }, [exerciseVolumes]);
 
   useEffect(() => {
-    setBenchFilters(['all']);
-    setTooltip(null);
+    setBenchFilters(BENCH_TYPES);
+    openTooltip(null);
   }, [selectedExerciseId]);
 
   const selectedExercise = exerciseVolumes.find(e => e.exerciseId === selectedExerciseId);
@@ -69,18 +73,16 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
 
   function toggleBenchFilter(type) {
     if (type === 'all') {
-      setBenchFilters(['all']);
+      setBenchFilters(allBenchSelected ? [] : BENCH_TYPES);
     } else {
-      setBenchFilters(prev => {
-        const withoutAll = prev.filter(f => f !== 'all');
-        const hasType = withoutAll.includes(type);
-        const next = hasType ? withoutAll.filter(f => f !== type) : [...withoutAll, type];
-        return next.length === 0 ? ['all'] : next;
-      });
+      setBenchFilters(prev =>
+        prev.includes(type) ? prev.filter(f => f !== type) : [...prev, type]
+      );
     }
   }
 
   const isBodyweight = exerciseInfo?.isBodyweight === true;
+  const allBenchSelected = BENCH_TYPES.every(t => benchFilters.includes(t));
 
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
@@ -98,7 +100,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
     })
     .filter(s => {
       if (!isBenchPress) return true;
-      if (benchFilters.includes('all')) return true;
+      if (allBenchSelected) return true;
       return benchFilters.some(f => BENCH_TYPE_MAP[f] === s.sessionType);
     });
 
@@ -108,14 +110,12 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
     ? `Volume — ${selectedExercise.exerciseName} (${unit})`
     : `Volume (${unit})`;
 
-  const allBenchSelected = ['heavy', 'volume', 'speed'].every(t => benchFilters.includes(t));
-
   function handleBarClick(barData, _index, event) {
     if (!chartRef.current) return;
     const rect = chartRef.current.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
-    setTooltip(prev => prev?.data.date === barData.date ? null : { x, y, data: barData });
+    openTooltip(tooltip?.data.date === barData.date ? null : { x, y, data: barData });
   }
 
   return (
@@ -139,8 +139,8 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
         <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
           {['all', 'heavy', 'volume', 'speed'].map(type => {
             const isActive = type === 'all'
-              ? benchFilters.includes('all') || allBenchSelected
-              : benchFilters.includes(type) && !benchFilters.includes('all');
+              ? allBenchSelected
+              : benchFilters.includes(type);
             return (
               <button
                 key={type}
@@ -173,7 +173,20 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                 tickLine={false}
                 width={40}
               />
-              <Bar dataKey="volume" fill={colors.accent} radius={[3, 3, 0, 0]} onClick={handleBarClick} style={{ cursor: 'pointer' }}>
+              <Bar
+                dataKey="volume"
+                radius={[3, 3, 0, 0]}
+                onClick={handleBarClick}
+                onMouseEnter={(data) => setHoveredDate(data.date)}
+                onMouseLeave={() => setHoveredDate(null)}
+                style={{ cursor: 'pointer' }}
+              >
+                {data.map((entry, i) => {
+                  const isActive = tooltip?.data.date === entry.date;
+                  const isHovered = hoveredDate === entry.date;
+                  const hasAny = tooltip != null;
+                  return <Cell key={i} fill={colors.accent} fillOpacity={isActive ? 1 : hasAny ? 0.35 : isHovered ? 0.75 : 1} />;
+                })}
                 <LabelList
                   dataKey="topLoadKg"
                   position="top"
@@ -196,7 +209,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                 cursor: 'pointer',
                 zIndex: 10,
               }}
-              onClick={() => setTooltip(null)}
+              onClick={() => openTooltip(null)}
             >
               {tooltip.data.sets.map((s, i) => (
                 <div key={i}>{isBodyweight ? `${s.reps} reps` : `${s.loadKg}×${s.reps}`}</div>

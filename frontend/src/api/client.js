@@ -3,7 +3,6 @@ import {
   MOCK_SESSIONS,
   MOCK_E1RM_METRICS,
   MOCK_VOLUME_METRICS,
-  MOCK_BENCHMARKS,
   MOCK_EXERCISES,
   MOCK_EXERCISE_VOLUMES,
 } from '../data/mockData.js';
@@ -22,7 +21,6 @@ let _phases = MOCK_PHASES.map(p => ({ ...p }));
 let _sessions = MOCK_SESSIONS.map(s => ({ ...s }));
 let _e1rmMetrics = { ...MOCK_E1RM_METRICS };
 let _volumeMetrics = { ...MOCK_VOLUME_METRICS };
-let _benchmarks = MOCK_BENCHMARKS.map(b => ({ ...b }));
 let _exercises = MOCK_EXERCISES.map(e => ({ ...e }));
 let _sessionExercises = [];
 let _nextId = 9000;
@@ -249,39 +247,9 @@ export async function getPhaseExerciseVolumes(phaseId) {
   return apiFetchList('GET', `/v1/metrics/phases/${phaseId}/exercise-volumes`);
 }
 
-// ---- Benchmarks ----
-
-export async function getBenchmarksByPhase(phaseId) {
-  if (MOCK_MODE) {
-    return Promise.resolve(_benchmarks.filter(b => b.phaseId === phaseId));
-  }
-  return apiFetchList('GET', `/v1/benchmarks?phaseId=${phaseId}`);
-}
-
-export async function createBenchmark(payload) {
-  if (MOCK_MODE) {
-    const benchmark = { benchmarkId: nextId(), ...payload };
-    _benchmarks.push(benchmark);
-    return Promise.resolve(benchmark);
-  }
-  return apiFetch('POST', '/v1/benchmarks', payload);
-}
-
-export async function updateBenchmark(benchmarkId, payload) {
-  if (MOCK_MODE) {
-    const idx = _benchmarks.findIndex(b => b.benchmarkId === benchmarkId);
-    if (idx !== -1) _benchmarks[idx] = { ..._benchmarks[idx], ...payload };
-    return Promise.resolve(_benchmarks[idx]);
-  }
-  return apiFetch('PATCH', `/v1/benchmarks/${benchmarkId}`, payload);
-}
-
-export async function deleteBenchmark(benchmarkId) {
-  if (MOCK_MODE) {
-    _benchmarks = _benchmarks.filter(b => b.benchmarkId !== benchmarkId);
-    return Promise.resolve({ deleted: true });
-  }
-  return apiFetch('DELETE', `/v1/benchmarks/${benchmarkId}`);
+export async function getPhaseMaintenanceMetrics(phaseId) {
+  if (MOCK_MODE) return Promise.resolve({ pullups: [], run: [], bench: [] });
+  return apiFetch('GET', `/v1/metrics/phases/${phaseId}/maintenance`, undefined, { allow404: true });
 }
 
 // ---- Phase summary metrics ----

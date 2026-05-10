@@ -30,14 +30,12 @@ import {
   getBenchE1rm,
   getBenchVolume,
   getPhaseExerciseVolumes,
-  getBenchmarksByPhase,
+  getPhaseMaintenanceMetrics,
   getExercises,
   updatePhase,
   deletePhase,
   updateSession,
   deleteSession,
-  updateBenchmark,
-  deleteBenchmark,
   createExercise,
   updateExercise,
   deleteExercise,
@@ -53,11 +51,11 @@ function App() {
   const [e1rmMap, setE1rmMap] = useState({});
   const [volumeMap, setVolumeMap] = useState({});
   const [exerciseVolumesMap, setExerciseVolumesMap] = useState({});
-  const [benchmarksMap, setBenchmarksMap] = useState({});
+  const [maintenanceMap, setMaintenanceMap] = useState({});
   const [exercises, setExercises] = useState([]);
   const [summaryKey, setSummaryKey] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState('session');
+  const [panelTab, setPanelTab] = useState('import');
   const [initialPhaseType, setInitialPhaseType] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -77,14 +75,14 @@ function App() {
 
   const loadPhaseData = useCallback(async (phaseId) => {
     if (!phaseId) return;
-    const [sessions, benchmarks, exerciseVolumes] = await Promise.all([
+    const [sessions, exerciseVolumes, maintenance] = await Promise.all([
       getSessionsByPhase(phaseId),
-      getBenchmarksByPhase(phaseId),
       getPhaseExerciseVolumes(phaseId),
+      getPhaseMaintenanceMetrics(phaseId),
     ]);
     setSessionsMap(prev => ({ ...prev, [phaseId]: sessions }));
-    setBenchmarksMap(prev => ({ ...prev, [phaseId]: benchmarks }));
     setExerciseVolumesMap(prev => ({ ...prev, [phaseId]: exerciseVolumes }));
+    setMaintenanceMap(prev => ({ ...prev, [phaseId]: maintenance }));
 
     const metricResults = await Promise.all(
       sessions.map(async s => {
@@ -114,30 +112,14 @@ function App() {
   const selectedIdx = sortedPhases.findIndex(p => p.phaseId === selectedPhaseId);
   const previousPhase = selectedIdx > 0 ? sortedPhases[selectedIdx - 1] : null;
 
-  useEffect(() => {
-    if (previousPhase && !benchmarksMap[previousPhase.phaseId]) {
-      getBenchmarksByPhase(previousPhase.phaseId).then(b => {
-        setBenchmarksMap(prev => ({ ...prev, [previousPhase.phaseId]: b }));
-      });
-    }
-  }, [previousPhase?.phaseId]);
-
   const selectedPhase = phases.find(p => p.phaseId === selectedPhaseId) || null;
   const sessions = sessionsMap[selectedPhaseId] || [];
-  const benchmarks = benchmarksMap[selectedPhaseId] || [];
-  const previousBenchmarks = previousPhase ? (benchmarksMap[previousPhase.phaseId] || []) : [];
+  const maintenanceData = maintenanceMap[selectedPhaseId] || null;
 
   function handleSessionLogged(session) {
     setSessionsMap(prev => {
       const existing = prev[session.phaseId] || [];
       return { ...prev, [session.phaseId]: [...existing, session] };
-    });
-  }
-
-  function handleBenchmarkLogged(benchmark) {
-    setBenchmarksMap(prev => {
-      const existing = prev[benchmark.phaseId] || [];
-      return { ...prev, [benchmark.phaseId]: [...existing, benchmark] };
     });
   }
 
@@ -160,7 +142,7 @@ function App() {
       return next;
     });
     setSessionsMap(prev => { const n = { ...prev }; delete n[phaseId]; return n; });
-    setBenchmarksMap(prev => { const n = { ...prev }; delete n[phaseId]; return n; });
+    setMaintenanceMap(prev => { const n = { ...prev }; delete n[phaseId]; return n; });
   }
 
   async function handleUpdateSession(sessionId, phaseId, payload) {
@@ -180,21 +162,6 @@ function App() {
     }));
     setE1rmMap(prev => { const n = { ...prev }; delete n[sessionId]; return n; });
     setVolumeMap(prev => { const n = { ...prev }; delete n[sessionId]; return n; });
-  }
-
-  async function handleUpdateBenchmark(benchmarkId, phaseId, payload) {
-    await updateBenchmark(benchmarkId, payload);
-    // Re-fetch benchmarks for this phase to get fresh data including child table fields
-    const fresh = await getBenchmarksByPhase(phaseId);
-    setBenchmarksMap(prev => ({ ...prev, [phaseId]: fresh }));
-  }
-
-  async function handleDeleteBenchmark(benchmarkId, phaseId) {
-    await deleteBenchmark(benchmarkId);
-    setBenchmarksMap(prev => ({
-      ...prev,
-      [phaseId]: (prev[phaseId] || []).filter(b => b.benchmarkId !== benchmarkId),
-    }));
   }
 
   async function handleCreateExercise(payload) {
@@ -244,8 +211,7 @@ function App() {
         e1rmMap={e1rmMap}
         volumeMap={volumeMap}
         exerciseVolumes={exerciseVolumesMap[selectedPhaseId] || []}
-        benchmarks={benchmarks}
-        previousBenchmarks={previousBenchmarks}
+        maintenanceData={maintenanceData}
         exercises={exercises}
         onSelectPhase={setSelectedPhaseId}
         onOpenPanel={() => setPanelOpen(true)}
@@ -254,8 +220,6 @@ function App() {
         onDeletePhase={handleDeletePhase}
         onUpdateSession={(sessionId, payload) => handleUpdateSession(sessionId, selectedPhaseId, payload)}
         onDeleteSession={(sessionId) => handleDeleteSession(sessionId, selectedPhaseId)}
-        onUpdateBenchmark={(benchmarkId, payload) => handleUpdateBenchmark(benchmarkId, selectedPhaseId, payload)}
-        onDeleteBenchmark={(benchmarkId) => handleDeleteBenchmark(benchmarkId, selectedPhaseId)}
         summaryKey={summaryKey}
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -281,10 +245,6 @@ function App() {
           onSetsLogged={() => {
             loadPhaseData(selectedPhaseId);
             setSummaryKey(k => k + 1);
-            setPanelOpen(false);
-          }}
-          onBenchmarkLogged={benchmark => {
-            handleBenchmarkLogged(benchmark);
             setPanelOpen(false);
           }}
           onPhaseCreated={phase => {

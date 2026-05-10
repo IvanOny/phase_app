@@ -484,8 +484,6 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
 
 // ---- Filter bar ----
 function FilterBar({ filters, onChange, exercises }) {
-  const types = SESSION_TYPES;
-
   function toggleType(type) {
     const next = filters.types.includes(type)
       ? filters.types.filter(t => t !== type)
@@ -493,13 +491,20 @@ function FilterBar({ filters, onChange, exercises }) {
     onChange({ ...filters, types: next });
   }
 
-  const isActive = filters.types.length < SESSION_TYPES.length || filters.fromDate || filters.toDate || filters.exerciseId;
+  const allTypesSelected = filters.types.length === SESSION_TYPES.length;
+  const isActive = !allTypesSelected || filters.exerciseId;
 
   return (
     <div className="sessions-filter-bar">
       <div className="filter-section">
         <span className="filter-label">Type:</span>
-        {types.map(t => (
+        <button
+          className={`filter-chip${allTypesSelected ? ' active' : ''}`}
+          onClick={() => onChange({ ...filters, types: allTypesSelected ? [] : SESSION_TYPES })}
+        >
+          All
+        </button>
+        {SESSION_TYPES.map(t => (
           <button
             key={t}
             className={`filter-chip${filters.types.includes(t) ? ' active' : ''}`}
@@ -522,16 +527,10 @@ function FilterBar({ filters, onChange, exercises }) {
           ))}
         </select>
       </div>
-      <div className="filter-section">
-        <span className="filter-label">From:</span>
-        <input type="date" value={filters.fromDate} onChange={e => onChange({ ...filters, fromDate: e.target.value })} className="inline-input filter-date" />
-        <span className="filter-label">To:</span>
-        <input type="date" value={filters.toDate} onChange={e => onChange({ ...filters, toDate: e.target.value })} className="inline-input filter-date" />
-      </div>
       {isActive && (
         <button
           className="filter-chip"
-          onClick={() => onChange({ types: SESSION_TYPES, fromDate: '', toDate: '', exerciseId: '' })}
+          onClick={() => onChange({ types: SESSION_TYPES, exerciseId: '' })}
         >
           Clear filters
         </button>
@@ -542,7 +541,7 @@ function FilterBar({ filters, onChange, exercises }) {
 
 export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, onUpdateSession, onDeleteSession, isAuthenticated }) {
   const [expanded, setExpanded] = useState(new Set());
-  const [filters, setFilters] = useState({ types: SESSION_TYPES, fromDate: '', toDate: '', exerciseId: '' });
+  const [filters, setFilters] = useState({ types: SESSION_TYPES, exerciseId: '' });
   const [sessionExercisesMap, setSessionExercisesMap] = useState({});
 
   useEffect(() => {
@@ -564,8 +563,6 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
 
   const filtered = [...sessions]
     .filter(s => filters.types.includes(s.sessionType))
-    .filter(s => !filters.fromDate || s.sessionDate >= filters.fromDate)
-    .filter(s => !filters.toDate || s.sessionDate <= filters.toDate)
     .filter(s => {
       if (!filters.exerciseId) return true;
       const exIds = sessionExercisesMap[s.sessionId];

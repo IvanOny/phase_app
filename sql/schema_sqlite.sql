@@ -23,7 +23,7 @@ CREATE TABLE sessions (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (elite_hrv_readiness IS NULL OR (elite_hrv_readiness >= 0 AND elite_hrv_readiness <= 10)),
     CHECK (garmin_overnight_hrv IS NULL OR garmin_overnight_hrv >= 0),
-    UNIQUE (phase_id, session_date, session_type)
+    -- no unique constraint on (phase_id, session_date, session_type): multiple sessions per day/type are allowed
 );
 
 CREATE TRIGGER validate_session_date_in_phase

@@ -76,6 +76,7 @@ export default function Dashboard({
         e1rmMap={e1rmMap}
         volumeMap={volumeMap}
         exercises={exercises}
+        exerciseVolumes={exerciseVolumes}
         onUpdateSession={onUpdateSession}
         onDeleteSession={onDeleteSession}
         isAuthenticated={isAuthenticated}

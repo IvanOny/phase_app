@@ -1,4 +1,4 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import {
   getSessionExercises,
   getExerciseSets,
@@ -539,19 +539,22 @@ function FilterBar({ filters, onChange, exercises }) {
   );
 }
 
-export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, onUpdateSession, onDeleteSession, isAuthenticated }) {
+export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, exerciseVolumes, onUpdateSession, onDeleteSession, isAuthenticated }) {
   const [expanded, setExpanded] = useState(new Set());
   const [filters, setFilters] = useState({ types: SESSION_TYPES, exerciseId: '' });
-  const [sessionExercisesMap, setSessionExercisesMap] = useState({});
 
-  useEffect(() => {
-    sessions.forEach(s => {
-      if (sessionExercisesMap[s.sessionId] !== undefined) return;
-      getSessionExercises(s.sessionId).then(exes => {
-        setSessionExercisesMap(prev => ({ ...prev, [s.sessionId]: exes.map(e => e.exerciseId) }));
+  // Derive session→[exerciseIds] map from exerciseVolumes (already fetched by parent)
+  // instead of firing N individual GET /v1/sessions/{id}/exercises requests.
+  const sessionExercisesMap = useMemo(() => {
+    const map = {};
+    (exerciseVolumes ?? []).forEach(ev => {
+      ev.sessions.forEach(s => {
+        if (!map[s.sessionId]) map[s.sessionId] = [];
+        map[s.sessionId].push(ev.exerciseId);
       });
     });
-  }, [sessions]);
+    return map;
+  }, [exerciseVolumes]);
 
   function toggleRow(sessionId) {
     setExpanded(prev => {

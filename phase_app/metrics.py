@@ -260,6 +260,67 @@ def get_phase_maintenance(conn: psycopg2.extensions.connection, phase_id: int) -
     }
 
 
+def get_session_bench_metrics(conn: psycopg2.extensions.connection, phase_id: int) -> dict[str, Any]:
+    """Return bench e1rm and volume for all sessions in a phase — single round-trip."""
+    with conn.cursor() as cur:
+        # Best top-set e1rm per session (highest load among is_top_set=1 bench sets)
+        cur.execute(
+            """
+            SELECT DISTINCT ON (s.session_id)
+                s.session_id,
+                es.exercise_set_id,
+                es.reps,
+                es.load_kg,
+                ROUND((es.load_kg * (1 + es.reps / 30.0))::numeric, 2) AS e1rm_kg
+            FROM sessions s
+            JOIN session_exercises se ON se.session_id = s.session_id
+            JOIN exercises e  ON e.exercise_id  = se.exercise_id
+            JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+            WHERE s.phase_id = %s
+              AND e.is_barbell_bench_press = 1
+              AND es.is_top_set = 1
+            ORDER BY s.session_id, es.load_kg DESC, es.reps DESC, es.exercise_set_id DESC
+            """,
+            (phase_id,),
+        )
+        e1rm_rows = cur.fetchall()
+
+        # Total working volume per session
+        cur.execute(
+            """
+            SELECT s.session_id,
+                   ROUND(COALESCE(SUM(es.load_kg * es.reps), 0)::numeric, 2) AS bench_volume
+            FROM sessions s
+            JOIN session_exercises se ON se.session_id = s.session_id
+            JOIN exercises e  ON e.exercise_id  = se.exercise_id
+            JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+            WHERE s.phase_id = %s
+              AND e.is_barbell_bench_press = 1
+              AND es.is_working_set = 1
+            GROUP BY s.session_id
+            """,
+            (phase_id,),
+        )
+        vol_rows = cur.fetchall()
+
+    e1rm_map = {}
+    for r in e1rm_rows:
+        e1rm_map[str(r["session_id"])] = {
+            "topSetExerciseSetId": r["exercise_set_id"],
+            "topSetReps": int(r["reps"]),
+            "topSetLoadKg": float(r["load_kg"]),
+            "topSetE1rmKg": float(r["e1rm_kg"]),
+        }
+
+    vol_map = {}
+    for r in vol_rows:
+        vol_map[str(r["session_id"])] = {
+            "benchVolumeKgReps": float(r["bench_volume"]),
+        }
+
+    return {"e1rm": e1rm_map, "volume": vol_map}
+
+
 def get_bench_volume(conn: psycopg2.extensions.connection, session_id: int) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(

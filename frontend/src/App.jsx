@@ -27,8 +27,7 @@ import DataEntryPanel from './components/DataEntry/DataEntryPanel.jsx';
 import {
   getPhases,
   getSessionsByPhase,
-  getBenchE1rm,
-  getBenchVolume,
+  getPhaseSessionBenchMetrics,
   getPhaseExerciseVolumes,
   getPhaseMaintenanceMetrics,
   getExercises,
@@ -84,24 +83,9 @@ function App() {
     setExerciseVolumesMap(prev => ({ ...prev, [phaseId]: exerciseVolumes }));
     setMaintenanceMap(prev => ({ ...prev, [phaseId]: maintenance }));
 
-    const metricResults = await Promise.all(
-      sessions.map(async s => {
-        const [e1rm, vol] = await Promise.all([
-          getBenchE1rm(s.sessionId),
-          getBenchVolume(s.sessionId),
-        ]);
-        return { sessionId: s.sessionId, e1rm, vol };
-      })
-    );
-
-    const newE1rm = {};
-    const newVol = {};
-    metricResults.forEach(({ sessionId, e1rm, vol }) => {
-      if (e1rm) newE1rm[sessionId] = e1rm;
-      if (vol) newVol[sessionId] = vol;
-    });
-    setE1rmMap(prev => ({ ...prev, ...newE1rm }));
-    setVolumeMap(prev => ({ ...prev, ...newVol }));
+    const benchMetrics = await getPhaseSessionBenchMetrics(phaseId);
+    setE1rmMap(prev => ({ ...prev, ...benchMetrics.e1rm }));
+    setVolumeMap(prev => ({ ...prev, ...benchMetrics.volume }));
   }, []);
 
   useEffect(() => {

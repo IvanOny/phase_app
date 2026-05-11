@@ -485,10 +485,14 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
 // ---- Filter bar ----
 function FilterBar({ filters, onChange, exercises }) {
   function toggleType(type) {
-    const next = filters.types.includes(type)
-      ? filters.types.filter(t => t !== type)
-      : [...filters.types, type];
-    onChange({ ...filters, types: next });
+    if (allTypesSelected) {
+      // Solo-select: keep only this type
+      onChange({ ...filters, types: [type] });
+    } else if (filters.types.includes(type)) {
+      onChange({ ...filters, types: filters.types.filter(t => t !== type) });
+    } else {
+      onChange({ ...filters, types: [...filters.types, type] });
+    }
   }
 
   const allTypesSelected = filters.types.length === SESSION_TYPES.length;

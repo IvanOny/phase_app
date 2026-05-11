@@ -74,6 +74,9 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   function toggleBenchFilter(type) {
     if (type === 'all') {
       setBenchFilters(allBenchSelected ? [] : BENCH_TYPES);
+    } else if (allBenchSelected) {
+      // Solo-select: keep only this type
+      setBenchFilters([type]);
     } else {
       setBenchFilters(prev =>
         prev.includes(type) ? prev.filter(f => f !== type) : [...prev, type]

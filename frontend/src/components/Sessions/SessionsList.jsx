@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import {
   getSessionExercises,
   getExerciseSets,
@@ -55,7 +55,7 @@ function formatType(type) {
 }
 
 // ---- Set row with inline edit ----
-function SetRow({ set, sessionExerciseId, onUpdated, onDeleted, isAuthenticated }) {
+function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, isAuthenticated }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -90,7 +90,7 @@ function SetRow({ set, sessionExerciseId, onUpdated, onDeleted, isAuthenticated 
   if (editing) {
     return (
       <tr className="set-row-editing">
-        <td>{set.setNumber}</td>
+        <td>{displayNumber}</td>
         <td><input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 60 }} /></td>
         <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} /></td>
         <td><input type="checkbox" checked={form.isTopSet} onChange={e => setForm(f => ({ ...f, isTopSet: e.target.checked }))} /></td>
@@ -106,7 +106,7 @@ function SetRow({ set, sessionExerciseId, onUpdated, onDeleted, isAuthenticated 
   return (
     <>
       <tr className={set.isTopSet ? 'top-set-row' : ''}>
-        <td>{set.setNumber}</td>
+        <td>{displayNumber}</td>
         <td>{set.loadKg}</td>
         <td>{set.reps}</td>
         <td>{set.isTopSet ? '★' : ''}</td>
@@ -330,10 +330,11 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                   </tr>
                 </thead>
                 <tbody>
-                  {se.sets.map(set => (
+                  {se.sets.map((set, idx) => (
                     <SetRow
                       key={set.exerciseSetId}
                       set={set}
+                      displayNumber={idx + 1}
                       sessionExerciseId={se.sessionExerciseId}
                       onUpdated={updated => handleSetUpdated(se.sessionExerciseId, updated)}
                       onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
@@ -484,19 +485,39 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
 
 // ---- Filter bar ----
 function FilterBar({ filters, onChange, exercises }) {
-  function toggleType(type) {
-    if (allTypesSelected) {
-      // Solo-select: keep only this type
-      onChange({ ...filters, types: [type] });
-    } else if (filters.types.includes(type)) {
-      onChange({ ...filters, types: filters.types.filter(t => t !== type) });
+  const lastTap = useRef({ type: null, time: 0 });
+  const allTypesSelected = filters.types.length === SESSION_TYPES.length;
+  const isActive = !allTypesSelected || filters.exerciseId;
+
+  function handleTypeClick(type, e) {
+    const multiSelect = e.ctrlKey || e.metaKey;
+    if (multiSelect) {
+      // Ctrl/Cmd — add or remove from selection
+      const next = filters.types.includes(type)
+        ? filters.types.filter(t => t !== type)
+        : [...filters.types, type];
+      onChange({ ...filters, types: next.length ? next : [type] });
     } else {
-      onChange({ ...filters, types: [...filters.types, type] });
+      // Single click — solo-select this type
+      onChange({ ...filters, types: [type] });
     }
   }
 
-  const allTypesSelected = filters.types.length === SESSION_TYPES.length;
-  const isActive = !allTypesSelected || filters.exerciseId;
+  function handleTypeTouchEnd(type, e) {
+    const now = Date.now();
+    const DOUBLE_TAP_MS = 300;
+    if (lastTap.current.type === type && now - lastTap.current.time < DOUBLE_TAP_MS) {
+      // Double-tap — toggle multi-select
+      e.preventDefault();
+      const next = filters.types.includes(type)
+        ? filters.types.filter(t => t !== type)
+        : [...filters.types, type];
+      onChange({ ...filters, types: next.length ? next : [type] });
+      lastTap.current = { type: null, time: 0 };
+    } else {
+      lastTap.current = { type, time: now };
+    }
+  }
 
   return (
     <div className="sessions-filter-bar">
@@ -504,7 +525,7 @@ function FilterBar({ filters, onChange, exercises }) {
         <span className="filter-label">Type:</span>
         <button
           className={`filter-chip${allTypesSelected ? ' active' : ''}`}
-          onClick={() => onChange({ ...filters, types: allTypesSelected ? [] : SESSION_TYPES })}
+          onClick={() => onChange({ ...filters, types: SESSION_TYPES })}
         >
           All
         </button>
@@ -512,7 +533,8 @@ function FilterBar({ filters, onChange, exercises }) {
           <button
             key={t}
             className={`filter-chip${filters.types.includes(t) ? ' active' : ''}`}
-            onClick={() => toggleType(t)}
+            onClick={e => handleTypeClick(t, e)}
+            onTouchEnd={e => handleTypeTouchEnd(t, e)}
           >
             {formatType(t)}
           </button>
@@ -560,6 +582,42 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
     return map;
   }, [exerciseVolumes]);
 
+  // Exercises that appear in at least one session matching the active type filter
+  const allTypesSelected = filters.types.length === SESSION_TYPES.length;
+  const availableExercises = useMemo(() => {
+    if (allTypesSelected) return exercises;
+    const matchingSessionIds = new Set(
+      sessions.filter(s => filters.types.includes(s.sessionType)).map(s => s.sessionId)
+    );
+    const exerciseIds = new Set();
+    (exerciseVolumes ?? []).forEach(ev => {
+      ev.sessions.forEach(s => {
+        if (matchingSessionIds.has(s.sessionId)) exerciseIds.add(ev.exerciseId);
+      });
+    });
+    return exercises.filter(e => exerciseIds.has(e.exerciseId));
+  }, [sessions, filters.types, exerciseVolumes, exercises, allTypesSelected]);
+
+  function handleFiltersChange(next) {
+    // Clear exercise filter if it's no longer available after a type change
+    const nextAllTypes = next.types.length === SESSION_TYPES.length;
+    if (next.exerciseId && !nextAllTypes) {
+      const matchingSessionIds = new Set(
+        sessions.filter(s => next.types.includes(s.sessionType)).map(s => s.sessionId)
+      );
+      const exerciseIds = new Set();
+      (exerciseVolumes ?? []).forEach(ev => {
+        ev.sessions.forEach(s => {
+          if (matchingSessionIds.has(s.sessionId)) exerciseIds.add(ev.exerciseId);
+        });
+      });
+      if (!exerciseIds.has(Number(next.exerciseId))) {
+        next = { ...next, exerciseId: '' };
+      }
+    }
+    setFilters(next);
+  }
+
   function toggleRow(sessionId) {
     setExpanded(prev => {
       const next = new Set(prev);
@@ -578,10 +636,17 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
     })
     .sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate));
 
+  // Auto-expand all matching sessions when an exercise filter is active
+  useEffect(() => {
+    if (filters.exerciseId) {
+      setExpanded(new Set(filtered.map(s => s.sessionId)));
+    }
+  }, [filters.exerciseId, filtered.map(s => s.sessionId).join(',')]);
+
   return (
     <div className="chart-wrapper">
       <div className="card-title">Sessions ({sessions.length})</div>
-      <FilterBar filters={filters} onChange={setFilters} exercises={exercises} />
+      <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} />
       {filtered.length === 0 ? (
         <div className="chart-empty">
           {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}

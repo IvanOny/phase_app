@@ -14,7 +14,7 @@ export default function Dashboard({
   e1rmMap,
   volumeMap,
   exerciseVolumes,
-  maintenanceData,
+  runBenchmarks,
   exercises,
   onSelectPhase,
   onOpenPanel,
@@ -29,6 +29,7 @@ export default function Dashboard({
   isAuthenticated,
   onLogout,
   onLoginClick,
+  onFaqClick,
 }) {
   return (
     <div className="dashboard">
@@ -41,6 +42,7 @@ export default function Dashboard({
         isAuthenticated={isAuthenticated}
         onLogout={onLogout}
         onLoginClick={onLoginClick}
+        onFaqClick={onFaqClick}
       />
       {sessions.length === 0 ? (
         <div className="phase-no-data">
@@ -65,10 +67,6 @@ export default function Dashboard({
           })()}
           <E1rmChart sessions={sessions} metricsMap={e1rmMap} />
           <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} exercises={exercises} />
-          <MaintenancePanel
-            maintenanceData={maintenanceData}
-            currentPhaseType={selectedPhase?.phaseType}
-          />
         </>
       )}
       <SessionsList
@@ -81,6 +79,13 @@ export default function Dashboard({
         onDeleteSession={onDeleteSession}
         isAuthenticated={isAuthenticated}
       />
+      {sessions.length > 0 && (
+        <MaintenancePanel
+          exerciseVolumes={exerciseVolumes}
+          exercises={exercises}
+          runBenchmarks={runBenchmarks}
+        />
+      )}
       <PhaseNav
         phases={phases}
         selectedPhaseId={selectedPhase?.phaseId}

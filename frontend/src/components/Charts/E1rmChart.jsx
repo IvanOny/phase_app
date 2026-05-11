@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { useTooltip } from '../../hooks/useExpandable.js';
+import { useState } from 'react';
+import { useTooltip, useIsTouchDevice } from '../../hooks/useExpandable.js';
 import {
   LineChart,
   Line,
@@ -27,6 +27,7 @@ function formatDate(dateStr) {
 
 export default function E1rmChart({ sessions, metricsMap }) {
   const colors = useChartColors();
+  const isTouch = useIsTouchDevice();
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-e1rm');
   const [hoveredDate, setHoveredDate] = useState(null);
 
@@ -35,35 +36,67 @@ export default function E1rmChart({ sessions, metricsMap }) {
     return REPS_BUCKETS.find(b => reps <= b.maxReps);
   }
 
+  function getDotPos(cx, cy) {
+    if (!chartRef.current) return null;
+    const rect = chartRef.current.getBoundingClientRect();
+    const svgRect = chartRef.current.querySelector('svg')?.getBoundingClientRect();
+    if (!svgRect) return null;
+    return { x: svgRect.left - rect.left + cx, y: svgRect.top - rect.top + cy };
+  }
+
   function ReadinessDot(props) {
     const { cx, cy, payload } = props;
     const { r, color, opacity } = repsBucket(payload.topSetReps);
     const isActive = tooltip?.data.date === payload.date;
     const isHovered = hoveredDate === payload.date;
     const hasAny = tooltip != null;
+    const dotR = isActive ? r + 2 : isHovered ? r + 1 : r;
+
+    const handlers = {
+      onMouseEnter() {
+        setHoveredDate(payload.date);
+        if (!isTouch) {
+          const pos = getDotPos(cx, cy);
+          if (pos) openTooltip({ ...pos, data: payload });
+        }
+      },
+      onMouseLeave() {
+        setHoveredDate(null);
+        if (!isTouch) openTooltip(null);
+      },
+      onClick() {
+        if (!isTouch) return;
+        const pos = getDotPos(cx, cy);
+        if (!pos) return;
+        openTooltip(tooltip?.data.date === payload.date ? null : { ...pos, data: payload });
+      },
+    };
+
     return (
-      <circle
-        cx={cx}
-        cy={cy}
-        r={isActive ? r + 2 : isHovered ? r + 1 : r}
-        fill={color}
-        fillOpacity={isActive ? 1 : hasAny ? opacity * 0.4 : opacity}
-        stroke={isActive || isHovered ? color : colors.bgApp}
-        strokeWidth={isActive ? 3 : isHovered ? 2 : 1.5}
-        strokeOpacity={isActive ? 0.4 : isHovered ? 0.6 : 1}
-        style={{ cursor: 'pointer' }}
-        onMouseEnter={() => setHoveredDate(payload.date)}
-        onMouseLeave={() => setHoveredDate(null)}
-        onClick={() => {
-          if (!chartRef.current) return;
-          const rect = chartRef.current.getBoundingClientRect();
-          const svgRect = chartRef.current.querySelector('svg')?.getBoundingClientRect();
-          if (!svgRect) return;
-          const x = svgRect.left - rect.left + cx;
-          const y = svgRect.top - rect.top + cy;
-          openTooltip(tooltip?.data.date === payload.date ? null : { x, y, data: payload });
-        }}
-      />
+      <g style={{ cursor: 'pointer' }} {...handlers}>
+        {/* Ripple ring — speeds up on hover/active */}
+        <circle
+          cx={cx}
+          cy={cy}
+          r={dotR}
+          fill="none"
+          stroke={color}
+          strokeWidth={2}
+          className={isHovered || isActive ? 'dot-ripple dot-ripple--fast' : 'dot-ripple'}
+          style={{ transformOrigin: `${cx}px ${cy}px` }}
+        />
+        {/* Main dot */}
+        <circle
+          cx={cx}
+          cy={cy}
+          r={dotR}
+          fill={color}
+          fillOpacity={isActive ? 1 : hasAny ? opacity * 0.4 : opacity}
+          stroke={isActive || isHovered ? color : colors.bgApp}
+          strokeWidth={isActive ? 3 : isHovered ? 2 : 1.5}
+          strokeOpacity={isActive ? 0.4 : isHovered ? 0.6 : 1}
+        />
+      </g>
     );
   }
 
@@ -91,9 +124,18 @@ export default function E1rmChart({ sessions, metricsMap }) {
       </div>
       {hasData ? (
         <>
-          <div ref={chartRef} style={{ position: 'relative' }}>
+          <div
+            ref={chartRef}
+            style={{ position: 'relative' }}
+            onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}
+          >
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={data} margin={{ top: 8, right: 16, bottom: 24, left: 0 }} tabIndex={-1}>
+              <LineChart
+                data={data}
+                margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
+                tabIndex={-1}
+                onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
                 <XAxis
                   dataKey="date"
@@ -130,10 +172,11 @@ export default function E1rmChart({ sessions, metricsMap }) {
                   transform: 'translate(-50%, -110%)',
                   width: 'fit-content',
                   minWidth: 0,
-                  cursor: 'pointer',
                   zIndex: 10,
+                  pointerEvents: isTouch ? 'auto' : 'none',
+                  cursor: isTouch ? 'pointer' : 'default',
                 }}
-                onClick={() => openTooltip(null)}
+                onClick={isTouch ? () => openTooltip(null) : undefined}
               >
                 <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>e1RM</div>
                 <div style={{ fontWeight: 600 }}>{tooltip.data.e1rmKg}</div>

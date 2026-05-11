@@ -574,6 +574,7 @@
   border-bottom: 1px solid var(--border);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  vertical-align: middle;
 }
 
 .sessions-table tbody tr:last-child td {
@@ -587,13 +588,13 @@
 .session-type {
   text-transform: capitalize;
   color: var(--text-primary) !important;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  white-space: nowrap;
 }
 
 .type-dot {
   display: inline-block;
+  vertical-align: middle;
+  margin-right: 6px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -1003,4 +1004,20 @@ button.summary-tile--open {
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+/* E1RM dot ripple animation */
+@keyframes dot-ripple {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  70%  { transform: scale(2.6); opacity: 0; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+.dot-ripple {
+  animation: dot-ripple 2.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.dot-ripple--fast {
+  animation: dot-ripple 1s ease-out infinite;
 }

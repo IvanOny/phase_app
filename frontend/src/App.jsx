@@ -23,13 +23,14 @@ function useTheme() {
   return { theme, toggleTheme };
 }
 import Dashboard from './components/Dashboard/Dashboard.jsx';
+import FaqPage from './components/Faq/FaqPage.jsx';
 import DataEntryPanel from './components/DataEntry/DataEntryPanel.jsx';
 import {
   getPhases,
   getSessionsByPhase,
   getPhaseSessionBenchMetrics,
   getPhaseExerciseVolumes,
-  getPhaseMaintenanceMetrics,
+  getRunBenchmarks,
   getExercises,
   updatePhase,
   deletePhase,
@@ -50,13 +51,14 @@ function App() {
   const [e1rmMap, setE1rmMap] = useState({});
   const [volumeMap, setVolumeMap] = useState({});
   const [exerciseVolumesMap, setExerciseVolumesMap] = useState({});
-  const [maintenanceMap, setMaintenanceMap] = useState({});
+  const [runBenchmarksMap, setRunBenchmarksMap] = useState({});
   const [exercises, setExercises] = useState([]);
   const [summaryKey, setSummaryKey] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState('import');
   const [initialPhaseType, setInitialPhaseType] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState('dashboard');
 
   useEffect(() => {
     Promise.all([getPhases(), getExercises()]).then(([ps, exs]) => {
@@ -74,14 +76,14 @@ function App() {
 
   const loadPhaseData = useCallback(async (phaseId) => {
     if (!phaseId) return;
-    const [sessions, exerciseVolumes, maintenance] = await Promise.all([
+    const [sessions, exerciseVolumes, runBenchmarks] = await Promise.all([
       getSessionsByPhase(phaseId),
       getPhaseExerciseVolumes(phaseId),
-      getPhaseMaintenanceMetrics(phaseId),
+      getRunBenchmarks(phaseId),
     ]);
     setSessionsMap(prev => ({ ...prev, [phaseId]: sessions }));
     setExerciseVolumesMap(prev => ({ ...prev, [phaseId]: exerciseVolumes }));
-    setMaintenanceMap(prev => ({ ...prev, [phaseId]: maintenance }));
+    setRunBenchmarksMap(prev => ({ ...prev, [phaseId]: runBenchmarks }));
 
     const benchMetrics = await getPhaseSessionBenchMetrics(phaseId);
     setE1rmMap(prev => ({ ...prev, ...benchMetrics.e1rm }));
@@ -98,7 +100,6 @@ function App() {
 
   const selectedPhase = phases.find(p => p.phaseId === selectedPhaseId) || null;
   const sessions = sessionsMap[selectedPhaseId] || [];
-  const maintenanceData = maintenanceMap[selectedPhaseId] || null;
 
   function handleSessionLogged(session) {
     setSessionsMap(prev => {
@@ -126,7 +127,6 @@ function App() {
       return next;
     });
     setSessionsMap(prev => { const n = { ...prev }; delete n[phaseId]; return n; });
-    setMaintenanceMap(prev => { const n = { ...prev }; delete n[phaseId]; return n; });
   }
 
   async function handleUpdateSession(sessionId, phaseId, payload) {
@@ -180,6 +180,10 @@ function App() {
     );
   }
 
+  if (page === 'faq') {
+    return <FaqPage onBack={() => setPage('dashboard')} />;
+  }
+
   return (
     <>
       {showLogin && (
@@ -195,7 +199,7 @@ function App() {
         e1rmMap={e1rmMap}
         volumeMap={volumeMap}
         exerciseVolumes={exerciseVolumesMap[selectedPhaseId] || []}
-        maintenanceData={maintenanceData}
+        runBenchmarks={runBenchmarksMap[selectedPhaseId] || []}
         exercises={exercises}
         onSelectPhase={setSelectedPhaseId}
         onOpenPanel={() => setPanelOpen(true)}
@@ -210,6 +214,7 @@ function App() {
         isAuthenticated={isAuthenticated}
         onLogout={logout}
         onLoginClick={() => setShowLogin(true)}
+        onFaqClick={() => setPage('faq')}
       />
       {isAuthenticated && (
         <DataEntryPanel

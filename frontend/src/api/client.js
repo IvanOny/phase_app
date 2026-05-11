@@ -5,6 +5,7 @@ import {
   MOCK_VOLUME_METRICS,
   MOCK_EXERCISES,
   MOCK_EXERCISE_VOLUMES,
+  MOCK_BENCHMARKS,
 } from '../data/mockData.js';
 
 const MOCK_MODE = import.meta.env.VITE_MOCK_MODE === 'true';
@@ -247,9 +248,16 @@ export async function getPhaseExerciseVolumes(phaseId) {
   return apiFetchList('GET', `/v1/metrics/phases/${phaseId}/exercise-volumes`);
 }
 
-export async function getPhaseMaintenanceMetrics(phaseId) {
-  if (MOCK_MODE) return Promise.resolve({ pullups: [], run: [], bench: [] });
-  return apiFetch('GET', `/v1/metrics/phases/${phaseId}/maintenance`, undefined, { allow404: true });
+export async function getRunBenchmarks(phaseId) {
+  if (MOCK_MODE) {
+    return Promise.resolve(
+      (MOCK_BENCHMARKS ?? []).filter(
+        b => b.phaseId === phaseId && b.benchmarkType === 'run_aerobic_test'
+      )
+    );
+  }
+  const all = await apiFetchList('GET', `/v1/benchmarks?phaseId=${phaseId}`);
+  return (all ?? []).filter(b => b.benchmarkType === 'run_aerobic_test');
 }
 
 // ---- Phase summary metrics ----

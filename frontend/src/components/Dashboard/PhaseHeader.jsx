@@ -48,7 +48,7 @@ function formatDateRange(start, end) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme, isAuthenticated, onLogout, onLoginClick }) {
+export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme, isAuthenticated, onLogout, onLoginClick, onFaqClick }) {
   const [editing, setEditing] = useState(false);
   const [showDays, toggleDays, headerRef] = useExpandable('phase-days');
   const [form, setForm] = useState({});
@@ -178,6 +178,9 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
               Log in
             </button>
           )}
+          <button className="btn btn-ghost" onClick={onFaqClick} style={{ fontSize: 13, padding: '3px 10px' }}>
+            FAQ
+          </button>
         </div>
       </div>
       <div className="phase-header-right">

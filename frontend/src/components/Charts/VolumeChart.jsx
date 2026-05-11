@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useTooltip } from '../../hooks/useExpandable.js';
+import { useTooltip, useIsTouchDevice } from '../../hooks/useExpandable.js';
 import {
   BarChart,
   Bar,
@@ -7,7 +7,6 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  LabelList,
   ResponsiveContainer,
 } from 'recharts';
 import { useChartColors } from '../../hooks/useChartColors.js';
@@ -38,8 +37,9 @@ function formatVolume(v) {
 
 export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   const colors = useChartColors();
+  const isTouch = useIsTouchDevice();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
-  const [benchFilters, setBenchFilters] = useState(BENCH_TYPES);
+  const [benchFilters, setBenchFilters] = useState(['volume']);
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-volume');
   const [hoveredDate, setHoveredDate] = useState(null);
 
@@ -54,13 +54,9 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   }, [exerciseVolumes]);
 
   useEffect(() => {
-    setBenchFilters(BENCH_TYPES);
+    setBenchFilters(['volume']);
     openTooltip(null);
   }, [selectedExerciseId]);
-
-  const selectedExercise = exerciseVolumes.find(e => e.exerciseId === selectedExerciseId);
-  const exerciseInfo = exercises?.find(e => e.exerciseId === selectedExerciseId);
-  const isBenchPress = exerciseInfo?.isBarbellBenchPress === true;
 
   const sessionTypeByDate = useMemo(() => {
     const map = {};
@@ -71,18 +67,15 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
     return map;
   }, [sessions]);
 
-  function toggleBenchFilter(type) {
-    if (type === 'all') {
-      setBenchFilters(allBenchSelected ? [] : BENCH_TYPES);
-    } else {
-      setBenchFilters(prev =>
-        prev.includes(type) ? prev.filter(f => f !== type) : [...prev, type]
-      );
-    }
+  const selectedExercise = exerciseVolumes.find(e => e.exerciseId === selectedExerciseId);
+  const exerciseInfo = exercises?.find(e => e.exerciseId === selectedExerciseId);
+  const isBenchPress = exerciseInfo?.isBarbellBenchPress === true;
+
+  function selectBenchFilter(type) {
+    setBenchFilters([type]);
   }
 
   const isBodyweight = exerciseInfo?.isBodyweight === true;
-  const allBenchSelected = BENCH_TYPES.every(t => benchFilters.includes(t));
 
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
@@ -100,23 +93,46 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
     })
     .filter(s => {
       if (!isBenchPress) return true;
-      if (allBenchSelected) return true;
       return benchFilters.some(f => BENCH_TYPE_MAP[f] === s.sessionType);
     });
 
   const hasData = data.length > 0;
   const unit = isBodyweight ? 'reps' : 'kg·reps';
   const title = selectedExercise
-    ? `Volume — ${selectedExercise.exerciseName} (${unit})`
-    : `Volume (${unit})`;
+    ? `Volume — ${selectedExercise.exerciseName}`
+    : 'Volume';
 
-  function handleBarClick(barData, _index, event) {
-    if (!chartRef.current) return;
+  function getTooltipPos(event) {
+    if (!chartRef.current || !event) return null;
     const rect = chartRef.current.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    openTooltip(tooltip?.data.date === barData.date ? null : { x, y, data: barData });
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
+
+  function makeHandler(type) {
+    const isActive = (barData) => tooltip?.data.date === barData.date && tooltip?.type === type;
+    return {
+      onClick(barData, _i, event) {
+        if (!isTouch) return;
+        const pos = getTooltipPos(event);
+        if (!pos) return;
+        openTooltip(isActive(barData) ? null : { ...pos, data: barData, type });
+      },
+      onMouseEnter(barData, _i, event) {
+        setHoveredDate(barData.date);
+        if (isTouch) return;
+        const pos = getTooltipPos(event);
+        if (!pos) return;
+        openTooltip({ ...pos, data: barData, type });
+      },
+      onMouseLeave() {
+        setHoveredDate(null);
+        if (!isTouch) openTooltip(null);
+      },
+    };
+  }
+
+  const volumeHandlers = makeHandler('volume');
+  const loadHandlers   = makeHandler('load');
 
   return (
     <div className="chart-wrapper">
@@ -137,27 +153,45 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
       </div>
       {isBenchPress && (
         <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-          {['all', 'heavy', 'volume', 'speed'].map(type => {
-            const isActive = type === 'all'
-              ? allBenchSelected
-              : benchFilters.includes(type);
-            return (
-              <button
-                key={type}
-                className={`filter-chip${isActive ? ' active' : ''}`}
-                onClick={() => toggleBenchFilter(type)}
-                style={{ fontSize: 11, padding: '1px 8px' }}
-              >
-                {type}
-              </button>
-            );
-          })}
+          {BENCH_TYPES.map(type => (
+            <button
+              key={type}
+              className={`filter-chip${benchFilters.includes(type) ? ' active' : ''}`}
+              onClick={() => selectBenchFilter(type)}
+              style={{ fontSize: 11, padding: '1px 8px' }}
+            >
+              {type}
+            </button>
+          ))}
         </div>
       )}
       {hasData ? (
-        <div ref={chartRef} style={{ position: 'relative' }}>
+        <div
+          ref={chartRef}
+          style={{ position: 'relative' }}
+          onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}
+        >
+          {!isBodyweight && (
+            <div style={{ display: 'flex', gap: 12, marginBottom: 6, fontSize: 11, color: colors.textMuted }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: colors.accent, display: 'inline-block' }} />
+                volume ({unit})
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: colors.readyGreen, display: 'inline-block' }} />
+                top load (kg)
+              </span>
+            </div>
+          )}
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={data} margin={{ top: 20, right: 16, bottom: 24, left: 0 }} barSize={24} tabIndex={-1}>
+            <BarChart
+              data={data}
+              margin={{ top: 8, right: 40, bottom: 24, left: 0 }}
+              barSize={14}
+              barCategoryGap="30%"
+              tabIndex={-1}
+              onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}
+            >
               <CartesianGrid strokeDasharray="3 3" stroke={colors.border} vertical={false} />
               <XAxis
                 dataKey="date"
@@ -167,33 +201,58 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                 tickLine={false}
               />
               <YAxis
+                yAxisId="left"
                 tickFormatter={formatVolume}
                 tick={{ fill: colors.textMuted, fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
                 width={40}
               />
+              {!isBodyweight && (
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tickFormatter={v => `${v}`}
+                  tick={{ fill: colors.readyGreen, fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={36}
+                />
+              )}
               <Bar
+                yAxisId="left"
                 dataKey="volume"
                 radius={[3, 3, 0, 0]}
-                onClick={handleBarClick}
-                onMouseEnter={(data) => setHoveredDate(data.date)}
-                onMouseLeave={() => setHoveredDate(null)}
+                onClick={volumeHandlers.onClick}
+                onMouseEnter={volumeHandlers.onMouseEnter}
+                onMouseLeave={volumeHandlers.onMouseLeave}
                 style={{ cursor: 'pointer' }}
               >
                 {data.map((entry, i) => {
-                  const isActive = tooltip?.data.date === entry.date;
+                  const isActive = tooltip?.data.date === entry.date && tooltip?.type === 'volume';
                   const isHovered = hoveredDate === entry.date;
                   const hasAny = tooltip != null;
                   return <Cell key={i} fill={colors.accent} fillOpacity={isActive ? 1 : hasAny ? 0.35 : isHovered ? 0.75 : 1} />;
                 })}
-                <LabelList
-                  dataKey="topLoadKg"
-                  position="top"
-                  formatter={v => (v ? `${v}kg` : '')}
-                  style={{ fontSize: 10, fill: colors.textMuted }}
-                />
               </Bar>
+              {!isBodyweight && (
+                <Bar
+                  yAxisId="right"
+                  dataKey="topLoadKg"
+                  radius={[3, 3, 0, 0]}
+                  onClick={loadHandlers.onClick}
+                  onMouseEnter={loadHandlers.onMouseEnter}
+                  onMouseLeave={loadHandlers.onMouseLeave}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {data.map((entry, i) => {
+                    const isActive = tooltip?.data.date === entry.date && tooltip?.type === 'load';
+                    const isHovered = hoveredDate === entry.date;
+                    const hasAny = tooltip != null;
+                    return <Cell key={i} fill={colors.readyGreen} fillOpacity={isActive ? 1 : hasAny ? 0.3 : isHovered ? 0.9 : 0.75} />;
+                  })}
+                </Bar>
+              )}
             </BarChart>
           </ResponsiveContainer>
           {tooltip && (
@@ -206,19 +265,28 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                 transform: 'translate(-50%, -110%)',
                 width: 'fit-content',
                 minWidth: 0,
-                cursor: 'pointer',
                 zIndex: 10,
+                pointerEvents: isTouch ? 'auto' : 'none',
+                cursor: isTouch ? 'pointer' : 'default',
               }}
-              onClick={() => openTooltip(null)}
+              onClick={isTouch ? () => openTooltip(null) : undefined}
             >
-              {tooltip.data.sets.map((s, i) => (
-                <div key={i}>{isBodyweight ? `${s.reps} reps` : `${s.loadKg}×${s.reps}`}</div>
-              ))}
-              <div style={{ marginTop: 4, borderTop: '1px solid var(--border)', paddingTop: 4 }}>
-                <div>Total</div>
-                <strong>{tooltip.data.volume.toLocaleString()}</strong>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{unit}</div>
-              </div>
+              {tooltip.type === 'load' ? (
+                <>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>top load</div>
+                  <strong>{tooltip.data.topLoadKg} kg</strong>
+                </>
+              ) : (
+                <>
+                  {tooltip.data.sets.map((s, i) => (
+                    <div key={i}>{isBodyweight ? `${s.reps} reps` : `${s.loadKg}×${s.reps}`}</div>
+                  ))}
+                  <div style={{ marginTop: 4, borderTop: '1px solid var(--border)', paddingTop: 4 }}>
+                    <strong>{tooltip.data.volume.toLocaleString()}</strong>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{unit}</div>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

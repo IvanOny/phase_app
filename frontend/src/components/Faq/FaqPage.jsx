@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react';
 import './FaqPage.css';
 
 const FAQS = [
@@ -32,6 +33,21 @@ const FAQS = [
 ];
 
 export default function FaqPage({ onBack }) {
+  const [openSet, setOpenSet] = useState(new Set());
+  const allOpen = openSet.size === FAQS.length;
+
+  function toggle(i) {
+    setOpenSet(prev => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setOpenSet(allOpen ? new Set() : new Set(FAQS.map((_, i) => i)));
+  }
+
   return (
     <div className="faq-page">
       <div className="faq-header">
@@ -39,14 +55,25 @@ export default function FaqPage({ onBack }) {
           ← Back
         </button>
         <span className="card-title" style={{ marginBottom: 0 }}>FAQ</span>
+        <button className="faq-toggle-all" onClick={toggleAll}>
+          {allOpen ? 'Collapse all' : 'Expand all'}
+        </button>
       </div>
       <div className="faq-list">
-        {FAQS.map((item, i) => (
-          <div key={i} className="faq-item">
-            <div className="faq-question">{item.q}</div>
-            <div className="faq-answer">{item.a}</div>
-          </div>
-        ))}
+        {FAQS.map((item, i) => {
+          const isOpen = openSet.has(i);
+          return (
+            <div key={i} className={`faq-item${isOpen ? ' faq-item--open' : ''}`}>
+              <button className="faq-question" onClick={() => toggle(i)}>
+                <span>{item.q}</span>
+                <span className="faq-chevron">{isOpen ? '▲' : '▼'}</span>
+              </button>
+              {isOpen && (
+                <div className="faq-answer">{item.a}</div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

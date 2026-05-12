@@ -99,9 +99,10 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
             <button className={`load-mode-btn${!bwMode ? ' active' : ''}`} onClick={() => setBwMode(false)}>kg</button>
             <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)} title="Bodyweight — no external load">BW</button>
           </span>
-          {!bwMode && (
-            <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55, marginLeft: 4 }} />
-          )}
+          {bwMode
+            ? <span className="bw-hint">Bodyweight</span>
+            : <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55, marginLeft: 4 }} />
+          }
         </td>
         <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} /></td>
         <td><input type="checkbox" checked={form.isTopSet} onChange={e => setForm(f => ({ ...f, isTopSet: e.target.checked }))} /></td>
@@ -189,9 +190,10 @@ function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded, isBodyweight }) 
           <button className={`load-mode-btn${!bwMode ? ' active' : ''}`} onClick={() => setBwMode(false)}>kg</button>
           <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)} title="Bodyweight — no external load">BW</button>
         </span>
-        {!bwMode && (
-          <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55, marginLeft: 4 }} placeholder="kg" autoFocus />
-        )}
+        {bwMode
+          ? <span className="bw-hint">Bodyweight</span>
+          : <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55, marginLeft: 4 }} placeholder="kg" autoFocus />
+        }
       </td>
       <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" autoFocus={bwMode} onKeyDown={e => e.key === 'Enter' && handleAdd()} /></td>
       <td><input type="checkbox" checked={form.isTopSet} onChange={e => setForm(f => ({ ...f, isTopSet: e.target.checked }))} title="Top set" /></td>

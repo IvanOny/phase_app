@@ -1020,6 +1020,14 @@ button.summary-tile--open {
   color: var(--accent);
 }
 
+.bw-hint {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  vertical-align: middle;
+}
+
 /* Inline add controls */
 .add-inline-btn {
   background: transparent;

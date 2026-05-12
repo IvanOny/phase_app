@@ -95,11 +95,12 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
       <tr className="set-row-editing">
         <td>{displayNumber}</td>
         <td>
-          <button className="bw-toggle" onClick={() => setBwMode(m => !m)} title="Toggle bodyweight / load">
-            {bwMode ? 'BW' : 'kg'}
-          </button>
+          <span className="load-mode-toggle">
+            <button className={`load-mode-btn${!bwMode ? ' active' : ''}`} onClick={() => setBwMode(false)}>kg</button>
+            <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)}>BW</button>
+          </span>
           {!bwMode && (
-            <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55 }} />
+            <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55, marginLeft: 4 }} />
           )}
         </td>
         <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} /></td>
@@ -184,11 +185,12 @@ function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded, isBodyweight }) 
     <tr className="set-row-editing">
       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{nextSetNumber}</td>
       <td>
-        <button className="bw-toggle" onClick={() => setBwMode(m => !m)} title="Toggle bodyweight / load">
-          {bwMode ? 'BW' : 'kg'}
-        </button>
+        <span className="load-mode-toggle">
+          <button className={`load-mode-btn${!bwMode ? ' active' : ''}`} onClick={() => setBwMode(false)}>kg</button>
+          <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)}>BW</button>
+        </span>
         {!bwMode && (
-          <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55 }} placeholder="kg" autoFocus />
+          <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55, marginLeft: 4 }} placeholder="kg" autoFocus />
         )}
       </td>
       <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" autoFocus={bwMode} onKeyDown={e => e.key === 'Enter' && handleAdd()} /></td>

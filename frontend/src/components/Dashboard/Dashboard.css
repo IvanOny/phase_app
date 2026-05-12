@@ -981,30 +981,42 @@ button.summary-tile--open {
   padding-bottom: var(--space-2);
 }
 
-/* Bodyweight / load toggle button */
-.bw-toggle {
+/* kg / BW segmented toggle */
+.load-mode-toggle {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 30px;
-  height: 24px;
-  padding: 0 6px;
-  font-size: 11px;
-  font-weight: 700;
-  font-family: inherit;
-  letter-spacing: 0.03em;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  cursor: pointer;
-  margin-right: 4px;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  overflow: hidden;
   vertical-align: middle;
 }
 
-.bw-toggle:hover {
-  border-color: var(--accent);
+.load-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.load-mode-btn + .load-mode-btn {
+  border-left: 1px solid var(--border);
+}
+
+.load-mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.load-mode-btn:not(.active):hover {
+  background: var(--accent-tint-12);
   color: var(--accent);
 }
 

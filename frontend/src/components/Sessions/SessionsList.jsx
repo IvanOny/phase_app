@@ -97,7 +97,7 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
         <td>
           <span className="load-mode-toggle">
             <button className={`load-mode-btn${!bwMode ? ' active' : ''}`} onClick={() => setBwMode(false)}>kg</button>
-            <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)}>BW</button>
+            <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)} title="Bodyweight — no external load">BW</button>
           </span>
           {!bwMode && (
             <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55, marginLeft: 4 }} />
@@ -187,7 +187,7 @@ function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded, isBodyweight }) 
       <td>
         <span className="load-mode-toggle">
           <button className={`load-mode-btn${!bwMode ? ' active' : ''}`} onClick={() => setBwMode(false)}>kg</button>
-          <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)}>BW</button>
+          <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)} title="Bodyweight — no external load">BW</button>
         </span>
         {!bwMode && (
           <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55, marginLeft: 4 }} placeholder="kg" autoFocus />

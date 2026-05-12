@@ -55,14 +55,17 @@ function formatType(type) {
 }
 
 // ---- Set row with inline edit ----
-function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, isAuthenticated }) {
+function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, isAuthenticated, isBodyweight }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
+  const [bwMode, setBwMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   function startEdit() {
-    setForm({ reps: set.reps, loadKg: set.loadKg, isTopSet: set.isTopSet, isWorkingSet: set.isWorkingSet });
+    const isBw = isBodyweight || set.loadKg === 0;
+    setBwMode(isBw);
+    setForm({ reps: set.reps, loadKg: isBw ? '' : set.loadKg, isTopSet: set.isTopSet, isWorkingSet: set.isWorkingSet });
     setEditing(true);
   }
 
@@ -71,7 +74,7 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
     try {
       const updated = await updateExerciseSet(sessionExerciseId, set.exerciseSetId, {
         reps: Number(form.reps),
-        loadKg: Number(form.loadKg),
+        loadKg: bwMode ? 0 : Number(form.loadKg),
         isTopSet: form.isTopSet,
         isWorkingSet: form.isWorkingSet,
       });
@@ -91,23 +94,32 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
     return (
       <tr className="set-row-editing">
         <td>{displayNumber}</td>
-        <td><input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 60 }} /></td>
+        <td>
+          <button className="bw-toggle" onClick={() => setBwMode(m => !m)} title="Toggle bodyweight / load">
+            {bwMode ? 'BW' : 'kg'}
+          </button>
+          {!bwMode && (
+            <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55 }} />
+          )}
+        </td>
         <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} /></td>
         <td><input type="checkbox" checked={form.isTopSet} onChange={e => setForm(f => ({ ...f, isTopSet: e.target.checked }))} /></td>
         <td><input type="checkbox" checked={form.isWorkingSet} onChange={e => setForm(f => ({ ...f, isWorkingSet: e.target.checked }))} /></td>
         <td>
-          <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
+          <button className="icon-btn" onClick={saveEdit} disabled={saving || (!bwMode && !form.loadKg) || !form.reps} title="Save">✓</button>
           <button className="icon-btn" onClick={() => setEditing(false)} title="Cancel">✕</button>
         </td>
       </tr>
     );
   }
 
+  const displayLoad = (set.loadKg === 0 || (isBodyweight && !set.loadKg)) ? 'BW' : set.loadKg;
+
   return (
     <>
       <tr className={set.isTopSet ? 'top-set-row' : ''}>
         <td>{displayNumber}</td>
-        <td>{set.loadKg}</td>
+        <td>{displayLoad}</td>
         <td>{set.reps}</td>
         <td>{set.isTopSet ? '★' : ''}</td>
         <td>{set.isWorkingSet ? '✓' : ''}</td>
@@ -132,19 +144,21 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
 }
 
 // ---- Add-set inline form ----
-function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded }) {
+function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded, isBodyweight }) {
   const [open, setOpen] = useState(false);
+  const [bwMode, setBwMode] = useState(isBodyweight ?? false);
   const [form, setForm] = useState({ loadKg: '', reps: '', isTopSet: false, isWorkingSet: true });
   const [saving, setSaving] = useState(false);
 
   async function handleAdd() {
-    if (!form.loadKg || !form.reps) return;
+    if (!form.reps) return;
+    if (!bwMode && !form.loadKg) return;
     setSaving(true);
     try {
       const created = await createExerciseSet(sessionExerciseId, {
         setNumber: nextSetNumber,
         reps: Number(form.reps),
-        loadKg: Number(form.loadKg),
+        loadKg: bwMode ? 0 : Number(form.loadKg),
         isTopSet: form.isTopSet,
         isWorkingSet: form.isWorkingSet,
       });
@@ -169,12 +183,19 @@ function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded }) {
   return (
     <tr className="set-row-editing">
       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{nextSetNumber}</td>
-      <td><input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="kg" autoFocus /></td>
-      <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" onKeyDown={e => e.key === 'Enter' && handleAdd()} /></td>
+      <td>
+        <button className="bw-toggle" onClick={() => setBwMode(m => !m)} title="Toggle bodyweight / load">
+          {bwMode ? 'BW' : 'kg'}
+        </button>
+        {!bwMode && (
+          <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55 }} placeholder="kg" autoFocus />
+        )}
+      </td>
+      <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" autoFocus={bwMode} onKeyDown={e => e.key === 'Enter' && handleAdd()} /></td>
       <td><input type="checkbox" checked={form.isTopSet} onChange={e => setForm(f => ({ ...f, isTopSet: e.target.checked }))} title="Top set" /></td>
       <td><input type="checkbox" checked={form.isWorkingSet} onChange={e => setForm(f => ({ ...f, isWorkingSet: e.target.checked }))} title="Working set" /></td>
       <td>
-        <button className="icon-btn" onClick={handleAdd} disabled={saving || !form.loadKg || !form.reps} title="Save set">✓</button>
+        <button className="icon-btn" onClick={handleAdd} disabled={saving || (!bwMode && !form.loadKg) || !form.reps} title="Save set">✓</button>
         <button className="icon-btn" onClick={() => setOpen(false)} title="Cancel">✕</button>
       </td>
     </tr>
@@ -303,7 +324,10 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
           {data.length === 0 && (
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
           )}
-          {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => (
+          {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => {
+            const catalogEx = catalog.find(e => e.exerciseId === se.exerciseId);
+            const isBodyweight = catalogEx?.isBodyweight ?? false;
+            return (
             <div key={se.sessionExerciseId} className="exercise-block">
               <div className="exercise-block-header">
                 <div className="exercise-name" style={{ color: exerciseColor(se.exerciseId) }}>
@@ -322,7 +346,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                 <thead>
                   <tr>
                     <th>Set</th>
-                    <th>Load (kg)</th>
+                    <th>Load</th>
                     <th>Reps</th>
                     <th>Top set</th>
                     <th>Working</th>
@@ -339,6 +363,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                       onUpdated={updated => handleSetUpdated(se.sessionExerciseId, updated)}
                       onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
                       isAuthenticated={isAuthenticated}
+                      isBodyweight={isBodyweight}
                     />
                   ))}
                   {isAuthenticated && (
@@ -346,12 +371,14 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                       sessionExerciseId={se.sessionExerciseId}
                       nextSetNumber={se.sets.length + 1}
                       onAdded={newSet => handleSetAdded(se.sessionExerciseId, newSet)}
+                      isBodyweight={isBodyweight}
                     />
                   )}
                 </tbody>
               </table>
             </div>
-          ))}
+            );
+          })}
           {isAuthenticated && (
             <AddExerciseRow
               sessionId={sessionId}

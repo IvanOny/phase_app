@@ -60,6 +60,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
 
   useEffect(() => {
     setBenchFilters(['volume']);
+    setSeries('volume');
     openTooltip(null);
   }, [selectedExerciseId]);
 

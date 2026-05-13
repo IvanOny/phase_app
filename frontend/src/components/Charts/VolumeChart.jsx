@@ -124,9 +124,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
 
   const volDomain  = axisDomain(vMin, vMax, vRange, 0.25, 50);
   const loadDomain = axisDomain(lMin, lMax, lRange, 0.20, 2);
-  const title = selectedExercise
-    ? `Volume — ${selectedExercise.exerciseName}`
-    : 'Volume';
+  const title = 'Volume';
 
   function getTooltipPos(event) {
     if (!chartRef.current || !event) return null;

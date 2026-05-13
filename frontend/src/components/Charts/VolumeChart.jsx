@@ -36,7 +36,7 @@ function formatVolume(v) {
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
 }
 
-export default function VolumeChart({ sessions, exerciseVolumes }) {
+export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   const colors = useChartColors();
   const isTouch = useIsTouchDevice();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
@@ -73,13 +73,14 @@ export default function VolumeChart({ sessions, exerciseVolumes }) {
   }, [sessions]);
 
   const selectedExercise = exerciseVolumes.find(e => e.exerciseId === selectedExerciseId);
-  const isBenchPress = selectedExercise?.isBarbellBenchPress === true;
+  const exerciseCatalog = exercises?.find(e => e.exerciseId === selectedExerciseId);
+  const isBenchPress = (selectedExercise?.isBarbellBenchPress ?? exerciseCatalog?.isBarbellBenchPress) === true;
 
   function selectBenchFilter(type) {
     setBenchFilters([type]);
   }
 
-  const isBodyweight = selectedExercise?.isBodyweight === true;
+  const isBodyweight = (selectedExercise?.isBodyweight ?? exerciseCatalog?.isBodyweight) === true;
 
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))

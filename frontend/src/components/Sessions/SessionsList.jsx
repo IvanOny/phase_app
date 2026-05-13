@@ -65,7 +65,7 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
   function startEdit() {
     const isBw = isBodyweight || set.loadKg === 0;
     setBwMode(isBw);
-    setForm({ reps: set.reps, loadKg: isBw ? '' : set.loadKg });
+    setForm({ reps: set.reps, loadKg: isBw ? '' : set.loadKg, isWorkingSet: set.isWorkingSet, isTopSet: isTopSet });
     setEditing(true);
   }
 
@@ -75,8 +75,8 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
       const updated = await updateExerciseSet(sessionExerciseId, set.exerciseSetId, {
         reps: Number(form.reps),
         loadKg: bwMode ? 0 : Number(form.loadKg),
-        isTopSet: false,
-        isWorkingSet: true,
+        isTopSet: Boolean(form.isTopSet),
+        isWorkingSet: Boolean(form.isWorkingSet),
       });
       onUpdated(updated);
       setEditing(false);
@@ -90,7 +90,7 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
     onDeleted(set.exerciseSetId);
   }
 
-  const displayLoad = (set.loadKg === 0 || (isBodyweight && !set.loadKg)) ? 'BW' : set.loadKg;
+  const displayLoad = (set.loadKg === 0 || (isBodyweight && !set.loadKg)) ? '—' : set.loadKg;
 
   if (editing) {
     return (
@@ -107,6 +107,20 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
               : <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55 }} />
             }
             <input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" />
+            <span className="set-flags">
+              <button
+                type="button"
+                className={`flag-badge flag-top${form.isTopSet ? '' : ' flag-inactive'}`}
+                onClick={() => setForm(f => ({ ...f, isTopSet: !f.isTopSet }))}
+                title="Toggle top set"
+              >TOP</button>
+              <button
+                type="button"
+                className={`flag-badge flag-work${form.isWorkingSet ? '' : ' flag-inactive'}`}
+                onClick={() => setForm(f => ({ ...f, isWorkingSet: !f.isWorkingSet }))}
+                title="Toggle working set"
+              >W</button>
+            </span>
             <div className="session-edit-actions">
               <button className="icon-btn" onClick={saveEdit} disabled={saving || (!bwMode && !form.loadKg) || !form.reps} title="Save">✓</button>
               <button className="icon-btn" onClick={() => setEditing(false)} title="Cancel">✕</button>
@@ -312,7 +326,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
   if (!data) {
     return (
       <tr>
-        <td colSpan={8} className="session-detail-cell">
+        <td colSpan={4} className="session-detail-cell">
           <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading…</span>
         </td>
       </tr>
@@ -321,7 +335,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
 
   return (
     <tr>
-      <td colSpan={8} className="session-detail-cell">
+      <td colSpan={4} className="session-detail-cell">
         <div className="session-detail">
           {data.length === 0 && (
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
@@ -329,12 +343,6 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
           {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => {
             const catalogEx = catalog.find(e => e.exerciseId === se.exerciseId);
             const isBodyweight = catalogEx?.isBodyweight ?? false;
-            // Auto-compute top set: highest load, tiebreak by reps
-            const topSetId = se.sets.length > 0
-              ? se.sets.reduce((best, s) =>
-                  s.loadKg > best.loadKg || (s.loadKg === best.loadKg && s.reps > best.reps) ? s : best
-                ).exerciseSetId
-              : null;
             return (
             <div key={se.sessionExerciseId} className="exercise-block">
               <div className="exercise-block-header">
@@ -360,7 +368,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                   </tr>
                 </thead>
                 <tbody>
-                  {se.sets.map((set, idx) => (
+                  {se.sets.filter(s => s.isWorkingSet).map((set, idx) => (
                     <SetRow
                       key={set.exerciseSetId}
                       set={set}
@@ -370,7 +378,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                       onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
                       isAuthenticated={isAuthenticated}
                       isBodyweight={isBodyweight}
-                      isTopSet={set.exerciseSetId === topSetId}
+                      isTopSet={Boolean(set.isTopSet)}
                     />
                   ))}
                   {isAuthenticated && (
@@ -451,7 +459,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
   if (editing) {
     return (
       <tr className="session-row session-row--editing">
-        <td colSpan={8} style={{ padding: 0 }}>
+        <td colSpan={4} style={{ padding: 0 }}>
           <div className="session-edit-inner">
             <div className="session-edit-row1">
               <input type="date" value={form.sessionDate} onChange={e => setForm(f => ({ ...f, sessionDate: e.target.value }))} className="inline-input" />
@@ -491,11 +499,6 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
           <span className="type-dot" style={{ background: TYPE_COLORS[session.sessionType] ?? '#64748b' }} />
           {formatType(session.sessionType)}
         </td>
-        <td style={{ color: readinessColor(session.eliteHrvReadiness) }}>
-          {session.eliteHrvReadiness ?? '—'}
-        </td>
-        <td>{e1rm ? e1rm.topSetE1rmKg : '—'}</td>
-        <td>{vol ? vol.benchVolumeKgReps : '—'}</td>
         <td className="row-actions" onClick={e => e.stopPropagation()}>
           {isAuthenticated && (
             <>
@@ -686,7 +689,7 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
 
   return (
     <div className="chart-wrapper">
-      <div className="card-title">Sessions ({sessions.length})</div>
+      <div className="card-title">Sessions ({filtered.length}{filtered.length !== sessions.length ? ` / ${sessions.length}` : ''})</div>
       <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} />
       {filtered.length === 0 ? (
         <div className="chart-empty">
@@ -700,9 +703,6 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
                 <th></th>
                 <th>Date</th>
                 <th>Type</th>
-                <th>Readiness</th>
-                <th>e1RM (kg)</th>
-                <th>Volume (kg·reps)</th>
                 <th></th>
               </tr>
             </thead>

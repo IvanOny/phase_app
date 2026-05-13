@@ -57,9 +57,7 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     try {
       const result = await importScreenshot(file);
       result.sessionDate = new Date().toISOString().slice(0, 10);
-      result.exercises = result.exercises
-        .map(ex => ({ ...ex, sets: ex.sets.filter(s => s.isWorkingSet) }))
-        .filter(ex => ex.sets.length > 0);
+      result.eliteHrvReadiness = '';
       setEditedData(JSON.parse(JSON.stringify(result)));
       setStage('preview');
     } catch (err) {
@@ -139,6 +137,7 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
         phaseId: Number(phaseId),
         sessionDate: editedData.sessionDate,
         sessionType: editedData.sessionType,
+        eliteHrvReadiness: editedData.eliteHrvReadiness !== '' ? Number(editedData.eliteHrvReadiness) : null,
         notes: editedData.notes || null,
       });
 
@@ -264,6 +263,29 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
             ))}
           </select>
         </div>
+        <div className="form-group">
+          <label>HRV readiness</label>
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="0.1"
+            placeholder="0–10"
+            value={editedData.eliteHrvReadiness ?? ''}
+            onChange={e => updateField('eliteHrvReadiness', e.target.value)}
+            style={{ width: 70 }}
+          />
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label>Notes</label>
+        <input
+          type="text"
+          placeholder="Optional notes…"
+          value={editedData.notes || ''}
+          onChange={e => updateField('notes', e.target.value)}
+        />
       </div>
 
       {editedData.exercises.map((ex, exIdx) => (

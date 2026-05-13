@@ -577,6 +577,21 @@
   vertical-align: middle;
 }
 
+.session-date-cell {
+  max-width: 160px;
+  white-space: normal;
+}
+
+.session-notes-preview {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
 .sessions-table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -656,7 +671,7 @@
 
 .sets-table th {
   text-align: left;
-  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 600;
@@ -666,7 +681,7 @@
 }
 
 .sets-table td {
-  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   border-bottom: none;
@@ -981,6 +996,97 @@ button.summary-tile--open {
   padding-bottom: var(--space-2);
 }
 
+.set-edit-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+}
+
+.set-edit-num {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 16px;
+}
+
+.session-edit-inner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elevated);
+}
+
+.session-edit-row1 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.session-edit-row2 {
+  display: flex;
+}
+
+.session-edit-row2 .inline-input {
+  flex: 1;
+}
+
+.session-edit-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* kg / BW segmented toggle */
+.load-mode-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.load-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.load-mode-btn + .load-mode-btn {
+  border-left: 1px solid var(--border);
+}
+
+.load-mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.load-mode-btn:not(.active):hover {
+  background: var(--accent-tint-12);
+  color: var(--accent);
+}
+
+.bw-hint {
+  margin-left: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  vertical-align: middle;
+}
+
 /* Inline add controls */
 .add-inline-btn {
   background: transparent;
@@ -1020,4 +1126,36 @@ button.summary-tile--open {
 
 .dot-ripple--fast {
   animation: dot-ripple 1s ease-out infinite;
+}
+
+/* ---- Mobile: no horizontal scroll in sessions table ---- */
+@media (max-width: 600px) {
+  .sessions-table-wrap {
+    overflow-x: visible;
+  }
+
+  /* Hide Readiness (col 4) and Volume (col 6) */
+  .sessions-table th:nth-child(4),
+  .sessions-table td:nth-child(4),
+  .sessions-table th:nth-child(6),
+  .sessions-table td:nth-child(6) {
+    display: none;
+  }
+
+  .sessions-table td {
+    white-space: normal;
+  }
+
+  .session-notes-preview {
+    max-width: 100px;
+  }
+
+  /* Editing row: inner flex layout */
+  .session-edit-row1 {
+    flex-wrap: wrap;
+  }
+
+  .session-edit-actions {
+    margin-left: auto;
+  }
 }

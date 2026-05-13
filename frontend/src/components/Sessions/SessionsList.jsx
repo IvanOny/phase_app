@@ -55,14 +55,17 @@ function formatType(type) {
 }
 
 // ---- Set row with inline edit ----
-function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, isAuthenticated }) {
+function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, isAuthenticated, isBodyweight, isTopSet }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
+  const [bwMode, setBwMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   function startEdit() {
-    setForm({ reps: set.reps, loadKg: set.loadKg, isTopSet: set.isTopSet, isWorkingSet: set.isWorkingSet });
+    const isBw = isBodyweight || set.loadKg === 0;
+    setBwMode(isBw);
+    setForm({ reps: set.reps, loadKg: isBw ? '' : set.loadKg });
     setEditing(true);
   }
 
@@ -71,9 +74,9 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
     try {
       const updated = await updateExerciseSet(sessionExerciseId, set.exerciseSetId, {
         reps: Number(form.reps),
-        loadKg: Number(form.loadKg),
-        isTopSet: form.isTopSet,
-        isWorkingSet: form.isWorkingSet,
+        loadKg: bwMode ? 0 : Number(form.loadKg),
+        isTopSet: false,
+        isWorkingSet: true,
       });
       onUpdated(updated);
       setEditing(false);
@@ -87,17 +90,28 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
     onDeleted(set.exerciseSetId);
   }
 
+  const displayLoad = (set.loadKg === 0 || (isBodyweight && !set.loadKg)) ? 'BW' : set.loadKg;
+
   if (editing) {
     return (
       <tr className="set-row-editing">
-        <td>{displayNumber}</td>
-        <td><input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 60 }} /></td>
-        <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} /></td>
-        <td><input type="checkbox" checked={form.isTopSet} onChange={e => setForm(f => ({ ...f, isTopSet: e.target.checked }))} /></td>
-        <td><input type="checkbox" checked={form.isWorkingSet} onChange={e => setForm(f => ({ ...f, isWorkingSet: e.target.checked }))} /></td>
-        <td>
-          <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
-          <button className="icon-btn" onClick={() => setEditing(false)} title="Cancel">✕</button>
+        <td colSpan={4} style={{ padding: 0 }}>
+          <div className="set-edit-inner">
+            <span className="set-edit-num">{displayNumber}</span>
+            <span className="load-mode-toggle">
+              <button className={`load-mode-btn${!bwMode ? ' active' : ''}`} onClick={() => setBwMode(false)}>kg</button>
+              <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)} title="Bodyweight — no external load">BW</button>
+            </span>
+            {bwMode
+              ? <span className="bw-hint">Bodyweight</span>
+              : <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55 }} />
+            }
+            <input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" />
+            <div className="session-edit-actions">
+              <button className="icon-btn" onClick={saveEdit} disabled={saving || (!bwMode && !form.loadKg) || !form.reps} title="Save">✓</button>
+              <button className="icon-btn" onClick={() => setEditing(false)} title="Cancel">✕</button>
+            </div>
+          </div>
         </td>
       </tr>
     );
@@ -105,12 +119,10 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
 
   return (
     <>
-      <tr className={set.isTopSet ? 'top-set-row' : ''}>
+      <tr className={isTopSet ? 'top-set-row' : ''}>
         <td>{displayNumber}</td>
-        <td>{set.loadKg}</td>
+        <td>{displayLoad}</td>
         <td>{set.reps}</td>
-        <td>{set.isTopSet ? '★' : ''}</td>
-        <td>{set.isWorkingSet ? '✓' : ''}</td>
         <td className="row-actions">
           {isAuthenticated && (
             <>
@@ -132,24 +144,26 @@ function SetRow({ set, displayNumber, sessionExerciseId, onUpdated, onDeleted, i
 }
 
 // ---- Add-set inline form ----
-function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded }) {
+function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded, isBodyweight }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ loadKg: '', reps: '', isTopSet: false, isWorkingSet: true });
+  const [bwMode, setBwMode] = useState(isBodyweight ?? false);
+  const [form, setForm] = useState({ loadKg: '', reps: '' });
   const [saving, setSaving] = useState(false);
 
   async function handleAdd() {
-    if (!form.loadKg || !form.reps) return;
+    if (!form.reps) return;
+    if (!bwMode && !form.loadKg) return;
     setSaving(true);
     try {
       const created = await createExerciseSet(sessionExerciseId, {
         setNumber: nextSetNumber,
         reps: Number(form.reps),
-        loadKg: Number(form.loadKg),
-        isTopSet: form.isTopSet,
-        isWorkingSet: form.isWorkingSet,
+        loadKg: bwMode ? 0 : Number(form.loadKg),
+        isTopSet: false,
+        isWorkingSet: true,
       });
       onAdded(created);
-      setForm({ loadKg: '', reps: '', isTopSet: false, isWorkingSet: true });
+      setForm({ loadKg: '', reps: '' });
       setOpen(false);
     } finally {
       setSaving(false);
@@ -159,7 +173,7 @@ function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded }) {
   if (!open) {
     return (
       <tr>
-        <td colSpan={6}>
+        <td colSpan={4}>
           <button className="add-inline-btn" onClick={() => setOpen(true)}>+ Add set</button>
         </td>
       </tr>
@@ -168,14 +182,23 @@ function AddSetRow({ sessionExerciseId, nextSetNumber, onAdded }) {
 
   return (
     <tr className="set-row-editing">
-      <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{nextSetNumber}</td>
-      <td><input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="kg" autoFocus /></td>
-      <td><input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" onKeyDown={e => e.key === 'Enter' && handleAdd()} /></td>
-      <td><input type="checkbox" checked={form.isTopSet} onChange={e => setForm(f => ({ ...f, isTopSet: e.target.checked }))} title="Top set" /></td>
-      <td><input type="checkbox" checked={form.isWorkingSet} onChange={e => setForm(f => ({ ...f, isWorkingSet: e.target.checked }))} title="Working set" /></td>
-      <td>
-        <button className="icon-btn" onClick={handleAdd} disabled={saving || !form.loadKg || !form.reps} title="Save set">✓</button>
-        <button className="icon-btn" onClick={() => setOpen(false)} title="Cancel">✕</button>
+      <td colSpan={4} style={{ padding: 0 }}>
+        <div className="set-edit-inner">
+          <span className="set-edit-num">{nextSetNumber}</span>
+          <span className="load-mode-toggle">
+            <button className={`load-mode-btn${!bwMode ? ' active' : ''}`} onClick={() => setBwMode(false)}>kg</button>
+            <button className={`load-mode-btn${bwMode ? ' active' : ''}`} onClick={() => setBwMode(true)} title="Bodyweight — no external load">BW</button>
+          </span>
+          {bwMode
+            ? <span className="bw-hint">Bodyweight</span>
+            : <input type="number" value={form.loadKg} onChange={e => setForm(f => ({ ...f, loadKg: e.target.value }))} className="inline-input" style={{ width: 55 }} placeholder="kg" autoFocus />
+          }
+          <input type="number" value={form.reps} onChange={e => setForm(f => ({ ...f, reps: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="reps" autoFocus={bwMode} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
+          <div className="session-edit-actions">
+            <button className="icon-btn" onClick={handleAdd} disabled={saving || (!bwMode && !form.loadKg) || !form.reps} title="Save set">✓</button>
+            <button className="icon-btn" onClick={() => setOpen(false)} title="Cancel">✕</button>
+          </div>
+        </div>
       </td>
     </tr>
   );
@@ -303,7 +326,16 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
           {data.length === 0 && (
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
           )}
-          {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => (
+          {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => {
+            const catalogEx = catalog.find(e => e.exerciseId === se.exerciseId);
+            const isBodyweight = catalogEx?.isBodyweight ?? false;
+            // Auto-compute top set: highest load, tiebreak by reps
+            const topSetId = se.sets.length > 0
+              ? se.sets.reduce((best, s) =>
+                  s.loadKg > best.loadKg || (s.loadKg === best.loadKg && s.reps > best.reps) ? s : best
+                ).exerciseSetId
+              : null;
+            return (
             <div key={se.sessionExerciseId} className="exercise-block">
               <div className="exercise-block-header">
                 <div className="exercise-name" style={{ color: exerciseColor(se.exerciseId) }}>
@@ -322,10 +354,8 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                 <thead>
                   <tr>
                     <th>Set</th>
-                    <th>Load (kg)</th>
+                    <th>Load</th>
                     <th>Reps</th>
-                    <th>Top set</th>
-                    <th>Working</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -339,6 +369,8 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                       onUpdated={updated => handleSetUpdated(se.sessionExerciseId, updated)}
                       onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
                       isAuthenticated={isAuthenticated}
+                      isBodyweight={isBodyweight}
+                      isTopSet={set.exerciseSetId === topSetId}
                     />
                   ))}
                   {isAuthenticated && (
@@ -346,12 +378,14 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
                       sessionExerciseId={se.sessionExerciseId}
                       nextSetNumber={se.sets.length + 1}
                       onAdded={newSet => handleSetAdded(se.sessionExerciseId, newSet)}
+                      isBodyweight={isBodyweight}
                     />
                   )}
                 </tbody>
               </table>
             </div>
-          ))}
+            );
+          })}
           {isAuthenticated && (
             <AddExerciseRow
               sessionId={sessionId}
@@ -416,25 +450,26 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
 
   if (editing) {
     return (
-      <>
-        <tr className="session-row session-row--editing">
-          <td></td>
-          <td><input type="date" value={form.sessionDate} onChange={e => setForm(f => ({ ...f, sessionDate: e.target.value }))} className="inline-input" /></td>
-          <td>
-            <select value={form.sessionType} onChange={e => setForm(f => ({ ...f, sessionType: e.target.value }))} className="inline-input">
-              {SESSION_TYPES.map(t => <option key={t} value={t}>{formatType(t)}</option>)}
-            </select>
-          </td>
-          <td><input type="number" min="0" max="10" step="0.1" value={form.eliteHrvReadiness} onChange={e => setForm(f => ({ ...f, eliteHrvReadiness: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="—" /></td>
-          <td colSpan={2}>
-            <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ width: '100%' }} placeholder="Notes…" />
-          </td>
-          <td>
-            <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
-            <button className="icon-btn" onClick={e => { e.stopPropagation(); setEditing(false); }} title="Cancel">✕</button>
-          </td>
-        </tr>
-      </>
+      <tr className="session-row session-row--editing">
+        <td colSpan={8} style={{ padding: 0 }}>
+          <div className="session-edit-inner">
+            <div className="session-edit-row1">
+              <input type="date" value={form.sessionDate} onChange={e => setForm(f => ({ ...f, sessionDate: e.target.value }))} className="inline-input" />
+              <select value={form.sessionType} onChange={e => setForm(f => ({ ...f, sessionType: e.target.value }))} className="inline-input">
+                {SESSION_TYPES.map(t => <option key={t} value={t}>{formatType(t)}</option>)}
+              </select>
+              <input type="number" min="0" max="10" step="0.1" value={form.eliteHrvReadiness} onChange={e => setForm(f => ({ ...f, eliteHrvReadiness: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="HRV" />
+              <div className="session-edit-actions">
+                <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
+                <button className="icon-btn" onClick={e => { e.stopPropagation(); setEditing(false); }} title="Cancel">✕</button>
+              </div>
+            </div>
+            <div className="session-edit-row2">
+              <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ width: '100%' }} placeholder="Notes…" />
+            </div>
+          </div>
+        </td>
+      </tr>
     );
   }
 
@@ -442,9 +477,15 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
     <Fragment>
       <tr className="session-row" onClick={onToggle}>
         <td className="expand-icon">{isOpen ? '▾' : '▸'}</td>
-        <td>
+        <td className="session-date-cell">
           <div>{formatDate(session.sessionDate)}</div>
-          {session.notes && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{session.notes}</div>}
+          {session.notes && (
+            <div className="session-notes-preview">
+              {isOpen || session.notes.length <= 20
+                ? session.notes
+                : session.notes.slice(0, 20) + '…'}
+            </div>
+          )}
         </td>
         <td className="session-type">
           <span className="type-dot" style={{ background: TYPE_COLORS[session.sessionType] ?? '#64748b' }} />

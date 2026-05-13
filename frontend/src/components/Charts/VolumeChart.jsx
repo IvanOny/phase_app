@@ -88,10 +88,11 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
       const dateKey = normDate(s.sessionDate);
       const sets = s.sets ?? [];
       const totalReps = sets.reduce((sum, set) => sum + set.reps, 0);
+      const topSetReps = sets.length ? Math.max(...sets.map(set => set.reps)) : null;
       return {
         date: s.sessionDate,
         volume: isBodyweight ? totalReps : s.volumeKgReps,
-        topLoadKg: isBodyweight ? null : (s.topLoadKg ?? null),
+        topValue: isBodyweight ? topSetReps : (s.topLoadKg ?? null),
         sets,
         sessionType: sessionTypeByDate[dateKey] ?? null,
       };
@@ -103,9 +104,10 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
 
   const hasData = data.length > 0;
   const unit = isBodyweight ? 'reps' : 'kg·reps';
+  const topLabel = isBodyweight ? 'top set (reps)' : 'top load (kg)';
 
   const volumes   = data.map(d => d.volume).filter(v => v != null);
-  const loads     = data.map(d => d.topLoadKg).filter(v => v != null);
+  const loads     = data.map(d => d.topValue).filter(v => v != null);
   const vMin = volumes.length ? Math.min(...volumes) : 0;
   const vMax = volumes.length ? Math.max(...volumes) : 0;
   const lMin = loads.length   ? Math.min(...loads)   : 0;
@@ -203,25 +205,23 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
               </linearGradient>
             </defs>
           </svg>
-          {!isBodyweight && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-              {[
-                { key: 'volume', color: colors.accent,      label: `volume (${unit})` },
-                { key: 'load',   color: colors.readyGreen,  label: 'top load (kg)' },
-                { key: 'both',   color: null,               label: 'both' },
-              ].map(({ key, color, label }) => (
-                <button
-                  key={key}
-                  className={`filter-chip${series === key ? ' active' : ''}`}
-                  onClick={() => setSeries(key)}
-                  style={{ fontSize: 11, padding: '1px 8px', display: 'flex', alignItems: 'center', gap: 5 }}
-                >
-                  {color && <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />}
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            {[
+              { key: 'volume', color: colors.accent,     label: `volume (${unit})` },
+              { key: 'load',   color: colors.readyGreen, label: topLabel },
+              { key: 'both',   color: null,              label: 'both' },
+            ].map(({ key, color, label }) => (
+              <button
+                key={key}
+                className={`filter-chip${series === key ? ' active' : ''}`}
+                onClick={() => setSeries(key)}
+                style={{ fontSize: 11, padding: '1px 8px', display: 'flex', alignItems: 'center', gap: 5 }}
+              >
+                {color && <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />}
+                {label}
+              </button>
+            ))}
+          </div>
           <ResponsiveContainer width="100%" height={210}>
             <BarChart
               data={data}
@@ -250,19 +250,17 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                 hide={!showVolume}
                 domain={volDomain}
               />
-              {!isBodyweight && (
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tickFormatter={v => `${v}`}
-                  tick={{ fill: colors.readyGreen, fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={36}
-                  hide={!showLoad}
-                  domain={loadDomain}
-                />
-              )}
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                tickFormatter={v => `${v}`}
+                tick={{ fill: colors.readyGreen, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                width={36}
+                hide={!showLoad}
+                domain={loadDomain}
+              />
               {showVolume && (
                 <Bar
                   yAxisId="left"
@@ -281,10 +279,10 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                   })}
                 </Bar>
               )}
-              {!isBodyweight && showLoad && (
+              {showLoad && (
                 <Bar
                   yAxisId="right"
-                  dataKey="topLoadKg"
+                  dataKey="topValue"
                   radius={[3, 3, 0, 0]}
                   onClick={loadHandlers.onClick}
                   onMouseEnter={loadHandlers.onMouseEnter}
@@ -319,8 +317,8 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
             >
               {tooltip.type === 'load' ? (
                 <>
-                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>top load</div>
-                  <strong>{tooltip.data.topLoadKg} kg</strong>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{isBodyweight ? 'top set' : 'top load'}</div>
+                  <strong>{tooltip.data.topValue}{isBodyweight ? ' reps' : ' kg'}</strong>
                 </>
               ) : (
                 <>

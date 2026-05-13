@@ -259,24 +259,6 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                 hide={!showLoad}
                 domain={loadDomain}
               />
-              {showVolume && (
-                <Bar
-                  yAxisId="left"
-                  dataKey="volume"
-                  radius={[3, 3, 0, 0]}
-                  onClick={volumeHandlers.onClick}
-                  onMouseEnter={volumeHandlers.onMouseEnter}
-                  onMouseLeave={volumeHandlers.onMouseLeave}
-                  style={{ cursor: 'pointer' }}
-                >
-                  {data.map((entry, i) => {
-                    const isActive = tooltip?.data.date === entry.date && tooltip?.type === 'volume';
-                    const isHovered = hoveredDate === entry.date;
-                    const hasAny = tooltip != null;
-                    return <Cell key={i} fill="url(#vol-bar-grad)" fillOpacity={isActive ? 1 : hasAny ? 0.4 : isHovered ? 0.85 : 1} />;
-                  })}
-                </Bar>
-              )}
               {showLoad && (
                 <Bar
                   yAxisId="right"
@@ -292,6 +274,24 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                     const isHovered = hoveredDate === entry.date;
                     const hasAny = tooltip != null;
                     return <Cell key={i} fill={colors.readyGreen} fillOpacity={isActive ? 1 : hasAny ? 0.3 : isHovered ? 0.9 : 0.75} />;
+                  })}
+                </Bar>
+              )}
+              {showVolume && (
+                <Bar
+                  yAxisId="left"
+                  dataKey="volume"
+                  radius={[3, 3, 0, 0]}
+                  onClick={volumeHandlers.onClick}
+                  onMouseEnter={volumeHandlers.onMouseEnter}
+                  onMouseLeave={volumeHandlers.onMouseLeave}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {data.map((entry, i) => {
+                    const isActive = tooltip?.data.date === entry.date && tooltip?.type === 'volume';
+                    const isHovered = hoveredDate === entry.date;
+                    const hasAny = tooltip != null;
+                    return <Cell key={i} fill="url(#vol-bar-grad)" fillOpacity={isActive ? 1 : hasAny ? 0.4 : isHovered ? 0.85 : 1} />;
                   })}
                 </Bar>
               )}

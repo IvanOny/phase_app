@@ -67,10 +67,10 @@ export const MOCK_BENCHMARKS = [
 ];
 
 export const MOCK_EXERCISES = [
-  { exerciseId: 1, exerciseName: 'Barbell Bench Press', isBarbellBenchPress: true },
-  { exerciseId: 2, exerciseName: 'Pull-up',             isBarbellBenchPress: false },
-  { exerciseId: 3, exerciseName: 'Incline DB Press',    isBarbellBenchPress: false },
-  { exerciseId: 4, exerciseName: 'Dip',                 isBarbellBenchPress: false },
+  { exerciseId: 1, exerciseName: 'Barbell Bench Press', isBarbellBenchPress: true,  isBodyweight: false },
+  { exerciseId: 2, exerciseName: 'Pull-up',             isBarbellBenchPress: false, isBodyweight: true  },
+  { exerciseId: 3, exerciseName: 'Incline DB Press',    isBarbellBenchPress: false, isBodyweight: false },
+  { exerciseId: 4, exerciseName: 'Dip',                 isBarbellBenchPress: false, isBodyweight: false },
 ];
 
 // Exercise volumes by phase — exerciseId → { exerciseName, sessions: [{sessionId, sessionDate, volumeKgReps, topLoadKg, sets}] }
@@ -79,6 +79,8 @@ export const MOCK_EXERCISE_VOLUMES = {
     {
       exerciseId: 1,
       exerciseName: 'Barbell Bench Press',
+      isBodyweight: false,
+      isBarbellBenchPress: true,
       sessions: [
         { sessionId: 101, sessionDate: '2026-01-08', volumeKgReps: 2450, topLoadKg: 80, sets: [{ loadKg: 80, reps: 8 }, { loadKg: 80, reps: 8 }, { loadKg: 75, reps: 7 }] },
         { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 3200, topLoadKg: 85, sets: [{ loadKg: 85, reps: 8 }, { loadKg: 85, reps: 8 }, { loadKg: 80, reps: 8 }, { loadKg: 80, reps: 8 }] },
@@ -96,6 +98,8 @@ export const MOCK_EXERCISE_VOLUMES = {
     {
       exerciseId: 3,
       exerciseName: 'Incline DB Press',
+      isBodyweight: false,
+      isBarbellBenchPress: false,
       sessions: [
         { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 1200, topLoadKg: 30, sets: [{ loadKg: 30, reps: 12 }, { loadKg: 30, reps: 12 }, { loadKg: 30, reps: 16 }] },
         { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 1350, topLoadKg: 32, sets: [{ loadKg: 32, reps: 12 }, { loadKg: 32, reps: 12 }, { loadKg: 30, reps: 13 }] },
@@ -107,6 +111,8 @@ export const MOCK_EXERCISE_VOLUMES = {
     {
       exerciseId: 4,
       exerciseName: 'Dip',
+      isBodyweight: false,
+      isBarbellBenchPress: false,
       sessions: [
         { sessionId: 107, sessionDate: '2026-01-15', volumeKgReps: 800, topLoadKg: 10, sets: [{ loadKg: 10, reps: 12 }, { loadKg: 10, reps: 12 }, { loadKg: 10, reps: 10 }] },
         { sessionId: 108, sessionDate: '2026-01-29', volumeKgReps: 900, topLoadKg: 12.5, sets: [{ loadKg: 12.5, reps: 12 }, { loadKg: 12.5, reps: 12 }, { loadKg: 10, reps: 12 }] },
@@ -119,9 +125,11 @@ export const MOCK_EXERCISE_VOLUMES = {
     {
       exerciseId: 2,
       exerciseName: 'Pull-up',
+      isBodyweight: true,
+      isBarbellBenchPress: false,
       sessions: [
-        { sessionId: 201, sessionDate: '2026-04-07', volumeKgReps: 560, topLoadKg: 10, sets: [{ loadKg: 10, reps: 8 }, { loadKg: 10, reps: 8 }, { loadKg: 10, reps: 8 }] },
-        { sessionId: 202, sessionDate: '2026-04-21', volumeKgReps: 630, topLoadKg: 12.5, sets: [{ loadKg: 12.5, reps: 8 }, { loadKg: 12.5, reps: 8 }, { loadKg: 10, reps: 8 }] },
+        { sessionId: 201, sessionDate: '2026-04-07', volumeKgReps: 0, topLoadKg: 0, sets: [{ loadKg: 0, reps: 8 }, { loadKg: 0, reps: 8 }, { loadKg: 0, reps: 7 }] },
+        { sessionId: 202, sessionDate: '2026-04-21', volumeKgReps: 0, topLoadKg: 0, sets: [{ loadKg: 0, reps: 9 }, { loadKg: 0, reps: 8 }, { loadKg: 0, reps: 8 }] },
       ],
     },
   ],

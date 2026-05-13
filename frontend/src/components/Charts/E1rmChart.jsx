@@ -186,14 +186,18 @@ export default function E1rmChart({ sessions, metricsMap }) {
             )}
           </div>
           <div className="chart-legend">
-            {REPS_BUCKETS.map((b, i) => (
-              <span key={i} className="chart-legend-item">
-                <svg width="10" height="10" style={{ flexShrink: 0 }}>
-                  <circle cx="5" cy="5" r="5" fill={b.color} />
-                </svg>
-                {b.maxReps === Infinity ? '5+ reps' : `${i === 0 ? '1–' : ''}${b.maxReps} rep${b.maxReps > 1 ? 's' : ''}`}
-              </span>
-            ))}
+            {REPS_BUCKETS.map((b, i) => {
+              const lr = Math.round(b.r / 2);
+              const sz = lr * 2 + 2;
+              return (
+                <span key={i} className="chart-legend-item">
+                  <svg width={sz} height={sz} style={{ flexShrink: 0, verticalAlign: 'middle' }}>
+                    <circle cx={sz / 2} cy={sz / 2} r={lr} fill={b.color} />
+                  </svg>
+                  {b.maxReps === Infinity ? '5+ reps' : `${i === 0 ? '1–' : ''}${b.maxReps} rep${b.maxReps > 1 ? 's' : ''}`}
+                </span>
+              );
+            })}
           </div>
         </>
       ) : (

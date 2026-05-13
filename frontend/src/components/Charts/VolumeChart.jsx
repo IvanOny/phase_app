@@ -19,6 +19,7 @@ const BENCH_TYPE_MAP = {
   speed:  'speed_bench',
 };
 
+
 function normDate(d) {
   if (!d) return '';
   return String(d).split('T')[0];
@@ -40,8 +41,12 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   const isTouch = useIsTouchDevice();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
   const [benchFilters, setBenchFilters] = useState(['volume']);
+  const [series, setSeries] = useState('volume');
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-volume');
   const [hoveredDate, setHoveredDate] = useState(null);
+
+  const showVolume = series === 'volume' || series === 'both';
+  const showLoad   = series === 'load'   || series === 'both';
 
   useEffect(() => {
     if (exerciseVolumes.length > 0 && selectedExerciseId === null) {
@@ -55,6 +60,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
 
   useEffect(() => {
     setBenchFilters(['volume']);
+    setSeries('volume');
     openTooltip(null);
   }, [selectedExerciseId]);
 
@@ -68,14 +74,14 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   }, [sessions]);
 
   const selectedExercise = exerciseVolumes.find(e => e.exerciseId === selectedExerciseId);
-  const exerciseInfo = exercises?.find(e => e.exerciseId === selectedExerciseId);
-  const isBenchPress = exerciseInfo?.isBarbellBenchPress === true;
+  const exerciseCatalog = exercises?.find(e => e.exerciseId === selectedExerciseId);
+  const isBenchPress = (selectedExercise?.isBarbellBenchPress ?? exerciseCatalog?.isBarbellBenchPress) === true;
 
   function selectBenchFilter(type) {
     setBenchFilters([type]);
   }
 
-  const isBodyweight = exerciseInfo?.isBodyweight === true;
+  const isBodyweight = (selectedExercise?.isBodyweight ?? exerciseCatalog?.isBodyweight) === true;
 
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
@@ -83,10 +89,11 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
       const dateKey = normDate(s.sessionDate);
       const sets = s.sets ?? [];
       const totalReps = sets.reduce((sum, set) => sum + set.reps, 0);
+      const topSetReps = sets.length ? Math.max(...sets.map(set => set.reps)) : null;
       return {
         date: s.sessionDate,
         volume: isBodyweight ? totalReps : s.volumeKgReps,
-        topLoadKg: isBodyweight ? null : (s.topLoadKg ?? null),
+        topValue: isBodyweight ? topSetReps : (s.topLoadKg ?? null),
         sets,
         sessionType: sessionTypeByDate[dateKey] ?? null,
       };
@@ -98,9 +105,27 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
 
   const hasData = data.length > 0;
   const unit = isBodyweight ? 'reps' : 'kg·reps';
-  const title = selectedExercise
-    ? `Volume — ${selectedExercise.exerciseName}`
-    : 'Volume';
+  const topLabel = isBodyweight ? 'top set (reps)' : 'top load (kg)';
+
+  const volumes   = data.map(d => d.volume).filter(v => v != null);
+  const loads     = data.map(d => d.topValue).filter(v => v != null);
+  const vMin = volumes.length ? Math.min(...volumes) : 0;
+  const vMax = volumes.length ? Math.max(...volumes) : 0;
+  const lMin = loads.length   ? Math.min(...loads)   : 0;
+  const lMax = loads.length   ? Math.max(...loads)   : 0;
+  const vRange = vMax - vMin;
+  const lRange = lMax - lMin;
+
+  function axisDomain(min, max, range, fallbackPct = 0.25, minPad = 50) {
+    if (range < min * 0.02) {
+      return [Math.max(0, min * (1 - fallbackPct)), max * (1 + fallbackPct * 0.5)];
+    }
+    return [Math.max(0, min - range), max + Math.max(range * 0.15, minPad)];
+  }
+
+  const volDomain  = axisDomain(vMin, vMax, vRange, 0.25, 50);
+  const loadDomain = axisDomain(lMin, lMax, lRange, 0.20, 2);
+  const title = 'Volume';
 
   function getTooltipPos(event) {
     if (!chartRef.current || !event) return null;
@@ -171,23 +196,37 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
           style={{ position: 'relative' }}
           onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}
         >
-          {!isBodyweight && (
-            <div style={{ display: 'flex', gap: 12, marginBottom: 6, fontSize: 11, color: colors.textMuted }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: colors.accent, display: 'inline-block' }} />
-                volume ({unit})
-              </span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: colors.readyGreen, display: 'inline-block' }} />
-                top load (kg)
-              </span>
-            </div>
-          )}
-          <ResponsiveContainer width="100%" height={180}>
+          <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
+            <defs>
+              <linearGradient id="vol-bar-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={colors.accent} stopOpacity={1} />
+                <stop offset="100%" stopColor={colors.accent} stopOpacity={0.15} />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            {[
+              { key: 'volume', color: colors.accent,     label: `volume (${unit})` },
+              { key: 'load',   color: colors.readyGreen, label: topLabel },
+              { key: 'both',   color: null,              label: 'both' },
+            ].map(({ key, color, label }) => (
+              <button
+                key={key}
+                className={`filter-chip${series === key ? ' active' : ''}`}
+                onClick={() => setSeries(key)}
+                style={{ fontSize: 11, padding: '1px 8px', display: 'flex', alignItems: 'center', gap: 5 }}
+              >
+                {color && <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />}
+                {label}
+              </button>
+            ))}
+          </div>
+          <ResponsiveContainer width="100%" height={210}>
             <BarChart
               data={data}
               margin={{ top: 8, right: 40, bottom: 24, left: 0 }}
-              barSize={14}
+              barSize={series === 'both' ? 10 : 18}
+              barGap={series === 'both' ? 4 : 0}
               barCategoryGap="30%"
               tabIndex={-1}
               onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}
@@ -207,38 +246,42 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
                 axisLine={false}
                 tickLine={false}
                 width={40}
+                hide={!showVolume}
+                domain={volDomain}
               />
-              {!isBodyweight && (
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tickFormatter={v => `${v}`}
-                  tick={{ fill: colors.readyGreen, fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={36}
-                />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                tickFormatter={v => `${v}`}
+                tick={{ fill: colors.readyGreen, fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                width={36}
+                hide={!showLoad}
+                domain={loadDomain}
+              />
+              {showVolume && (
+                <Bar
+                  yAxisId="left"
+                  dataKey="volume"
+                  radius={[3, 3, 0, 0]}
+                  onClick={volumeHandlers.onClick}
+                  onMouseEnter={volumeHandlers.onMouseEnter}
+                  onMouseLeave={volumeHandlers.onMouseLeave}
+                  style={{ cursor: 'pointer' }}
+                >
+                  {data.map((entry, i) => {
+                    const isActive = tooltip?.data.date === entry.date && tooltip?.type === 'volume';
+                    const isHovered = hoveredDate === entry.date;
+                    const hasAny = tooltip != null;
+                    return <Cell key={i} fill="url(#vol-bar-grad)" fillOpacity={isActive ? 1 : hasAny ? 0.4 : isHovered ? 0.85 : 1} />;
+                  })}
+                </Bar>
               )}
-              <Bar
-                yAxisId="left"
-                dataKey="volume"
-                radius={[3, 3, 0, 0]}
-                onClick={volumeHandlers.onClick}
-                onMouseEnter={volumeHandlers.onMouseEnter}
-                onMouseLeave={volumeHandlers.onMouseLeave}
-                style={{ cursor: 'pointer' }}
-              >
-                {data.map((entry, i) => {
-                  const isActive = tooltip?.data.date === entry.date && tooltip?.type === 'volume';
-                  const isHovered = hoveredDate === entry.date;
-                  const hasAny = tooltip != null;
-                  return <Cell key={i} fill={colors.accent} fillOpacity={isActive ? 1 : hasAny ? 0.35 : isHovered ? 0.75 : 1} />;
-                })}
-              </Bar>
-              {!isBodyweight && (
+              {showLoad && (
                 <Bar
                   yAxisId="right"
-                  dataKey="topLoadKg"
+                  dataKey="topValue"
                   radius={[3, 3, 0, 0]}
                   onClick={loadHandlers.onClick}
                   onMouseEnter={loadHandlers.onMouseEnter}
@@ -273,8 +316,8 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
             >
               {tooltip.type === 'load' ? (
                 <>
-                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>top load</div>
-                  <strong>{tooltip.data.topLoadKg} kg</strong>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{isBodyweight ? 'top set' : 'top load'}</div>
+                  <strong>{tooltip.data.topValue}{isBodyweight ? ' reps' : ' kg'}</strong>
                 </>
               ) : (
                 <>

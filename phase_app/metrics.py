@@ -19,6 +19,7 @@ def get_bench_top_set_e1rm(conn: psycopg2.extensions.connection, session_id: int
             JOIN exercises e ON e.exercise_id = se.exercise_id
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
             WHERE s.session_id = %s
+              AND s.session_type = 'heavy_bench'
               AND e.is_barbell_bench_press = 1
               AND es.is_top_set = 1
             ORDER BY es.load_kg DESC, es.reps DESC, es.exercise_set_id DESC
@@ -72,7 +73,8 @@ def get_phase_summary(conn: psycopg2.extensions.connection, phase_id: int) -> di
             JOIN session_exercises se ON se.session_id = s.session_id
             JOIN exercises e ON e.exercise_id = se.exercise_id
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
-            WHERE s.phase_id = %s AND e.is_barbell_bench_press = 1 AND es.is_top_set = 1
+            WHERE s.phase_id = %s AND s.session_type = 'heavy_bench'
+              AND e.is_barbell_bench_press = 1 AND es.is_top_set = 1
             ORDER BY s.session_date
             """,
             (phase_id,),
@@ -130,7 +132,7 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT e.exercise_id, e.exercise_name,
+            SELECT e.exercise_id, e.exercise_name, e.is_bodyweight, e.is_barbell_bench_press,
                    s.session_id, s.session_date,
                    es.set_number, es.load_kg, es.reps
             FROM sessions s
@@ -152,6 +154,8 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
             exercises[eid] = {
                 "exerciseId": eid,
                 "exerciseName": row["exercise_name"],
+                "isBodyweight": bool(row["is_bodyweight"]),
+                "isBarbellBenchPress": bool(row["is_barbell_bench_press"]),
                 "sessions": {},
             }
         sid = row["session_id"]
@@ -175,6 +179,8 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
         {
             "exerciseId": ex["exerciseId"],
             "exerciseName": ex["exerciseName"],
+            "isBodyweight": ex["isBodyweight"],
+            "isBarbellBenchPress": ex["isBarbellBenchPress"],
             "sessions": sorted(ex["sessions"].values(), key=lambda s: s["sessionDate"]),
         }
         for ex in exercises.values()
@@ -220,6 +226,7 @@ def get_phase_maintenance(conn: psycopg2.extensions.connection, phase_id: int) -
             JOIN exercises e ON e.exercise_id = se.exercise_id
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
             WHERE s.phase_id = %s
+              AND s.session_type = 'heavy_bench'
               AND e.is_barbell_bench_press = 1
               AND es.is_top_set = 1
             ORDER BY s.session_date, es.load_kg DESC
@@ -277,6 +284,7 @@ def get_session_bench_metrics(conn: psycopg2.extensions.connection, phase_id: in
             JOIN exercises e  ON e.exercise_id  = se.exercise_id
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
             WHERE s.phase_id = %s
+              AND s.session_type = 'heavy_bench'
               AND e.is_barbell_bench_press = 1
               AND es.is_top_set = 1
             ORDER BY s.session_id, es.load_kg DESC, es.reps DESC, es.exercise_set_id DESC

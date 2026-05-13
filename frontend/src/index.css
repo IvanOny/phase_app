@@ -42,11 +42,11 @@ input, select, textarea {
 }
 
 .card-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   margin-bottom: var(--space-4);
 }
 

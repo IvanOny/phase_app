@@ -62,6 +62,13 @@ export default function Dashboard({
         </div>
       ) : (
         <>
+          {progression && (
+            <NextStepTile
+              progression={progression}
+              sessions={sessions}
+              onFocusSession={handleFocusSession}
+            />
+          )}
           {selectedPhase && (() => {
             const sorted = [...phases].sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
             const idx = sorted.findIndex(p => p.phaseId === selectedPhase.phaseId);
@@ -79,13 +86,6 @@ export default function Dashboard({
           <E1rmChart sessions={sessions} metricsMap={e1rmMap} />
           <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} exercises={exercises} />
         </>
-      )}
-      {progression && (
-        <NextStepTile
-          progression={progression}
-          sessions={sessions}
-          onFocusSession={handleFocusSession}
-        />
       )}
       <SessionsList
         key={selectedPhase?.phaseId}

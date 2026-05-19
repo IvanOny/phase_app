@@ -93,7 +93,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
       return {
         date: s.sessionDate,
         volume: isBodyweight ? totalReps : s.volumeKgReps,
-        topValue: isBodyweight ? topSetReps : (s.topLoadKg ?? null),
+        topValue: isBodyweight ? topSetReps : (s.topLoadKg != null ? Math.round(s.topLoadKg * 2) / 2 : null),
         sets,
         sessionType: sessionTypeByDate[dateKey] ?? null,
       };

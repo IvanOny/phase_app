@@ -13,6 +13,12 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatDate(d) {
+  if (!d) return '';
+  const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : String(d);
+}
+
 export default function PhaseNav({
   phases,
   selectedPhaseId,
@@ -25,29 +31,55 @@ export default function PhaseNav({
   const activePhase = phases.find(p => p.phaseId === selectedPhaseId);
   const [selectedType, setSelectedType] = useState(activePhase?.phaseType ?? 'bench');
   const [editingId, setEditingId] = useState(null);
+  const [editFields, setEditFields] = useState({});
   const [confirmPhaseId, setConfirmPhaseId] = useState(null);
 
   useEffect(() => {
     if (activePhase) setSelectedType(activePhase.phaseType);
   }, [activePhase?.phaseType]);
-  const [editFields, setEditFields] = useState({});
 
   const typedPhases = phases
     .filter(p => p.phaseType === selectedType)
     .sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+
+  // Index within current type — sync to selectedPhaseId when type matches
+  const selectedIdxInType = typedPhases.findIndex(p => p.phaseId === selectedPhaseId);
+  const [tileIdx, setTileIdx] = useState(Math.max(0, selectedIdxInType));
+
+  useEffect(() => {
+    const idx = typedPhases.findIndex(p => p.phaseId === selectedPhaseId);
+    if (idx >= 0) setTileIdx(idx);
+    else setTileIdx(0);
+  }, [selectedType, selectedPhaseId, typedPhases.map(p => p.phaseId).join(',')]);
+
+  const safeIdx = Math.min(tileIdx, Math.max(0, typedPhases.length - 1));
+  const visiblePhase = typedPhases[safeIdx] ?? null;
 
   function handleTypeTab(type) {
     setSelectedType(type);
     setEditingId(null);
   }
 
-  function startEdit(phase, e) {
+  function handlePrev() {
+    const newIdx = Math.max(0, safeIdx - 1);
+    setTileIdx(newIdx);
+    if (typedPhases[newIdx]) selectAndScroll(typedPhases[newIdx].phaseId);
+  }
+
+  function handleNext() {
+    const newIdx = Math.min(typedPhases.length - 1, safeIdx + 1);
+    setTileIdx(newIdx);
+    if (typedPhases[newIdx]) selectAndScroll(typedPhases[newIdx].phaseId);
+  }
+
+  function startEdit(e) {
     e.stopPropagation();
-    setEditingId(phase.phaseId);
+    if (!visiblePhase) return;
+    setEditingId(visiblePhase.phaseId);
     setEditFields({
-      name: phase.name || '',
-      startDate: phase.startDate || today(),
-      endDate: phase.endDate || '',
+      name: visiblePhase.name || '',
+      startDate: visiblePhase.startDate || today(),
+      endDate: visiblePhase.endDate || '',
     });
   }
 
@@ -56,9 +88,9 @@ export default function PhaseNav({
     setEditingId(null);
   }
 
-  async function saveEdit(phaseId, e) {
+  async function saveEdit(e) {
     e.stopPropagation();
-    await onUpdatePhase(phaseId, {
+    await onUpdatePhase(editingId, {
       name: editFields.name || null,
       startDate: editFields.startDate,
       endDate: editFields.endDate || null,
@@ -66,14 +98,26 @@ export default function PhaseNav({
     setEditingId(null);
   }
 
-  function handleDelete(phaseId, e) {
-    e.stopPropagation();
-    setConfirmPhaseId(phaseId);
+  function selectAndScroll(phaseId) {
+    onSelect(phaseId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
+
+  const tabColor = TYPE_CONFIG[selectedType]?.color ?? 'var(--accent)';
+  const isEditing = editingId === visiblePhase?.phaseId;
 
   return (
     <div className="phase-nav-container">
       <div className="phase-type-tabs">
+        <button
+          className="phase-nav-arrow"
+          style={{ '--tab-color': tabColor }}
+          onClick={() => {
+            const i = TYPE_ORDER.indexOf(selectedType);
+            if (i > 0) handleTypeTab(TYPE_ORDER[i - 1]);
+          }}
+          disabled={TYPE_ORDER.indexOf(selectedType) === 0}
+        >‹</button>
         {TYPE_ORDER.map(type => {
           const cfg = TYPE_CONFIG[type];
           const isActive = selectedType === type;
@@ -89,91 +133,117 @@ export default function PhaseNav({
             </button>
           );
         })}
+        <button
+          className="phase-nav-arrow"
+          style={{ '--tab-color': tabColor }}
+          onClick={() => {
+            const i = TYPE_ORDER.indexOf(selectedType);
+            if (i < TYPE_ORDER.length - 1) handleTypeTab(TYPE_ORDER[i + 1]);
+          }}
+          disabled={TYPE_ORDER.indexOf(selectedType) === TYPE_ORDER.length - 1}
+        >›</button>
       </div>
 
-      <div className="phase-pills-row">
-        {typedPhases.map(phase => {
-          const isSelected = phase.phaseId === selectedPhaseId;
-          const isEditing = editingId === phase.phaseId;
-
-          if (isEditing) {
-            return (
-              <div key={phase.phaseId} className="phase-pill phase-pill--editing">
-                <input
-                  className="pill-edit-input"
-                  placeholder="Name"
-                  value={editFields.name}
-                  onChange={e => setEditFields(f => ({ ...f, name: e.target.value }))}
-                  onClick={e => e.stopPropagation()}
-                  autoFocus
-                />
-                <div className="pill-edit-dates">
-                  <input
-                    type="date"
-                    className="pill-edit-input"
-                    value={editFields.startDate}
-                    onChange={e => setEditFields(f => ({ ...f, startDate: e.target.value }))}
-                    onClick={e => e.stopPropagation()}
-                  />
-                  <span className="pill-edit-dash">–</span>
-                  <input
-                    type="date"
-                    className="pill-edit-input"
-                    value={editFields.endDate}
-                    onChange={e => setEditFields(f => ({ ...f, endDate: e.target.value }))}
-                    onClick={e => e.stopPropagation()}
-                  />
-                </div>
-                <div className="pill-edit-actions">
-                  <button className="btn btn-primary btn-xs" onClick={e => saveEdit(phase.phaseId, e)}>Save</button>
-                  <button className="btn btn-ghost btn-xs" onClick={cancelEdit}>Cancel</button>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div
-              key={phase.phaseId}
-              className={`phase-pill${isSelected ? ' active' : ''}`}
-              style={{ '--tab-color': TYPE_CONFIG[selectedType].color }}
-              onClick={() => onSelect(phase.phaseId)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={e => e.key === 'Enter' && onSelect(phase.phaseId)}
+      {typedPhases.length === 0 ? (
+        <div className="phase-nav-tile phase-nav-tile--empty">
+          <span className="phase-nav-tile-empty-text">No phases yet</span>
+          {isAuthenticated && (
+            <button
+              className="phase-pill-add"
+              style={{ '--tab-color': tabColor }}
+              onClick={() => onAddPhase(selectedType)}
             >
-              <span className="pill-name">{phase.name || '(unnamed)'}</span>
-              {isAuthenticated && (
-                <span className="pill-actions">
-                  <button
-                    className="pill-action-btn"
-                    title="Edit"
-                    onClick={e => startEdit(phase, e)}
-                    aria-label="Edit phase"
-                  >✎</button>
-                  <button
-                    className="pill-action-btn pill-action-btn--danger"
-                    title="Delete"
-                    onClick={e => handleDelete(phase.phaseId, e)}
-                    aria-label="Delete phase"
-                  >×</button>
-                </span>
+              + Add
+            </button>
+          )}
+        </div>
+      ) : isEditing ? (
+        <div className="phase-nav-tile phase-nav-tile--editing">
+          <div className="pill-edit-dates" style={{ flex: 1 }}>
+            <input
+              className="pill-edit-input"
+              placeholder="Name"
+              value={editFields.name}
+              onChange={e => setEditFields(f => ({ ...f, name: e.target.value }))}
+              autoFocus
+            />
+            <input
+              type="date"
+              className="pill-edit-input"
+              value={editFields.startDate}
+              onChange={e => setEditFields(f => ({ ...f, startDate: e.target.value }))}
+            />
+            <span className="pill-edit-dash">–</span>
+            <input
+              type="date"
+              className="pill-edit-input"
+              value={editFields.endDate}
+              onChange={e => setEditFields(f => ({ ...f, endDate: e.target.value }))}
+            />
+          </div>
+          <div className="pill-edit-actions">
+            <button className="btn btn-primary btn-xs" onClick={saveEdit}>Save</button>
+            <button className="btn btn-ghost btn-xs" onClick={cancelEdit}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="phase-nav-tile" style={{ '--tab-color': tabColor }}>
+          <button
+            className="phase-nav-arrow"
+            onClick={handlePrev}
+            disabled={safeIdx === 0}
+            title="Previous phase"
+          >‹</button>
+
+          <div
+            className={`phase-nav-tile-body${visiblePhase?.phaseId === selectedPhaseId ? ' phase-nav-tile-body--active' : ''}`}
+            onClick={() => visiblePhase && selectAndScroll(visiblePhase.phaseId)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => e.key === 'Enter' && visiblePhase && selectAndScroll(visiblePhase.phaseId)}
+          >
+            <div className="phase-nav-tile-name">
+              {visiblePhase?.name || '(unnamed)'}
+              {typedPhases.length > 1 && (
+                <span className="phase-nav-tile-counter">{safeIdx + 1} / {typedPhases.length}</span>
               )}
             </div>
-          );
-        })}
+            <div className="phase-nav-tile-dates">
+              {formatDate(visiblePhase?.startDate)}
+              {visiblePhase?.endDate ? ` – ${formatDate(visiblePhase.endDate)}` : ''}
+            </div>
+          </div>
 
-        {isAuthenticated && (
+          <div className="phase-nav-tile-actions">
+            {isAuthenticated && (
+              <>
+                <button className="pill-action-btn" title="Edit" onClick={startEdit}>✎</button>
+                <button
+                  className="pill-action-btn pill-action-btn--danger"
+                  title="Delete"
+                  onClick={e => { e.stopPropagation(); setConfirmPhaseId(visiblePhase.phaseId); }}
+                >×</button>
+              </>
+            )}
+            {isAuthenticated && (
+              <button
+                className="phase-pill-add phase-pill-add--inline"
+                style={{ '--tab-color': tabColor }}
+                onClick={() => onAddPhase(selectedType)}
+                title={`Add ${TYPE_CONFIG[selectedType].label} phase`}
+              >+</button>
+            )}
+          </div>
+
           <button
-            className="phase-pill-add"
-            style={{ '--tab-color': TYPE_CONFIG[selectedType].color }}
-            onClick={() => onAddPhase(selectedType)}
-            title={`Add ${TYPE_CONFIG[selectedType].label} phase`}
-          >
-            + Add
-          </button>
-        )}
-      </div>
+            className="phase-nav-arrow"
+            onClick={handleNext}
+            disabled={safeIdx === typedPhases.length - 1}
+            title="Next phase"
+          >›</button>
+        </div>
+      )}
+
       {confirmPhaseId && (
         <ConfirmDialog
           message="Delete this phase? This cannot be undone."

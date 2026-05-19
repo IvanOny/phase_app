@@ -7,6 +7,7 @@ import {
   createExerciseSet,
   getExercises,
 } from '../../api/client.js';
+import { formatDuration, formatPace, parseDuration, parsePace } from '../../utils/runMetrics.js';
 import './ScreenshotImportForm.css';
 
 const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
@@ -56,7 +57,7 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     setStage('parsing');
     try {
       const result = await importScreenshot(file);
-      result.sessionDate = new Date().toISOString().slice(0, 10);
+      if (!result.sessionDate) result.sessionDate = new Date().toISOString().slice(0, 10);
       result.eliteHrvReadiness = '';
       setEditedData(JSON.parse(JSON.stringify(result)));
       setStage('preview');
@@ -133,17 +134,33 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     setStage('importing');
     try {
       setImportProgress('Creating session…');
+      const runFields = editedData.sessionType === 'run' ? {
+        runType: editedData.runType || null,
+        distanceKm: editedData.distanceKm ?? null,
+        durationSeconds: editedData.durationSeconds ?? null,
+        avgHr: editedData.avgHr ?? null,
+        maxHr: editedData.maxHr ?? null,
+        avgPaceSecPerKm: editedData.avgPaceSecPerKm ?? null,
+        avgGapPaceSecPerKm: editedData.avgGapPaceSecPerKm ?? null,
+        avgCadence: editedData.avgCadence ?? null,
+        avgGctMs: editedData.avgGctMs ?? null,
+        avgVoCm: editedData.avgVoCm ?? null,
+        ascentM: editedData.ascentM ?? null,
+        rpe: editedData.rpe !== '' && editedData.rpe != null ? Number(editedData.rpe) : null,
+      } : {};
       const session = await createSession({
         phaseId: Number(phaseId),
         sessionDate: editedData.sessionDate,
         sessionType: editedData.sessionType,
         eliteHrvReadiness: editedData.eliteHrvReadiness !== '' ? Number(editedData.eliteHrvReadiness) : null,
         notes: editedData.notes || null,
+        ...runFields,
       });
 
-      for (let exIdx = 0; exIdx < editedData.exercises.length; exIdx++) {
-        const ex = editedData.exercises[exIdx];
-        setImportProgress(`Adding exercise ${exIdx + 1}/${editedData.exercises.length}: ${ex.exerciseName}…`);
+      const exercisesWithSets = editedData.exercises.filter(ex => ex.sets.length > 0);
+      for (let exIdx = 0; exIdx < exercisesWithSets.length; exIdx++) {
+        const ex = exercisesWithSets[exIdx];
+        setImportProgress(`Adding exercise ${exIdx + 1}/${exercisesWithSets.length}: ${ex.exerciseName}…`);
         const exerciseId = await resolveExerciseId(ex.exerciseName);
         const sessionExercise = await createSessionExercise(session.sessionId, {
           exerciseId,
@@ -288,7 +305,114 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
         />
       </div>
 
-      {editedData.exercises.map((ex, exIdx) => (
+      {editedData.sessionType === 'run' && (
+        <>
+          <div className="form-row" style={{ flexWrap: 'wrap' }}>
+            <div className="form-group">
+              <label>Run type</label>
+              <input
+                type="text" placeholder="easy, long, tempo…"
+                value={editedData.runType ?? ''}
+                onChange={e => updateField('runType', e.target.value || null)}
+              />
+            </div>
+            <div className="form-group">
+              <label>Distance (km)</label>
+              <input
+                type="number" min="0" step="0.01" placeholder="6.01"
+                value={editedData.distanceKm ?? ''}
+                onChange={e => updateField('distanceKm', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label>Duration (MM:SS)</label>
+              <input
+                type="text" placeholder="32:43"
+                defaultValue={editedData.durationSeconds != null ? formatDuration(editedData.durationSeconds) : ''}
+                onBlur={e => updateField('durationSeconds', parseDuration(e.target.value))}
+              />
+            </div>
+          </div>
+          <div className="form-row" style={{ flexWrap: 'wrap' }}>
+            <div className="form-group">
+              <label>Avg pace (M:SS/km)</label>
+              <input
+                type="text" placeholder="5:27"
+                defaultValue={editedData.avgPaceSecPerKm != null ? formatPace(editedData.avgPaceSecPerKm).replace(' /km', '') : ''}
+                onBlur={e => updateField('avgPaceSecPerKm', parsePace(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label>GAP (M:SS/km)</label>
+              <input
+                type="text" placeholder="5:12"
+                defaultValue={editedData.avgGapPaceSecPerKm != null ? formatPace(editedData.avgGapPaceSecPerKm).replace(' /km', '') : ''}
+                onBlur={e => updateField('avgGapPaceSecPerKm', parsePace(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label>Avg HR</label>
+              <input
+                type="number" min="0" placeholder="152"
+                value={editedData.avgHr ?? ''}
+                onChange={e => updateField('avgHr', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label>Max HR</label>
+              <input
+                type="number" min="0" placeholder="178"
+                value={editedData.maxHr ?? ''}
+                onChange={e => updateField('maxHr', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </div>
+          </div>
+          <div className="form-row" style={{ flexWrap: 'wrap' }}>
+            <div className="form-group">
+              <label>Cadence (spm)</label>
+              <input
+                type="number" min="0" placeholder="170"
+                value={editedData.avgCadence ?? ''}
+                onChange={e => updateField('avgCadence', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label>GCT (ms)</label>
+              <input
+                type="number" min="0" placeholder="230"
+                value={editedData.avgGctMs ?? ''}
+                onChange={e => updateField('avgGctMs', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label>Vert. osc. (cm)</label>
+              <input
+                type="number" min="0" step="0.1" placeholder="9.2"
+                value={editedData.avgVoCm ?? ''}
+                onChange={e => updateField('avgVoCm', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label>Ascent (m)</label>
+              <input
+                type="number" min="0" placeholder="48"
+                value={editedData.ascentM ?? ''}
+                onChange={e => updateField('ascentM', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </div>
+            <div className="form-group">
+              <label>RPE (1–10)</label>
+              <input
+                type="number" min="1" max="10" step="0.5" placeholder="6"
+                value={editedData.rpe ?? ''}
+                onChange={e => updateField('rpe', e.target.value === '' ? null : Number(e.target.value))}
+              />
+            </div>
+          </div>
+        </>
+      )}
+
+      {editedData.sessionType !== 'run' && editedData.exercises.map((ex, exIdx) => (
         <div key={exIdx} className="screenshot-exercise-block">
           <div className="screenshot-exercise-header">
             <div className="exercise-active-label">{ex.exerciseName}</div>
@@ -358,6 +482,7 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
       {error && <div className="form-error">{error}</div>}
 
       <div className="screenshot-actions">
+
         <button type="button" className="btn btn-ghost" onClick={handleReset}>
           Start over
         </button>

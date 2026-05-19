@@ -78,10 +78,12 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
 
   const selectedExercise = exercises.find(ex => ex.exerciseId === Number(exerciseId));
 
+  const nonRunSessions = sessions.filter(s => s.sessionType !== 'run' && !s.isPlanned);
+
   // label sessions — add a counter suffix when multiple share the same date+type
   const sessionLabels = (() => {
     const groups = {};
-    sessions.forEach(s => {
+    nonRunSessions.forEach(s => {
       const key = `${s.sessionDate}|${s.sessionType}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(s);
@@ -107,7 +109,7 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
           disabled={!!sessionExerciseId}
         >
           <option value="">Select session…</option>
-          {[...sessions].sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate)).map(s => (
+          {[...nonRunSessions].sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate)).map(s => (
             <option key={s.sessionId} value={s.sessionId}>
               {sessionLabels[s.sessionId]}
             </option>

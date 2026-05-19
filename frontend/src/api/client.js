@@ -272,6 +272,13 @@ export async function getPhaseSummary(phaseId) {
   return apiFetch('GET', `/v1/metrics/phases/${phaseId}/summary`, undefined, { allow404: true });
 }
 
+// ---- Progression ----
+
+export async function getPhaseProgression(phaseId) {
+  if (MOCK_MODE) return Promise.resolve([]);
+  return apiFetchList('GET', `/v1/phases/${phaseId}/progression`);
+}
+
 // ---- Screenshot import ----
 
 export async function importScreenshot(file) {

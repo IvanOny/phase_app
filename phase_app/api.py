@@ -129,6 +129,9 @@ class PhaseApi:
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/session-bench-metrics", path):
             return self.get_session_bench_metrics(int(path.split("/")[4]))
 
+        if method == "GET" and re.fullmatch(r"/v1/phases/\d+/progression", path):
+            return self.get_phase_progression(int(path.split("/")[3]))
+
         if method == "POST" and path == "/v1/import/screenshot":
             return self.import_screenshot(body)
 
@@ -180,26 +183,35 @@ class PhaseApi:
         missing = [field for field in required if field not in payload]
         if missing:
             return ApiResponse(400, {"error": "validation_error", "missing": missing})
+        is_planned = bool(payload.get("isPlanned", False))
         try:
             row = self._exec(
-                "INSERT INTO sessions (phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes) "
-                "VALUES (%s, %s, %s, %s, %s, %s) RETURNING session_id",
+                "INSERT INTO sessions "
+                "(phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, is_planned, "
+                "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
+                "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING *, COALESCE(is_planned, FALSE) AS is_planned",
                 (payload["phaseId"], payload["sessionDate"], payload["sessionType"],
-                 payload.get("eliteHrvReadiness"), payload.get("garminOvernightHrv"), payload.get("notes")),
+                 payload.get("eliteHrvReadiness"), payload.get("garminOvernightHrv"), payload.get("notes"), is_planned,
+                 payload.get("distanceKm"), payload.get("durationSeconds"),
+                 payload.get("avgHr"), payload.get("avgPaceSecPerKm"),
+                 payload.get("runType"), payload.get("maxHr"),
+                 payload.get("avgCadence"), payload.get("avgGctMs"),
+                 payload.get("avgVoCm"), payload.get("ascentM"),
+                 payload.get("rpe"), payload.get("avgGapPaceSecPerKm")),
             ).fetchone()
+            if not is_planned:
+                self._exec(
+                    "DELETE FROM sessions WHERE phase_id = %s AND session_date = %s "
+                    "AND is_planned = TRUE AND session_id != %s",
+                    (payload["phaseId"], payload["sessionDate"], row["session_id"]),
+                )
             self.conn.commit()
         except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
-        return ApiResponse(201, {
-            "sessionId": row["session_id"],
-            "phaseId": payload["phaseId"],
-            "sessionDate": payload["sessionDate"],
-            "sessionType": payload["sessionType"],
-            "eliteHrvReadiness": payload.get("eliteHrvReadiness"),
-            "garminOvernightHrv": payload.get("garminOvernightHrv"),
-            "notes": payload.get("notes"),
-        })
+        return ApiResponse(201, self._session_row(row))
 
     def create_session_exercise(self, session_id: int, payload: dict[str, Any]) -> ApiResponse:
         required = ["exerciseId", "exerciseOrder"]
@@ -252,21 +264,16 @@ class PhaseApi:
 
     def get_session(self, session_id: int) -> ApiResponse:
         row = self._exec(
-            "SELECT session_id, phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes "
+            "SELECT session_id, phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, "
+            "COALESCE(is_planned, FALSE) AS is_planned, "
+            "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
+            "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km "
             "FROM sessions WHERE session_id = %s",
             (session_id,),
         ).fetchone()
         if row is None:
             return ApiResponse(404, {"error": "not_found"})
-        return ApiResponse(200, {
-            "sessionId": row["session_id"],
-            "phaseId": row["phase_id"],
-            "sessionDate": row["session_date"],
-            "sessionType": row["session_type"],
-            "eliteHrvReadiness": row["elite_hrv_readiness"],
-            "garminOvernightHrv": row["garmin_overnight_hrv"],
-            "notes": row["notes"],
-        })
+        return ApiResponse(200, self._session_row(row))
 
     def get_session_exercises(self, session_id: int) -> ApiResponse:
         rows = self._exec(
@@ -312,16 +319,8 @@ class PhaseApi:
             "notes": r["notes"],
         } for r in rows]})
 
-    def list_sessions(self, qp: dict[str, str]) -> ApiResponse:
-        if "phaseId" not in qp:
-            return ApiResponse(400, {"error": "validation_error", "missing": ["phaseId"]})
-        rows = self._exec(
-            "SELECT session_id, phase_id, session_date, session_type, "
-            "elite_hrv_readiness, garmin_overnight_hrv, notes "
-            "FROM sessions WHERE phase_id = %s ORDER BY session_date",
-            (int(qp["phaseId"]),),
-        ).fetchall()
-        return ApiResponse(200, {"items": [{
+    def _session_row(self, r: dict) -> dict:
+        return {
             "sessionId": r["session_id"],
             "phaseId": r["phase_id"],
             "sessionDate": r["session_date"],
@@ -329,7 +328,34 @@ class PhaseApi:
             "eliteHrvReadiness": r["elite_hrv_readiness"],
             "garminOvernightHrv": r["garmin_overnight_hrv"],
             "notes": r["notes"],
-        } for r in rows]})
+            "isPlanned": bool(r.get("is_planned", False)),
+            "distanceKm": float(r["distance_km"]) if r.get("distance_km") is not None else None,
+            "durationSeconds": r.get("duration_seconds"),
+            "avgHr": r.get("avg_hr"),
+            "avgPaceSecPerKm": r.get("avg_pace_sec_per_km"),
+            "runType": r.get("run_type"),
+            "maxHr": r.get("max_hr"),
+            "avgCadence": r.get("avg_cadence"),
+            "avgGctMs": r.get("avg_gct_ms"),
+            "avgVoCm": float(r["avg_vo_cm"]) if r.get("avg_vo_cm") is not None else None,
+            "ascentM": r.get("ascent_m"),
+            "rpe": float(r["rpe"]) if r.get("rpe") is not None else None,
+            "avgGapPaceSecPerKm": r.get("avg_gap_pace_sec_per_km"),
+        }
+
+    def list_sessions(self, qp: dict[str, str]) -> ApiResponse:
+        if "phaseId" not in qp:
+            return ApiResponse(400, {"error": "validation_error", "missing": ["phaseId"]})
+        rows = self._exec(
+            "SELECT session_id, phase_id, session_date, session_type, "
+            "elite_hrv_readiness, garmin_overnight_hrv, notes, "
+            "COALESCE(is_planned, FALSE) AS is_planned, "
+            "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
+            "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km "
+            "FROM sessions WHERE phase_id = %s ORDER BY session_date",
+            (int(qp["phaseId"]),),
+        ).fetchall()
+        return ApiResponse(200, {"items": [self._session_row(r) for r in rows]})
 
     def list_exercises(self) -> ApiResponse:
         rows = self._exec(
@@ -498,7 +524,13 @@ class PhaseApi:
     def update_session(self, session_id: int, payload: dict[str, Any]) -> ApiResponse:
         allowed = {"sessionDate": "session_date", "sessionType": "session_type",
                    "eliteHrvReadiness": "elite_hrv_readiness", "garminOvernightHrv": "garmin_overnight_hrv",
-                   "notes": "notes"}
+                   "notes": "notes",
+                   "distanceKm": "distance_km", "durationSeconds": "duration_seconds",
+                   "avgHr": "avg_hr", "avgPaceSecPerKm": "avg_pace_sec_per_km",
+                   "runType": "run_type", "maxHr": "max_hr",
+                   "avgCadence": "avg_cadence", "avgGctMs": "avg_gct_ms",
+                   "avgVoCm": "avg_vo_cm", "ascentM": "ascent_m",
+                   "rpe": "rpe", "avgGapPaceSecPerKm": "avg_gap_pace_sec_per_km"}
         updates = {col: payload[key] for key, col in allowed.items() if key in payload}
         if not updates:
             return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields provided"})
@@ -506,7 +538,7 @@ class PhaseApi:
         try:
             cur = self._exec(
                 f"UPDATE sessions SET {set_clause} WHERE session_id = %s "
-                "RETURNING session_id, phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes",
+                "RETURNING *, COALESCE(is_planned, FALSE) AS is_planned",
                 (*updates.values(), session_id),
             )
             row = cur.fetchone()
@@ -516,15 +548,7 @@ class PhaseApi:
         except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
-        return ApiResponse(200, {
-            "sessionId": row["session_id"],
-            "phaseId": row["phase_id"],
-            "sessionDate": row["session_date"],
-            "sessionType": row["session_type"],
-            "eliteHrvReadiness": row["elite_hrv_readiness"],
-            "garminOvernightHrv": row["garmin_overnight_hrv"],
-            "notes": row["notes"],
-        })
+        return ApiResponse(200, self._session_row(row))
 
     def delete_session(self, session_id: int) -> ApiResponse:
         cur = self._exec("DELETE FROM sessions WHERE session_id = %s RETURNING session_id", (session_id,))
@@ -777,6 +801,60 @@ class PhaseApi:
         from phase_app.metrics import get_phase_maintenance
         return ApiResponse(200, get_phase_maintenance(self.conn, phase_id))
 
+    def get_phase_progression(self, phase_id: int) -> ApiResponse:
+        rows = self._exec(
+            """
+            WITH last_session AS (
+              SELECT DISTINCT ON (e.exercise_id, s.session_type)
+                e.exercise_id,
+                e.exercise_name,
+                e.is_bodyweight,
+                s.session_id,
+                s.session_date,
+                s.session_type
+              FROM session_exercises se
+              JOIN sessions s ON s.session_id = se.session_id
+              JOIN exercises e ON e.exercise_id = se.exercise_id
+              WHERE s.phase_id = %s
+                AND COALESCE(s.is_planned, FALSE) = FALSE
+              ORDER BY e.exercise_id, s.session_type, s.session_date DESC, s.session_id DESC
+            )
+            SELECT
+              ls.exercise_id, ls.exercise_name, ls.is_bodyweight,
+              ls.session_id  AS last_session_id,
+              ls.session_date AS last_session_date,
+              ls.session_type AS last_session_type,
+              es.reps, es.load_kg, es.set_number,
+              se.exercise_order
+            FROM last_session ls
+            JOIN session_exercises se
+              ON se.session_id = ls.session_id AND se.exercise_id = ls.exercise_id
+            JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+            WHERE es.is_working_set = 1
+            ORDER BY se.exercise_order, es.set_number
+            """,
+            (phase_id,),
+        ).fetchall()
+
+        exercises: dict[tuple, dict] = {}
+        for r in rows:
+            key = (r["exercise_id"], r["last_session_type"])
+            if key not in exercises:
+                exercises[key] = {
+                    "exerciseId": r["exercise_id"],
+                    "exerciseName": r["exercise_name"],
+                    "isBodyweight": bool(r["is_bodyweight"]),
+                    "lastSessionId": r["last_session_id"],
+                    "lastSessionDate": str(r["last_session_date"]),
+                    "lastSessionType": r["last_session_type"],
+                    "workingSets": [],
+                }
+            exercises[key]["workingSets"].append({
+                "reps": r["reps"],
+                "loadKg": float(r["load_kg"]) if r["load_kg"] is not None else 0.0,
+            })
+        return ApiResponse(200, {"items": list(exercises.values())})
+
     def import_screenshot(self, payload: dict[str, Any]) -> ApiResponse:
         import base64
         import anthropic
@@ -818,7 +896,21 @@ class PhaseApi:
             "- Convert lbs to kg (multiply by 0.4536). Use 0 for bodyweight exercises.\n"
             "- Garmin Connect tables have columns: Set, Exercise Name, Time, Rest, Reps, Weight, Volume. "
             "Use the Weight column for loadKg. Do NOT use the Volume column (Weight × Reps) — it is much larger.\n"
-            "- Non-resistance activities (Cardio, Walking, Running warm-up) have no sets: include them with sets: [].\n"
+            "- Run sessions (sessionType = 'run'): set exercises to [] and extract structured run metrics as top-level fields:\n"
+            "  'runType': string describing run subtype if visible (e.g. 'easy', 'long run', 'tempo', 'intervals', 'race', 'trail'), else null\n"
+            "  'distanceKm': number (e.g. 6.01)\n"
+            "  'durationSeconds': integer total seconds (e.g. 1963 for 32:43)\n"
+            "  'avgHr': integer bpm (e.g. 152)\n"
+            "  'maxHr': integer bpm (e.g. 178)\n"
+            "  'avgPaceSecPerKm': integer seconds/km for average pace (e.g. 327 for 5:27/km)\n"
+            "  'avgGapPaceSecPerKm': integer seconds/km for Grade Adjusted Pace if shown (e.g. 312 for 5:12/km)\n"
+            "  'avgCadence': integer steps per minute (e.g. 170)\n"
+            "  'avgGctMs': integer milliseconds for average ground contact time (e.g. 230)\n"
+            "  'avgVoCm': number centimetres for average vertical oscillation (e.g. 9.2)\n"
+            "  'ascentM': integer metres of total ascent/elevation gain (e.g. 48)\n"
+            "  'rpe': number 1–10 for Rate of Perceived Exertion if shown (e.g. 6.5)\n"
+            "  Omit any field not visible in the screenshot. Set notes to null.\n"
+            "- Non-run cardio/warmup activities inside a strength session have no sets: include them with sets: [].\n"
             "- Warmup detection: for each exercise, sets at the start that are significantly lighter than the "
             "working weight (typically ≤ 60% of the top set weight) should have isWorkingSet: false. "
             "All other sets default to isWorkingSet: true.\n"

@@ -49,7 +49,7 @@ function computeSuggestion(item) {
   return { kind: 'same_weight', loadKg: load, targetReps: rule.max };
 }
 
-function SuggestionDisplay({ item, onFocusSession }) {
+function SuggestionDisplay({ item, onFocusSession, showLastSession = true }) {
   const sugg = computeSuggestion(item);
 
   if (!sugg) {
@@ -76,13 +76,15 @@ function SuggestionDisplay({ item, onFocusSession }) {
         <span className="nsc-reps">{sugg.targetReps}<span className="nsc-reps-label"> reps</span></span>
       </div>
       <div className={`nsc-kind ${kindClass}`}>{kindLabel}</div>
-      <button
-        className="nsc-last-session"
-        onClick={() => onFocusSession?.({ exerciseId: item.exerciseId, sessionType: item.lastSessionType })}
-        title="Expand this session in the log"
-      >
-        Last: {formatDate(item.lastSessionDate)} · {formatType(item.lastSessionType)} ↓
-      </button>
+      {showLastSession && (
+        <button
+          className="nsc-last-session"
+          onClick={() => onFocusSession?.({ exerciseId: item.exerciseId, sessionType: item.lastSessionType })}
+          title="Expand this session in the log"
+        >
+          Last: {formatDate(item.lastSessionDate)} · {formatType(item.lastSessionType)} ↓
+        </button>
+      )}
     </div>
   );
 }
@@ -120,7 +122,6 @@ export function NextStepTile({ progression, sessions, onFocusSession }) {
 
   const [idx, setIdx] = useState(0);
   const safeIdx = Math.min(idx, Math.max(0, actionable.length - 1));
-  const item = actionable[safeIdx] ?? null;
 
   const emptyReason = nextPlanned && !lastExecutedOfType
     ? `No prior ${formatType(nextPlanned.sessionType)} session logged.`
@@ -141,25 +142,46 @@ export function NextStepTile({ progression, sessions, onFocusSession }) {
         <div className="nsc-empty">{emptyReason}</div>
       ) : (
         <>
-          <div className="nsc-tile-nav">
-            <button
-              className="nsc-nav-btn"
-              onClick={() => setIdx(i => Math.max(0, i - 1))}
-              disabled={safeIdx === 0}
-            >‹</button>
-            <div className="nsc-tile-title">
-              <span className="nsc-exercise-name">{item?.exerciseName}</span>
-              {actionable.length > 1 && (
-                <span className="nsc-counter">{safeIdx + 1} / {actionable.length}</span>
-              )}
+          {/* Mobile: arrow carousel — one exercise at a time */}
+          <div className="nsc-mobile-carousel">
+            <div className="nsc-tile-nav">
+              <button
+                className="nsc-nav-btn"
+                onClick={() => setIdx(i => Math.max(0, i - 1))}
+                disabled={safeIdx === 0}
+              >‹</button>
+              <div className="nsc-tile-title">
+                <span className="nsc-exercise-name">{actionable[safeIdx]?.exerciseName}</span>
+                {actionable.length > 1 && (
+                  <span className="nsc-counter">{safeIdx + 1} / {actionable.length}</span>
+                )}
+              </div>
+              <button
+                className="nsc-nav-btn"
+                onClick={() => setIdx(i => Math.min(actionable.length - 1, i + 1))}
+                disabled={safeIdx === actionable.length - 1}
+              >›</button>
             </div>
-            <button
-              className="nsc-nav-btn"
-              onClick={() => setIdx(i => Math.min(actionable.length - 1, i + 1))}
-              disabled={safeIdx === actionable.length - 1}
-            >›</button>
+            <SuggestionDisplay item={actionable[safeIdx]} onFocusSession={onFocusSession} showLastSession={false} />
           </div>
-          {item && <SuggestionDisplay item={item} onFocusSession={onFocusSession} />}
+
+          {/* Desktop: all exercises side by side */}
+          <div className="nsc-desktop-grid">
+            {actionable.map(item => (
+              <div key={item.exerciseId + item.lastSessionType} className="nsc-exercise-card">
+                <div className="nsc-exercise-name" style={{ marginBottom: 'var(--space-3)' }}>{item.exerciseName}</div>
+                <SuggestionDisplay item={item} onFocusSession={onFocusSession} showLastSession={false} />
+              </div>
+            ))}
+          </div>
+          <button
+            className="nsc-last-session"
+            style={{ marginTop: 'var(--space-3)' }}
+            onClick={() => onFocusSession?.({ exerciseId: null, sessionType: actionable[0].lastSessionType, sessionId: actionable[0].lastSessionId })}
+            title="Expand this session in the log"
+          >
+            Last: {formatDate(actionable[0].lastSessionDate)} · {formatType(actionable[0].lastSessionType)} ↓
+          </button>
         </>
       )}
     </div>

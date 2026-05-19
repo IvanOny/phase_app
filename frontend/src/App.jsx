@@ -31,6 +31,7 @@ import {
   getPhaseSessionBenchMetrics,
   getPhaseExerciseVolumes,
   getRunBenchmarks,
+  getPhaseProgression,
   getExercises,
   updatePhase,
   deletePhase,
@@ -52,6 +53,7 @@ function App() {
   const [volumeMap, setVolumeMap] = useState({});
   const [exerciseVolumesMap, setExerciseVolumesMap] = useState({});
   const [runBenchmarksMap, setRunBenchmarksMap] = useState({});
+  const [progressionMap, setProgressionMap] = useState({});
   const [exercises, setExercises] = useState([]);
   const [summaryKey, setSummaryKey] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -76,14 +78,16 @@ function App() {
 
   const loadPhaseData = useCallback(async (phaseId) => {
     if (!phaseId) return;
-    const [sessions, exerciseVolumes, runBenchmarks] = await Promise.all([
+    const [sessions, exerciseVolumes, runBenchmarks, progression] = await Promise.all([
       getSessionsByPhase(phaseId),
       getPhaseExerciseVolumes(phaseId),
       getRunBenchmarks(phaseId),
+      getPhaseProgression(phaseId),
     ]);
     setSessionsMap(prev => ({ ...prev, [phaseId]: sessions }));
     setExerciseVolumesMap(prev => ({ ...prev, [phaseId]: exerciseVolumes }));
     setRunBenchmarksMap(prev => ({ ...prev, [phaseId]: runBenchmarks }));
+    setProgressionMap(prev => ({ ...prev, [phaseId]: progression }));
 
     const benchMetrics = await getPhaseSessionBenchMetrics(phaseId);
     setE1rmMap(prev => ({ ...prev, ...benchMetrics.e1rm }));
@@ -104,7 +108,12 @@ function App() {
   function handleSessionLogged(session) {
     setSessionsMap(prev => {
       const existing = prev[session.phaseId] || [];
-      return { ...prev, [session.phaseId]: [...existing, session] };
+      const sessionDate = String(session.sessionDate).slice(0, 10);
+      // If this is a real session, remove planned sessions for the same date
+      const base = session.isPlanned
+        ? existing
+        : existing.filter(s => !(s.isPlanned && String(s.sessionDate).slice(0, 10) === sessionDate));
+      return { ...prev, [session.phaseId]: [...base, session] };
     });
   }
 
@@ -200,6 +209,7 @@ function App() {
         volumeMap={volumeMap}
         exerciseVolumes={exerciseVolumesMap[selectedPhaseId] || []}
         runBenchmarks={runBenchmarksMap[selectedPhaseId] || []}
+        progression={progressionMap[selectedPhaseId] || []}
         exercises={exercises}
         onSelectPhase={setSelectedPhaseId}
         onOpenPanel={() => setPanelOpen(true)}
@@ -208,6 +218,7 @@ function App() {
         onDeletePhase={handleDeletePhase}
         onUpdateSession={(sessionId, payload) => handleUpdateSession(sessionId, selectedPhaseId, payload)}
         onDeleteSession={(sessionId) => handleDeleteSession(sessionId, selectedPhaseId)}
+        onSessionCreated={handleSessionLogged}
         summaryKey={summaryKey}
         theme={theme}
         onToggleTheme={toggleTheme}

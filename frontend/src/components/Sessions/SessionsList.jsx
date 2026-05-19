@@ -266,7 +266,7 @@ function AddExerciseRow({ sessionId, catalog, nextOrder, onAdded }) {
 }
 
 // ---- Expanded session detail with exercise/set edit ----
-function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExerciseDeleted, isAuthenticated }) {
+function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAuthenticated }) {
   const [data, setData] = useState(null);
   const [confirmExercise, setConfirmExercise] = useState(null);
 
@@ -342,7 +342,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
           {data.length === 0 && (
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
           )}
-          {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => {
+          {data.map(se => {
             const catalogEx = catalog.find(e => e.exerciseId === se.exerciseId);
             const isBodyweight = catalogEx?.isBodyweight ?? false;
             return (
@@ -418,7 +418,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
 }
 
 // ---- Session row with inline edit ----
-function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, filterExerciseId, isAuthenticated, rowRef }) {
+function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, isAuthenticated, rowRef, onBackToCalendar }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -576,6 +576,15 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
           )}
         </td>
       </tr>
+      {isOpen && !isPlanned && onBackToCalendar && (
+        <tr>
+          <td colSpan={4} style={{ paddingBottom: 0 }}>
+            <button className="sessions-back-to-cal-btn" onClick={onBackToCalendar}>
+              ↑ Schedule &amp; Filters
+            </button>
+          </td>
+        </tr>
+      )}
       {isOpen && !isPlanned && session.sessionType === 'run' && (
         <tr>
           <td colSpan={4} className="session-detail-cell">
@@ -603,7 +612,6 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
         <SessionDetail
           sessionId={session.sessionId}
           exercises={exercises}
-          filterExerciseId={filterExerciseId}
           isAuthenticated={isAuthenticated}
         />
       )}
@@ -705,7 +713,6 @@ function FilterBar({ filters, onChange, exercises }) {
 export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exercises, exerciseVolumes, onUpdateSession, onDeleteSession, onSessionCreated, isAuthenticated, focusFilter }) {
   const [expanded, setExpanded] = useState(new Set());
   const [filters, setFilters] = useState({ types: SESSION_TYPES, exerciseId: '' });
-  const [showCalendar, setShowCalendar] = useState(true);
   const [showAll, setShowAll] = useState(false);
   const rowRefs = useRef({});
   const wrapperRef = useRef(null);
@@ -741,41 +748,28 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
   }, [sessions, filters.types, exerciseVolumes, exercises, allTypesSelected]);
 
   function handleFiltersChange(next) {
-    // Clear exercise filter if it's no longer available after a type change
-    const nextAllTypes = next.types.length === SESSION_TYPES.length;
-    if (next.exerciseId && !nextAllTypes) {
-      const matchingSessionIds = new Set(
-        sessions.filter(s => next.types.includes(s.sessionType)).map(s => s.sessionId)
-      );
-      const exerciseIds = new Set();
-      (exerciseVolumes ?? []).forEach(ev => {
-        ev.sessions.forEach(s => {
-          if (matchingSessionIds.has(s.sessionId)) exerciseIds.add(ev.exerciseId);
-        });
-      });
-      if (!exerciseIds.has(Number(next.exerciseId))) {
-        next = { ...next, exerciseId: '' };
-      }
+    const typesChanged = next.types.join(',') !== filters.types.join(',');
+    if (typesChanged && next.exerciseId) {
+      next = { ...next, exerciseId: '' };
     }
     setFilters(next);
   }
 
   function toggleRow(sessionId) {
-    setExpanded(prev => {
-      const next = new Set(prev);
-      next.has(sessionId) ? next.delete(sessionId) : next.add(sessionId);
-      return next;
-    });
+    setExpanded(prev =>
+      prev.has(sessionId) ? new Set() : new Set([sessionId])
+    );
+    setFilters(f => ({ ...f, exerciseId: '' }));
   }
 
   function handleCalendarSelectSession(sessionId) {
-    setShowCalendar(false);
-    // Clear type filter so the session is visible regardless of current filter
-    setFilters(f => ({ ...f, types: SESSION_TYPES }));
-    setExpanded(prev => new Set([...prev, sessionId]));
+    // Clear all filters so the session is visible regardless of type or exercise filter
+    setFilters({ types: SESSION_TYPES, exerciseId: '' });
+    setShowAll(true);
+    setExpanded(new Set([sessionId]));
     setTimeout(() => {
       const el = rowRefs.current[sessionId];
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
   }
 
@@ -817,13 +811,20 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
   useEffect(() => {
     if (filters.exerciseId) {
       setExpanded(new Set(filtered.map(s => s.sessionId)));
+      setTimeout(() => {
+        tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
     }
   }, [filters.exerciseId, filtered.map(s => s.sessionId).join(',')]);
 
   // Apply exercise+type filters triggered externally (e.g. from NextStep card)
   useEffect(() => {
     if (!focusFilter) return;
-    setFilters({ types: [focusFilter.sessionType], exerciseId: String(focusFilter.exerciseId) });
+    setFilters({ types: [focusFilter.sessionType], exerciseId: focusFilter.exerciseId ? String(focusFilter.exerciseId) : '' });
+    if (focusFilter.sessionId) {
+      setShowAll(true);
+      setExpanded(new Set([focusFilter.sessionId]));
+    }
     setTimeout(() => {
       tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
@@ -834,35 +835,31 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
 
   return (
     <div className="chart-wrapper" ref={wrapperRef}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
+      <div style={{ marginBottom: 'var(--space-4)' }}>
         <div className="card-title" style={{ marginBottom: 0 }}>
           Sessions ({realCount}{plannedCount > 0 ? ` + ${plannedCount} planned` : ''})
         </div>
-        {phase && (
-          <button
-            className={`icon-btn cal-toggle-btn${showCalendar ? ' cal-toggle-btn--active' : ''}`}
-            title={showCalendar ? 'Hide schedule' : 'Show phase schedule'}
-            onClick={() => setShowCalendar(v => !v)}
-          >
-            📅
-          </button>
-        )}
       </div>
 
-      {showCalendar && phase && (
-        <PhaseCalendar
-          phase={phase}
-          sessions={sessions}
-          exerciseVolumes={exerciseVolumes}
-          onSelectSession={handleCalendarSelectSession}
-          onSessionCreated={handleCalendarSessionCreated}
-          onSessionDeleted={handleCalendarSessionDeleted}
-          isAuthenticated={isAuthenticated}
-          onClose={() => setShowCalendar(false)}
-        />
-      )}
-
-      <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} />
+      <div className="sessions-cal-filter-layout">
+        {phase && (
+          <div className="sessions-cal-col">
+            <PhaseCalendar
+              phase={phase}
+              sessions={sessions}
+              exerciseVolumes={exerciseVolumes}
+              activeTypes={filters.types}
+              onSelectSession={handleCalendarSelectSession}
+              onSessionCreated={handleCalendarSessionCreated}
+              onSessionDeleted={handleCalendarSessionDeleted}
+              isAuthenticated={isAuthenticated}
+            />
+          </div>
+        )}
+        <div className="sessions-filter-col">
+          <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} />
+        </div>
+      </div>
       {filtered.length === 0 ? (
         <div className="chart-empty">
           {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}
@@ -890,9 +887,9 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
                   onUpdated={onUpdateSession}
                   onDeleted={onDeleteSession}
                   exercises={exercises}
-                  filterExerciseId={filters.exerciseId}
                   isAuthenticated={isAuthenticated}
                   rowRef={el => { rowRefs.current[s.sessionId] = el; }}
+                  onBackToCalendar={phase ? () => wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) : undefined}
                 />
               ))}
             </tbody>

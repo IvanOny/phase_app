@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createSession } from '../../api/client.js';
+import { parseDuration, parsePace } from '../../utils/runMetrics.js';
 
 const SESSION_TYPES = [
   'heavy_bench',
@@ -21,15 +22,41 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
   const [eliteHrv, setEliteHrv] = useState('');
   const [garminHrv, setGarminHrv] = useState('');
   const [notes, setNotes] = useState('');
+  const [runType, setRunType] = useState('');
+  const [distanceKm, setDistanceKm] = useState('');
+  const [duration, setDuration] = useState('');    // "MM:SS"
+  const [avgHr, setAvgHr] = useState('');
+  const [maxHr, setMaxHr] = useState('');
+  const [pace, setPace] = useState('');             // "M:SS"
+  const [gap, setGap] = useState('');               // "M:SS"
+  const [avgCadence, setAvgCadence] = useState('');
+  const [avgGctMs, setAvgGctMs] = useState('');
+  const [avgVoCm, setAvgVoCm] = useState('');
+  const [ascentM, setAscentM] = useState('');
+  const [rpe, setRpe] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [conflict, setConflict] = useState(null); // existing session with same date+type
+  const [conflict, setConflict] = useState(null);
+
+  const isRun = sessionType === 'run';
 
   function resetForm() {
     setDate(today());
     setEliteHrv('');
     setGarminHrv('');
     setNotes('');
+    setRunType('');
+    setDistanceKm('');
+    setDuration('');
+    setAvgHr('');
+    setMaxHr('');
+    setPace('');
+    setGap('');
+    setAvgCadence('');
+    setAvgGctMs('');
+    setAvgVoCm('');
+    setAscentM('');
+    setRpe('');
     setConflict(null);
   }
 
@@ -43,6 +70,18 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
         eliteHrvReadiness: eliteHrv !== '' ? Number(eliteHrv) : null,
         garminOvernightHrv: garminHrv !== '' ? Number(garminHrv) : null,
         notes: notes || null,
+        runType: runType || null,
+        distanceKm: distanceKm !== '' ? Number(distanceKm) : null,
+        durationSeconds: duration !== '' ? parseDuration(duration) : null,
+        avgHr: avgHr !== '' ? Number(avgHr) : null,
+        maxHr: maxHr !== '' ? Number(maxHr) : null,
+        avgPaceSecPerKm: pace !== '' ? parsePace(pace) : null,
+        avgGapPaceSecPerKm: gap !== '' ? parsePace(gap) : null,
+        avgCadence: avgCadence !== '' ? Number(avgCadence) : null,
+        avgGctMs: avgGctMs !== '' ? Number(avgGctMs) : null,
+        avgVoCm: avgVoCm !== '' ? Number(avgVoCm) : null,
+        ascentM: ascentM !== '' ? Number(ascentM) : null,
+        rpe: rpe !== '' ? Number(rpe) : null,
       });
       onSessionLogged(session);
       resetForm();
@@ -138,6 +177,65 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
           onChange={e => setNotes(e.target.value)}
         />
       </div>
+
+      {isRun && (
+        <>
+          <div className="form-row" style={{ flexWrap: 'wrap' }}>
+            <div className="form-group">
+              <label>Run type</label>
+              <input type="text" placeholder="easy, long, tempo…" value={runType} onChange={e => setRunType(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Distance (km)</label>
+              <input type="number" min="0" step="0.01" placeholder="6.01" value={distanceKm} onChange={e => setDistanceKm(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Duration (MM:SS)</label>
+              <input type="text" placeholder="32:43" value={duration} onChange={e => setDuration(e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row" style={{ flexWrap: 'wrap' }}>
+            <div className="form-group">
+              <label>Avg pace (M:SS/km)</label>
+              <input type="text" placeholder="5:27" value={pace} onChange={e => setPace(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>GAP (M:SS/km)</label>
+              <input type="text" placeholder="5:12" value={gap} onChange={e => setGap(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Avg HR</label>
+              <input type="number" min="0" placeholder="152" value={avgHr} onChange={e => setAvgHr(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Max HR</label>
+              <input type="number" min="0" placeholder="178" value={maxHr} onChange={e => setMaxHr(e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row" style={{ flexWrap: 'wrap' }}>
+            <div className="form-group">
+              <label>Cadence (spm)</label>
+              <input type="number" min="0" placeholder="170" value={avgCadence} onChange={e => setAvgCadence(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>GCT (ms)</label>
+              <input type="number" min="0" placeholder="230" value={avgGctMs} onChange={e => setAvgGctMs(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Vert. osc. (cm)</label>
+              <input type="number" min="0" step="0.1" placeholder="9.2" value={avgVoCm} onChange={e => setAvgVoCm(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Ascent (m)</label>
+              <input type="number" min="0" placeholder="48" value={ascentM} onChange={e => setAscentM(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>RPE (1–10)</label>
+              <input type="number" min="1" max="10" step="0.5" placeholder="6" value={rpe} onChange={e => setRpe(e.target.value)} />
+            </div>
+          </div>
+        </>
+      )}
 
       {error && <div className="form-error">{error}</div>}
 

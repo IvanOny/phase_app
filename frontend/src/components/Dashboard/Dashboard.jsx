@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import './Dashboard.css';
 import PhaseHeader from './PhaseHeader.jsx';
 import PhaseNav from './PhaseNav.jsx';
@@ -6,6 +7,7 @@ import PhaseSummaryCard from './PhaseSummaryCard.jsx';
 import E1rmChart from '../Charts/E1rmChart.jsx';
 import VolumeChart from '../Charts/VolumeChart.jsx';
 import SessionsList from '../Sessions/SessionsList.jsx';
+import { NextStepTile } from './NextStepCard.jsx';
 
 export default function Dashboard({
   phases,
@@ -16,6 +18,7 @@ export default function Dashboard({
   exerciseVolumes,
   runBenchmarks,
   exercises,
+  progression,
   onSelectPhase,
   onOpenPanel,
   onAddPhase,
@@ -23,6 +26,7 @@ export default function Dashboard({
   onDeletePhase,
   onUpdateSession,
   onDeleteSession,
+  onSessionCreated,
   summaryKey,
   theme,
   onToggleTheme,
@@ -31,6 +35,13 @@ export default function Dashboard({
   onLoginClick,
   onFaqClick,
 }) {
+  const [focusFilter, setFocusFilter] = useState(null);
+
+  function handleFocusSession(filter) {
+    setFocusFilter(null);
+    setTimeout(() => setFocusFilter(filter), 0);
+  }
+
   return (
     <div className="dashboard">
       <PhaseHeader
@@ -69,7 +80,16 @@ export default function Dashboard({
           <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} exercises={exercises} />
         </>
       )}
+      {progression && (
+        <NextStepTile
+          progression={progression}
+          sessions={sessions}
+          onFocusSession={handleFocusSession}
+        />
+      )}
       <SessionsList
+        key={selectedPhase?.phaseId}
+        phase={selectedPhase}
         sessions={sessions}
         e1rmMap={e1rmMap}
         volumeMap={volumeMap}
@@ -77,7 +97,9 @@ export default function Dashboard({
         exerciseVolumes={exerciseVolumes}
         onUpdateSession={onUpdateSession}
         onDeleteSession={onDeleteSession}
+        onSessionCreated={onSessionCreated}
         isAuthenticated={isAuthenticated}
+        focusFilter={focusFilter}
       />
       {sessions.length > 0 && (
         <MaintenancePanel

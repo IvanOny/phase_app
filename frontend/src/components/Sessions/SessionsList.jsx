@@ -8,7 +8,9 @@ import {
   updateExerciseSet,
   deleteExerciseSet,
 } from '../../api/client.js';
+import { formatDuration, formatPace, parseDuration, parsePace, runSummary } from '../../utils/runMetrics.js';
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
+import PhaseCalendar from './PhaseCalendar.jsx';
 
 const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
 
@@ -416,7 +418,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
 }
 
 // ---- Session row with inline edit ----
-function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, filterExerciseId, isAuthenticated }) {
+function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, filterExerciseId, isAuthenticated, rowRef }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -430,6 +432,18 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
       eliteHrvReadiness: session.eliteHrvReadiness ?? '',
       garminOvernightHrv: session.garminOvernightHrv ?? '',
       notes: session.notes || '',
+      runType: session.runType ?? '',
+      distanceKm: session.distanceKm ?? '',
+      durationDisplay: session.durationSeconds != null ? formatDuration(session.durationSeconds) : '',
+      avgHr: session.avgHr ?? '',
+      maxHr: session.maxHr ?? '',
+      paceDisplay: session.avgPaceSecPerKm != null ? formatPace(session.avgPaceSecPerKm).replace(' /km', '') : '',
+      gapDisplay: session.avgGapPaceSecPerKm != null ? formatPace(session.avgGapPaceSecPerKm).replace(' /km', '') : '',
+      avgCadence: session.avgCadence ?? '',
+      avgGctMs: session.avgGctMs ?? '',
+      avgVoCm: session.avgVoCm ?? '',
+      ascentM: session.ascentM ?? '',
+      rpe: session.rpe ?? '',
     });
     setEditing(true);
   }
@@ -438,14 +452,29 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
     e.stopPropagation();
     setSaving(true);
     try {
+      const isRun = form.sessionType === 'run';
       const payload = {
         sessionDate: form.sessionDate,
         sessionType: form.sessionType,
         eliteHrvReadiness: form.eliteHrvReadiness !== '' ? Number(form.eliteHrvReadiness) : null,
         garminOvernightHrv: form.garminOvernightHrv !== '' ? Number(form.garminOvernightHrv) : null,
         notes: form.notes || null,
+        ...(isRun ? {
+          runType: form.runType || null,
+          distanceKm: form.distanceKm !== '' ? Number(form.distanceKm) : null,
+          durationSeconds: parseDuration(form.durationDisplay),
+          avgHr: form.avgHr !== '' ? Number(form.avgHr) : null,
+          maxHr: form.maxHr !== '' ? Number(form.maxHr) : null,
+          avgPaceSecPerKm: parsePace(form.paceDisplay),
+          avgGapPaceSecPerKm: parsePace(form.gapDisplay),
+          avgCadence: form.avgCadence !== '' ? Number(form.avgCadence) : null,
+          avgGctMs: form.avgGctMs !== '' ? Number(form.avgGctMs) : null,
+          avgVoCm: form.avgVoCm !== '' ? Number(form.avgVoCm) : null,
+          ascentM: form.ascentM !== '' ? Number(form.ascentM) : null,
+          rpe: form.rpe !== '' ? Number(form.rpe) : null,
+        } : {}),
       };
-      const updated = await onUpdated(session.sessionId, payload);
+      await onUpdated(session.sessionId, payload);
       setEditing(false);
     } finally {
       setSaving(false);
@@ -457,6 +486,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
   }
 
   if (editing) {
+    const isRunEdit = form.sessionType === 'run';
     return (
       <tr className="session-row session-row--editing">
         <td colSpan={4} style={{ padding: 0 }}>
@@ -472,28 +502,66 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
                 <button className="icon-btn" onClick={e => { e.stopPropagation(); setEditing(false); }} title="Cancel">✕</button>
               </div>
             </div>
-            <div className="session-edit-row2">
-              <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ width: '100%' }} placeholder="Notes…" />
-            </div>
+            {isRunEdit ? (
+              <>
+                <div className="session-edit-row2 session-edit-run-row">
+                  <input type="text" value={form.runType} onChange={e => setForm(f => ({ ...f, runType: e.target.value }))} className="inline-input" style={{ width: 90 }} placeholder="run type" title="Run type (easy, tempo…)" />
+                  <input type="number" min="0" step="0.01" value={form.distanceKm} onChange={e => setForm(f => ({ ...f, distanceKm: e.target.value }))} className="inline-input" style={{ width: 65 }} placeholder="km" title="Distance (km)" />
+                  <input type="text" value={form.durationDisplay} onChange={e => setForm(f => ({ ...f, durationDisplay: e.target.value }))} className="inline-input" style={{ width: 62 }} placeholder="MM:SS" title="Duration (MM:SS)" />
+                  <input type="text" value={form.paceDisplay} onChange={e => setForm(f => ({ ...f, paceDisplay: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="pace" title="Avg pace (M:SS/km)" />
+                  <input type="text" value={form.gapDisplay} onChange={e => setForm(f => ({ ...f, gapDisplay: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="GAP" title="Grade Adjusted Pace (M:SS/km)" />
+                  <input type="number" min="0" value={form.avgHr} onChange={e => setForm(f => ({ ...f, avgHr: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="HR" title="Avg HR (bpm)" />
+                  <input type="number" min="0" value={form.maxHr} onChange={e => setForm(f => ({ ...f, maxHr: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="maxHR" title="Max HR (bpm)" />
+                </div>
+                <div className="session-edit-row2 session-edit-run-row">
+                  <input type="number" min="0" value={form.avgCadence} onChange={e => setForm(f => ({ ...f, avgCadence: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="spm" title="Avg cadence (steps/min)" />
+                  <input type="number" min="0" value={form.avgGctMs} onChange={e => setForm(f => ({ ...f, avgGctMs: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="GCT ms" title="Avg ground contact time (ms)" />
+                  <input type="number" min="0" step="0.1" value={form.avgVoCm} onChange={e => setForm(f => ({ ...f, avgVoCm: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="VO cm" title="Avg vertical oscillation (cm)" />
+                  <input type="number" min="0" value={form.ascentM} onChange={e => setForm(f => ({ ...f, ascentM: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="↑ m" title="Ascent (m)" />
+                  <input type="number" min="1" max="10" step="0.5" value={form.rpe} onChange={e => setForm(f => ({ ...f, rpe: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="RPE" title="RPE (1–10)" />
+                  <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ flex: 1 }} placeholder="Notes…" />
+                </div>
+              </>
+            ) : (
+              <div className="session-edit-row2">
+                <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ width: '100%' }} placeholder="Notes…" />
+              </div>
+            )}
           </div>
         </td>
       </tr>
     );
   }
 
+  const isPlanned = Boolean(session.isPlanned);
+
   return (
     <Fragment>
-      <tr className="session-row" onClick={onToggle}>
-        <td className="expand-icon">{isOpen ? '▾' : '▸'}</td>
+      <tr
+        ref={rowRef}
+        className={`session-row${isPlanned ? ' session-row--planned' : ''}`}
+        onClick={isPlanned ? undefined : onToggle}
+        style={isPlanned ? { cursor: 'default', opacity: 0.65 } : {}}
+      >
+        <td className="expand-icon">
+          {isPlanned
+            ? <span className="planned-badge">plan</span>
+            : <span className={`expand-caret${isOpen ? ' expand-caret--open' : ''}`} />
+          }
+        </td>
         <td className="session-date-cell">
           <div>{formatDate(session.sessionDate)}</div>
-          {session.notes && (
+          {session.sessionType === 'run' && runSummary(session) ? (
+            <div className="session-notes-preview session-run-summary">
+              {runSummary(session)}
+            </div>
+          ) : session.notes ? (
             <div className="session-notes-preview">
               {isOpen || session.notes.length <= 20
                 ? session.notes
                 : session.notes.slice(0, 20) + '…'}
             </div>
-          )}
+          ) : null}
         </td>
         <td className="session-type">
           <span className="type-dot" style={{ background: TYPE_COLORS[session.sessionType] ?? '#64748b' }} />
@@ -502,13 +570,36 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
         <td className="row-actions" onClick={e => e.stopPropagation()}>
           {isAuthenticated && (
             <>
-              <button className="icon-btn" onClick={startEdit} title="Edit session">✏</button>
+              {!isPlanned && <button className="icon-btn" onClick={startEdit} title="Edit session">✏</button>}
               <button className="icon-btn icon-btn--danger" onClick={e => { e.stopPropagation(); setConfirmOpen(true); }} title="Delete session">🗑</button>
             </>
           )}
         </td>
       </tr>
-      {isOpen && (
+      {isOpen && !isPlanned && session.sessionType === 'run' && (
+        <tr>
+          <td colSpan={4} className="session-detail-cell">
+            <div className="session-detail session-run-detail">
+              {session.runType && <div className="run-type-badge">{session.runType}</div>}
+              <div className="run-metrics-grid">
+                {session.distanceKm != null && <div className="run-metric-item"><span className="run-metric-label">Distance</span><span className="run-metric-value">{session.distanceKm} km</span></div>}
+                {session.durationSeconds != null && <div className="run-metric-item"><span className="run-metric-label">Duration</span><span className="run-metric-value">{formatDuration(session.durationSeconds)}</span></div>}
+                {session.avgPaceSecPerKm != null && <div className="run-metric-item"><span className="run-metric-label">Avg pace</span><span className="run-metric-value">{formatPace(session.avgPaceSecPerKm)}</span></div>}
+                {session.avgGapPaceSecPerKm != null && <div className="run-metric-item"><span className="run-metric-label">GAP</span><span className="run-metric-value">{formatPace(session.avgGapPaceSecPerKm)}</span></div>}
+                {session.avgHr != null && <div className="run-metric-item"><span className="run-metric-label">Avg HR</span><span className="run-metric-value">{session.avgHr} bpm</span></div>}
+                {session.maxHr != null && <div className="run-metric-item"><span className="run-metric-label">Max HR</span><span className="run-metric-value">{session.maxHr} bpm</span></div>}
+                {session.avgCadence != null && <div className="run-metric-item"><span className="run-metric-label">Cadence</span><span className="run-metric-value">{session.avgCadence} spm</span></div>}
+                {session.avgGctMs != null && <div className="run-metric-item"><span className="run-metric-label">GCT</span><span className="run-metric-value">{session.avgGctMs} ms</span></div>}
+                {session.avgVoCm != null && <div className="run-metric-item"><span className="run-metric-label">Vert. osc.</span><span className="run-metric-value">{session.avgVoCm} cm</span></div>}
+                {session.ascentM != null && <div className="run-metric-item"><span className="run-metric-label">Ascent</span><span className="run-metric-value">{session.ascentM} m</span></div>}
+                {session.rpe != null && <div className="run-metric-item"><span className="run-metric-label">RPE</span><span className="run-metric-value">{session.rpe}/10</span></div>}
+              </div>
+              {session.notes && <div className="run-metrics-notes">{session.notes}</div>}
+            </div>
+          </td>
+        </tr>
+      )}
+      {isOpen && !isPlanned && session.sessionType !== 'run' && (
         <SessionDetail
           sessionId={session.sessionId}
           exercises={exercises}
@@ -518,7 +609,9 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
       )}
       {confirmOpen && (
         <ConfirmDialog
-          message={`Delete session on ${formatDate(session.sessionDate)}?`}
+          message={isPlanned
+            ? `Remove planned session on ${formatDate(session.sessionDate)}?`
+            : `Delete session on ${formatDate(session.sessionDate)}?`}
           onConfirm={async () => { setConfirmOpen(false); await handleDelete(); }}
           onCancel={() => setConfirmOpen(false)}
         />
@@ -609,9 +702,13 @@ function FilterBar({ filters, onChange, exercises }) {
   );
 }
 
-export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, exerciseVolumes, onUpdateSession, onDeleteSession, isAuthenticated }) {
+export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exercises, exerciseVolumes, onUpdateSession, onDeleteSession, onSessionCreated, isAuthenticated, focusFilter }) {
   const [expanded, setExpanded] = useState(new Set());
   const [filters, setFilters] = useState({ types: SESSION_TYPES, exerciseId: '' });
+  const [showCalendar, setShowCalendar] = useState(true);
+  const [showAll, setShowAll] = useState(false);
+  const rowRefs = useRef({});
+  const wrapperRef = useRef(null);
 
   // Derive session→[exerciseIds] map from exerciseVolumes (already fetched by parent)
   // instead of firing N individual GET /v1/sessions/{id}/exercises requests.
@@ -670,15 +767,50 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
     });
   }
 
-  const filtered = [...sessions]
+  function handleCalendarSelectSession(sessionId) {
+    setShowCalendar(false);
+    // Clear type filter so the session is visible regardless of current filter
+    setFilters(f => ({ ...f, types: SESSION_TYPES }));
+    setExpanded(prev => new Set([...prev, sessionId]));
+    setTimeout(() => {
+      const el = rowRefs.current[sessionId];
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+  }
+
+  function handleCalendarSessionCreated(session) {
+    onSessionCreated?.(session);
+  }
+
+  async function handleCalendarSessionDeleted(sessionId) {
+    await onDeleteSession?.(sessionId);
+  }
+
+  const baseFiltered = [...sessions]
     .filter(s => filters.types.includes(s.sessionType))
     .filter(s => {
       if (!filters.exerciseId) return true;
+      if (s.isPlanned) return false; // planned sessions have no logged exercises
       const exIds = sessionExercisesMap[s.sessionId];
-      if (exIds === undefined) return true;
+      if (exIds === undefined) return false;
       return exIds.includes(Number(filters.exerciseId));
-    })
+    });
+
+  const executedFiltered = baseFiltered
+    .filter(s => !s.isPlanned)
     .sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate));
+
+  const plannedFiltered = baseFiltered
+    .filter(s => s.isPlanned)
+    .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate));
+
+  const filtered = [...executedFiltered, ...plannedFiltered];
+
+  const VISIBLE_COUNT = 3;
+  const forceShowAll = Boolean(filters.exerciseId);
+  const effectiveShowAll = showAll || forceShowAll;
+  const visibleSessions = effectiveShowAll ? filtered : executedFiltered.slice(0, VISIBLE_COUNT);
+  const hiddenCount = filtered.length - visibleSessions.length;
 
   // Auto-expand all matching sessions when an exercise filter is active
   useEffect(() => {
@@ -687,9 +819,48 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
     }
   }, [filters.exerciseId, filtered.map(s => s.sessionId).join(',')]);
 
+  // Apply exercise+type filters triggered externally (e.g. from NextStep card)
+  useEffect(() => {
+    if (!focusFilter) return;
+    setFilters({ types: [focusFilter.sessionType], exerciseId: String(focusFilter.exerciseId) });
+    setTimeout(() => {
+      wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  }, [focusFilter]);
+
+  const realCount    = sessions.filter(s => !s.isPlanned).length;
+  const plannedCount = sessions.filter(s =>  s.isPlanned).length;
+
   return (
-    <div className="chart-wrapper">
-      <div className="card-title">Sessions ({filtered.length}{filtered.length !== sessions.length ? ` / ${sessions.length}` : ''})</div>
+    <div className="chart-wrapper" ref={wrapperRef}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-4)' }}>
+        <div className="card-title" style={{ marginBottom: 0 }}>
+          Sessions ({realCount}{plannedCount > 0 ? ` + ${plannedCount} planned` : ''})
+        </div>
+        {phase && (
+          <button
+            className={`icon-btn cal-toggle-btn${showCalendar ? ' cal-toggle-btn--active' : ''}`}
+            title={showCalendar ? 'Hide schedule' : 'Show phase schedule'}
+            onClick={() => setShowCalendar(v => !v)}
+          >
+            📅
+          </button>
+        )}
+      </div>
+
+      {showCalendar && phase && (
+        <PhaseCalendar
+          phase={phase}
+          sessions={sessions}
+          exerciseVolumes={exerciseVolumes}
+          onSelectSession={handleCalendarSelectSession}
+          onSessionCreated={handleCalendarSessionCreated}
+          onSessionDeleted={handleCalendarSessionDeleted}
+          isAuthenticated={isAuthenticated}
+          onClose={() => setShowCalendar(false)}
+        />
+      )}
+
       <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} />
       {filtered.length === 0 ? (
         <div className="chart-empty">
@@ -707,7 +878,7 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
               </tr>
             </thead>
             <tbody>
-              {filtered.map(s => (
+              {visibleSessions.map(s => (
                 <SessionRow
                   key={s.sessionId}
                   session={s}
@@ -720,10 +891,21 @@ export default function SessionsList({ sessions, e1rmMap, volumeMap, exercises, 
                   exercises={exercises}
                   filterExerciseId={filters.exerciseId}
                   isAuthenticated={isAuthenticated}
+                  rowRef={el => { rowRefs.current[s.sessionId] = el; }}
                 />
               ))}
             </tbody>
           </table>
+          {!forceShowAll && hiddenCount > 0 && (
+            <button className="sessions-show-more-btn" onClick={() => setShowAll(true)}>
+              Show {hiddenCount} more
+            </button>
+          )}
+          {!forceShowAll && showAll && (
+            <button className="sessions-show-more-btn" onClick={() => setShowAll(false)}>
+              Show less
+            </button>
+          )}
         </div>
       )}
     </div>

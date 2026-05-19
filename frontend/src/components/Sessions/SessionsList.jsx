@@ -709,6 +709,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
   const [showAll, setShowAll] = useState(false);
   const rowRefs = useRef({});
   const wrapperRef = useRef(null);
+  const tableRef = useRef(null);
 
   // Derive session→[exerciseIds] map from exerciseVolumes (already fetched by parent)
   // instead of firing N individual GET /v1/sessions/{id}/exercises requests.
@@ -824,7 +825,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
     if (!focusFilter) return;
     setFilters({ types: [focusFilter.sessionType], exerciseId: String(focusFilter.exerciseId) });
     setTimeout(() => {
-      wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
   }, [focusFilter]);
 
@@ -867,7 +868,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
           {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}
         </div>
       ) : (
-        <div className="sessions-table-wrap">
+        <div className="sessions-table-wrap" ref={tableRef}>
           <table className="sessions-table">
             <thead>
               <tr>

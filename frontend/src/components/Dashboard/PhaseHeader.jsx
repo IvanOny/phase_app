@@ -21,6 +21,21 @@ function daysRemaining(endDate) {
   return Math.ceil((end - now) / (1000 * 60 * 60 * 24));
 }
 
+function daysUntilStart(startDate) {
+  const start = new Date(startDate);
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  start.setHours(0, 0, 0, 0);
+  return Math.ceil((start - now) / (1000 * 60 * 60 * 24));
+}
+
+function fmtShortDate(dateStr) {
+  if (!dateStr) return '';
+  const s = String(dateStr).split('T')[0];
+  const [, mm, dd] = s.split('-');
+  return `${dd}.${mm}`;
+}
+
 function phaseProgress(startDate, endDate) {
   if (!startDate || !endDate) return null;
   const start = new Date(startDate);
@@ -58,14 +73,16 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
 
   if (!phase) return null;
 
-  const days = daysRemaining(phase.endDate);
-  const isComplete = days < 0;
+  const daysLeft = daysRemaining(phase.endDate);
+  const daysToStart = daysUntilStart(phase.startDate);
+  // future: not started yet | current: in progress | past: ended
+  const phaseState = daysToStart > 0 ? 'future' : daysLeft >= 0 ? 'current' : 'past';
   const label = PHASE_LABELS[phase.phaseType] || phase.phaseType;
   const pct = phaseProgress(phase.startDate, phase.endDate);
   const start = new Date(phase.startDate);
   const end = new Date(phase.endDate);
   const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-  const dayNum = totalDays - days;
+  const dayNum = totalDays - daysLeft;
 
   function startEdit() {
     setForm({
@@ -148,9 +165,13 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
       {pct !== null && (
         <div className="phase-progress">
           <div className="phase-progress-bar">
-            <div className="phase-progress-fill" style={{ width: `${pct}%` }}>
-              <span className="phase-progress-label">{pct}%</span>
-            </div>
+            <div className="phase-progress-fill" style={{ width: `${pct}%` }} />
+            <span className="phase-progress-date-start">{fmtShortDate(phase.startDate)}</span>
+            <span className="phase-progress-date-end">{fmtShortDate(phase.endDate)}</span>
+            <span
+              className={`phase-progress-label${pct >= 50 ? ' phase-progress-label--inside' : ''}`}
+              style={{ left: `${pct}%` }}
+            >{pct}%</span>
           </div>
         </div>
       )}
@@ -184,20 +205,30 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
         </div>
       </div>
       <div className="phase-header-right">
-        {isComplete ? (
-          <span className="days-badge days-badge--done">Completed</span>
-        ) : (
+        {phaseState === 'future' && (
+          <div className="days-badge days-badge--future">
+            <span className="days-number">{daysToStart}</span>
+            <span className="days-label">days to start</span>
+          </div>
+        )}
+        {phaseState === 'current' && (
           <button className={`days-badge${showDays ? ' days-badge--open' : ''}`} onClick={toggleDays} style={{ cursor: 'pointer' }}>
-            <span className="days-number">{days}</span>
+            <span className="days-number">{daysLeft}</span>
             <span className="days-label">days left</span>
           </button>
+        )}
+        {phaseState === 'past' && (
+          <div className="days-badge days-badge--past">
+            <span className="days-number">{Math.abs(daysLeft)}</span>
+            <span className="days-label">days ago</span>
+          </div>
         )}
       </div>
       </div>
       {showDays && (
         <div className="e1rm-explanation" style={{ marginTop: 'var(--space-2)' }}>
           <p>{formatDateRange(phase.startDate, phase.endDate)}</p>
-          <p>Day {dayNum} of {totalDays} — <strong>{days} days</strong> remaining (<strong>{pct}%</strong> complete)</p>
+          <p>Day {dayNum} of {totalDays} — <strong>{daysLeft} days</strong> remaining (<strong>{pct}%</strong> complete)</p>
         </div>
       )}
       {confirmOpen && (

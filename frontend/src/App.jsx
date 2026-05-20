@@ -40,6 +40,7 @@ import {
   createExercise,
   updateExercise,
   deleteExercise,
+  mergeExercise,
 } from './api/client.js';
 
 function App() {
@@ -175,6 +176,11 @@ function App() {
     return updated;
   }
 
+  async function handleMergeExercise(sourceId, targetId) {
+    await mergeExercise(sourceId, targetId);
+    setExercises(prev => prev.filter(e => e.exerciseId !== sourceId));
+  }
+
   function handleAddPhase(phaseType) {
     setInitialPhaseType(phaseType);
     setPanelTab('phase');
@@ -255,6 +261,7 @@ function App() {
           onExerciseCreated={handleCreateExercise}
           onExerciseUpdated={handleUpdateExercise}
           onExerciseDeleted={handleDeleteExercise}
+          onExerciseMerged={handleMergeExercise}
           onImportComplete={session => {
             handleSessionLogged(session);
             loadPhaseData(session.phaseId);

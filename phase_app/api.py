@@ -106,6 +106,8 @@ class PhaseApi:
             return self.update_exercise(int(path.split("/")[3]), body)
         if method == "DELETE" and re.fullmatch(r"/v1/exercises/\d+", path):
             return self.delete_exercise(int(path.split("/")[3]))
+        if method == "POST" and path == "/v1/exercises/merge":
+            return self.merge_exercises(body)
 
         if method == "GET" and path == "/v1/benchmarks":
             return self.list_benchmarks(qp)
@@ -766,6 +768,35 @@ class PhaseApi:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(200, {"deleted": True, "exerciseId": exercise_id})
+
+    def merge_exercises(self, body: dict) -> ApiResponse:
+        source_id = body.get("sourceId")
+        target_id = body.get("targetId")
+        if not source_id or not target_id or source_id == target_id:
+            return ApiResponse(400, {"error": "invalid_request"})
+        try:
+            # Drop source rows in sessions that already have the target (avoid unique conflict)
+            self._exec(
+                "DELETE FROM session_exercises WHERE exercise_id = %s"
+                " AND session_id IN (SELECT session_id FROM session_exercises WHERE exercise_id = %s)",
+                (source_id, target_id),
+            )
+            self._exec(
+                "UPDATE session_exercises SET exercise_id = %s WHERE exercise_id = %s",
+                (target_id, source_id),
+            )
+            cur = self._exec(
+                "DELETE FROM exercises WHERE exercise_id = %s RETURNING exercise_id",
+                (source_id,),
+            )
+            if cur.fetchone() is None:
+                self.conn.rollback()
+                return ApiResponse(404, {"error": "not_found"})
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(200, {"merged": True, "deletedId": source_id, "targetId": target_id})
 
     def get_phase_summary(self, phase_id: int) -> ApiResponse:
         from phase_app.metrics import get_phase_summary

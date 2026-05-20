@@ -21,12 +21,17 @@ function formatDuration(totalSeconds) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-function StatTooltip({ rows }) {
+function StatTooltip({ rows, bestHigh = true }) {
   if (!rows.length) return null;
+  const raws = rows.map(r => r.raw ?? null).filter(v => v != null);
+  const maxRaw = raws.length ? Math.max(...raws) : null;
+  const minRaw = raws.length ? Math.min(...raws) : null;
+  const isBest = r => r.raw != null && r.raw === (bestHigh ? maxRaw : minRaw);
+  const isWorst = r => r.raw != null && r.raw === (bestHigh ? minRaw : maxRaw);
   return (
     <div className="chart-tooltip pull-stat-tooltip">
       {rows.map((r, i) => (
-        <div key={i} className="tooltip-row">
+        <div key={i} className={`tooltip-row${isBest(r) ? ' tooltip-row--best' : isWorst(r) ? ' tooltip-row--worst' : ''}`}>
           <span>{fmtDate(r.date)}</span>
           <span>{r.value}</span>
         </div>
@@ -79,11 +84,19 @@ export default function MaintenancePanel({ exerciseVolumes, exercises, sessions 
 
   const bwTooltipRows = sortedDates
     .filter(d => byDate[d].bw.length > 0)
-    .map(d => ({ date: d, value: byDate[d].bw.map(s => s.reps).join(' · ') }));
+    .map(d => {
+      const sets = byDate[d].bw;
+      const total = sets.reduce((s, set) => s + set.reps, 0);
+      return { date: d, value: sets.map(s => s.reps).join(' · '), raw: total };
+    });
 
   const weightedTooltipRows = sortedDates
     .filter(d => byDate[d].weighted.length > 0)
-    .map(d => ({ date: d, value: byDate[d].weighted.map(s => `${s.loadKg}kg×${s.reps}`).join(' · ') }));
+    .map(d => {
+      const sets = byDate[d].weighted;
+      const vol = sets.reduce((s, set) => s + set.loadKg * set.reps, 0);
+      return { date: d, value: sets.map(s => `${s.loadKg}kg×${s.reps}`).join(' · '), raw: vol };
+    });
 
   // Run metrics
   const runSessions = (sessions ?? []).filter(s => s.sessionType === 'run' && !s.isPlanned);
@@ -134,28 +147,28 @@ export default function MaintenancePanel({ exerciseVolumes, exercises, sessions 
                 <StatPair
                   label="Total distance"
                   value={`${totalDistKm.toFixed(1)} km`}
-                  tooltip={<StatTooltip rows={runWithDist.map(s => ({ date: s.sessionDate, value: `${s.distanceKm} km` }))} />}
+                  tooltip={<StatTooltip rows={runWithDist.map(s => ({ date: s.sessionDate, value: `${s.distanceKm} km`, raw: s.distanceKm }))} />}
                 />
               )}
               {runWithDur.length > 0 && (
                 <StatPair
                   label="Total time"
                   value={formatDuration(totalDurSec)}
-                  tooltip={<StatTooltip rows={runWithDur.map(s => ({ date: s.sessionDate, value: formatDuration(s.durationSeconds) }))} />}
+                  tooltip={<StatTooltip rows={runWithDur.map(s => ({ date: s.sessionDate, value: formatDuration(s.durationSeconds), raw: s.durationSeconds }))} />}
                 />
               )}
               {avgHr != null && (
                 <StatPair
                   label="Avg HR"
                   value={`${avgHr} bpm`}
-                  tooltip={<StatTooltip rows={runWithHr.map(s => ({ date: s.sessionDate, value: `${s.avgHr} bpm` }))} />}
+                  tooltip={<StatTooltip rows={runWithHr.map(s => ({ date: s.sessionDate, value: `${s.avgHr} bpm`, raw: s.avgHr }))} />}
                 />
               )}
               {avgPaceSec != null && (
                 <StatPair
                   label="Avg pace"
                   value={formatPace(avgPaceSec)}
-                  tooltip={<StatTooltip rows={runWithPace.map(s => ({ date: s.sessionDate, value: formatPace(s.avgPaceSecPerKm) }))} />}
+                  tooltip={<StatTooltip rows={runWithPace.map(s => ({ date: s.sessionDate, value: formatPace(s.avgPaceSecPerKm), raw: s.avgPaceSecPerKm }))} bestHigh={false} />}
                 />
               )}
             </div>

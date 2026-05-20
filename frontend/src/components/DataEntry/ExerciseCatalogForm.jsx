@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
-function ExerciseRow({ exercise, onUpdate, onDelete }) {
+function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState('');
 
   function startEdit() {
     setForm({
@@ -26,6 +28,44 @@ function ExerciseRow({ exercise, onUpdate, onDelete }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function confirmMerge() {
+    if (!mergeTargetId) return;
+    setSaving(true);
+    try {
+      await onMerge(exercise.exerciseId, parseInt(mergeTargetId, 10));
+    } catch {
+      alert('Failed to merge exercises.');
+      setSaving(false);
+    }
+  }
+
+  if (merging) {
+    const others = exercises.filter(e => e.exerciseId !== exercise.exerciseId);
+    return (
+      <tr>
+        <td colSpan={3}>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)', marginRight: 8 }}>
+            Merge <strong>{exercise.exerciseName}</strong> into:
+          </span>
+          <select
+            value={mergeTargetId}
+            onChange={e => setMergeTargetId(e.target.value)}
+            style={{ fontSize: 13, padding: '2px 4px' }}
+          >
+            <option value="">— pick target —</option>
+            {others.map(e => (
+              <option key={e.exerciseId} value={e.exerciseId}>{e.exerciseName}</option>
+            ))}
+          </select>
+        </td>
+        <td>
+          <button className="icon-btn" onClick={confirmMerge} disabled={!mergeTargetId || saving} title="Confirm merge">✓</button>
+          <button className="icon-btn" onClick={() => { setMerging(false); setMergeTargetId(''); }} title="Cancel">✕</button>
+        </td>
+      </tr>
+    );
   }
 
   if (editing) {
@@ -61,6 +101,7 @@ function ExerciseRow({ exercise, onUpdate, onDelete }) {
         <td style={{ textAlign: 'center' }}>{exercise.isBodyweight ? '✓' : ''}</td>
         <td>
           <button className="icon-btn" onClick={startEdit} title="Edit exercise">✏</button>
+          <button className="icon-btn" onClick={() => setMerging(true)} title="Merge into another exercise">⇒</button>
           <button className="icon-btn icon-btn--danger" onClick={() => setConfirmOpen(true)} title="Delete exercise">🗑</button>
         </td>
       </tr>
@@ -75,7 +116,7 @@ function ExerciseRow({ exercise, onUpdate, onDelete }) {
   );
 }
 
-export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onExerciseUpdated, onExerciseDeleted }) {
+export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onExerciseUpdated, onExerciseDeleted, onExerciseMerged }) {
   const [newName, setNewName] = useState('');
   const [newIsBench, setNewIsBench] = useState(false);
   const [newIsBodyweight, setNewIsBodyweight] = useState(false);
@@ -115,7 +156,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
         </thead>
         <tbody>
           {exercises.map(ex => (
-            <ExerciseRow key={ex.exerciseId} exercise={ex} onUpdate={onExerciseUpdated} onDelete={onExerciseDeleted} />
+            <ExerciseRow key={ex.exerciseId} exercise={ex} exercises={exercises} onUpdate={onExerciseUpdated} onDelete={onExerciseDeleted} onMerge={onExerciseMerged} />
           ))}
         </tbody>
       </table>

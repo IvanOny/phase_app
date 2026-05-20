@@ -847,6 +847,12 @@
   text-overflow: ellipsis;
   max-width: 140px;
 }
+.session-notes-preview--expanded {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  max-width: none;
+}
 
 .sessions-table tbody tr:last-child td {
   border-bottom: none;
@@ -919,7 +925,7 @@
 }
 
 .session-detail {
-  padding: var(--space-4) var(--space-6);
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);

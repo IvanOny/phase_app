@@ -106,6 +106,7 @@ export default function Dashboard({
           exerciseVolumes={exerciseVolumes}
           exercises={exercises}
           runBenchmarks={runBenchmarks}
+          sessions={sessions}
         />
       )}
       <PhaseNav

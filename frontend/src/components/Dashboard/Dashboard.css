@@ -609,6 +609,21 @@
   gap: 1px;
 }
 
+.maintenance-stat--hoverable {
+  position: relative;
+  cursor: default;
+}
+
+.pull-stat-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  white-space: nowrap;
+  pointer-events: none;
+  min-width: 160px;
+}
+
 .stat-label {
   font-size: 11px;
   color: var(--text-muted);
@@ -751,6 +766,21 @@
   font-weight: 400;
   color: var(--text-muted);
   margin-left: 2px;
+}
+.nsc-load--toggle {
+  cursor: pointer;
+  border-bottom: 1.5px dashed var(--text-muted);
+}
+.nsc-load--toggle:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.nsc-plates {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+  margin-bottom: 2px;
+  font-variant-numeric: tabular-nums;
 }
 .nsc-kind {
   font-size: 13px;
@@ -1270,7 +1300,10 @@ button.summary-tile--open {
   .sessions-cal-filter-layout {
     flex-direction: column;
   }
-  .sessions-cal-col,
+  .sessions-cal-col {
+    width: 100%;
+    padding-right: 0;
+  }
   .sessions-filter-col {
     width: 100%;
   }
@@ -1392,7 +1425,7 @@ button.summary-tile--open {
 }
 
 .session-run-detail {
-  padding: var(--space-3) 0;
+  padding: var(--space-3) var(--space-6);
 }
 
 .run-metrics-grid {
@@ -1676,7 +1709,6 @@ button.summary-tile--open {
 }
 
 .cal-day--out {
-  opacity: 0.08;
   pointer-events: none;
 }
 

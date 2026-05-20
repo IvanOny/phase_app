@@ -829,17 +829,12 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
     }, 80);
   }, [focusFilter]);
 
-  const realCount    = sessions.filter(s => !s.isPlanned).length;
-  const plannedCount = sessions.filter(s =>  s.isPlanned).length;
+  const countBase     = filters.types.length === SESSION_TYPES.length ? sessions : sessions.filter(s => filters.types.includes(s.sessionType));
+  const realCount     = countBase.filter(s => !s.isPlanned).length;
+  const plannedCount  = countBase.filter(s =>  s.isPlanned).length;
 
   return (
     <div className="chart-wrapper" ref={wrapperRef}>
-      <div style={{ marginBottom: 'var(--space-4)' }}>
-        <div className="card-title" style={{ marginBottom: 0 }}>
-          Sessions ({realCount}{plannedCount > 0 ? ` + ${plannedCount} planned` : ''})
-        </div>
-      </div>
-
       <div className="sessions-cal-filter-layout">
         {phase && (
           <div className="sessions-cal-col">
@@ -859,6 +854,12 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
           <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} />
         </div>
       </div>
+      <div style={{ marginBottom: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+        <div className="card-title" style={{ marginBottom: 0 }}>
+          {realCount} done{plannedCount > 0 ? ` · ${plannedCount} planned` : ''}
+        </div>
+      </div>
+
       {filtered.length === 0 ? (
         <div className="chart-empty">
           {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}

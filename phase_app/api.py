@@ -809,6 +809,7 @@ class PhaseApi:
                 e.exercise_id,
                 e.exercise_name,
                 e.is_bodyweight,
+                e.is_barbell_bench_press,
                 s.session_id,
                 s.session_date,
                 s.session_type
@@ -820,7 +821,7 @@ class PhaseApi:
               ORDER BY e.exercise_id, s.session_type, s.session_date DESC, s.session_id DESC
             )
             SELECT
-              ls.exercise_id, ls.exercise_name, ls.is_bodyweight,
+              ls.exercise_id, ls.exercise_name, ls.is_bodyweight, ls.is_barbell_bench_press,
               ls.session_id  AS last_session_id,
               ls.session_date AS last_session_date,
               ls.session_type AS last_session_type,
@@ -844,6 +845,7 @@ class PhaseApi:
                     "exerciseId": r["exercise_id"],
                     "exerciseName": r["exercise_name"],
                     "isBodyweight": bool(r["is_bodyweight"]),
+                    "isBarbellBenchPress": bool(r["is_barbell_bench_press"]),
                     "lastSessionId": r["last_session_id"],
                     "lastSessionDate": str(r["last_session_date"]),
                     "lastSessionType": r["last_session_type"],

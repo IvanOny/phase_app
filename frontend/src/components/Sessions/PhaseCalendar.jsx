@@ -185,8 +185,6 @@ export default function PhaseCalendar({
       return;
     }
 
-    // Empty slot — open type picker for future/today (no auth gate on UI)
-    if (day.isPast && !day.isToday) return;
     setPickerDate(day.date);
     setPickerSession(null);
     setPickerType(SESSION_TYPES[0]);
@@ -234,7 +232,7 @@ export default function PhaseCalendar({
                     ? getSessionTopResult(s.sessionId, exerciseVolumes)
                     : null;
                   const tooltipBelow = wi === 0;
-                  const isOpenSlot = !s && day.inPhase && (!day.isPast || day.isToday);
+                  const isOpenSlot = !s && day.inPhase;
                   const isDimmed = !allTypesActive && s && !activeTypes.includes(s.sessionType);
 
                   return (
@@ -256,7 +254,7 @@ export default function PhaseCalendar({
                       onMouseEnter={() => day.inPhase && setHoveredDate(day.date)}
                       onMouseLeave={() => setHoveredDate(null)}
                     >
-                      <span className="cal-day-num">{fmtDay(day.date)}</span>
+                      {day.inPhase && <span className="cal-day-num">{fmtDay(day.date)}</span>}
                       {s && <span className="cal-day-dot" />}
                       {showTooltip && (
                         <div className={`cal-tooltip${isTapped ? ' cal-tooltip--tapped' : ''}${tooltipBelow ? ' cal-tooltip--below' : ''}`}>

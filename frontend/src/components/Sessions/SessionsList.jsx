@@ -266,7 +266,7 @@ function AddExerciseRow({ sessionId, catalog, nextOrder, onAdded }) {
 }
 
 // ---- Expanded session detail with exercise/set edit ----
-function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAuthenticated }) {
+function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExerciseDeleted, isAuthenticated }) {
   const [data, setData] = useState(null);
   const [confirmExercise, setConfirmExercise] = useState(null);
 
@@ -342,7 +342,7 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAut
           {data.length === 0 && (
             <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
           )}
-          {data.map(se => {
+          {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => {
             const catalogEx = catalog.find(e => e.exerciseId === se.exerciseId);
             const isBodyweight = catalogEx?.isBodyweight ?? false;
             return (
@@ -418,7 +418,7 @@ function SessionDetail({ sessionId, exercises: catalog, onExerciseDeleted, isAut
 }
 
 // ---- Session row with inline edit ----
-function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, isAuthenticated, rowRef, onBackToCalendar }) {
+function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted, exercises, filterExerciseId, isAuthenticated, rowRef, onBackToCalendar }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
@@ -556,10 +556,8 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
               {runSummary(session)}
             </div>
           ) : session.notes ? (
-            <div className="session-notes-preview">
-              {isOpen || session.notes.length <= 20
-                ? session.notes
-                : session.notes.slice(0, 20) + '…'}
+            <div className={`session-notes-preview${isOpen ? ' session-notes-preview--expanded' : ''}`}>
+              {session.notes}
             </div>
           ) : null}
         </td>
@@ -578,7 +576,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
       </tr>
       {isOpen && !isPlanned && onBackToCalendar && (
         <tr>
-          <td colSpan={4} style={{ paddingBottom: 0 }}>
+          <td colSpan={4} style={{ paddingBottom: 0, paddingLeft: 'var(--space-6)', paddingTop: 'var(--space-4)' }}>
             <button className="sessions-back-to-cal-btn" onClick={onBackToCalendar}>
               ↑ Schedule &amp; Filters
             </button>
@@ -612,6 +610,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
         <SessionDetail
           sessionId={session.sessionId}
           exercises={exercises}
+          filterExerciseId={filterExerciseId}
           isAuthenticated={isAuthenticated}
         />
       )}
@@ -830,17 +829,12 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
     }, 80);
   }, [focusFilter]);
 
-  const realCount    = sessions.filter(s => !s.isPlanned).length;
-  const plannedCount = sessions.filter(s =>  s.isPlanned).length;
+  const countBase     = filters.types.length === SESSION_TYPES.length ? sessions : sessions.filter(s => filters.types.includes(s.sessionType));
+  const realCount     = countBase.filter(s => !s.isPlanned).length;
+  const plannedCount  = countBase.filter(s =>  s.isPlanned).length;
 
   return (
     <div className="chart-wrapper" ref={wrapperRef}>
-      <div style={{ marginBottom: 'var(--space-4)' }}>
-        <div className="card-title" style={{ marginBottom: 0 }}>
-          Sessions ({realCount}{plannedCount > 0 ? ` + ${plannedCount} planned` : ''})
-        </div>
-      </div>
-
       <div className="sessions-cal-filter-layout">
         {phase && (
           <div className="sessions-cal-col">
@@ -860,6 +854,12 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
           <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} />
         </div>
       </div>
+      <div style={{ marginBottom: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
+        <div className="card-title" style={{ marginBottom: 0 }}>
+          {realCount} done{plannedCount > 0 ? ` · ${plannedCount} planned` : ''}
+        </div>
+      </div>
+
       {filtered.length === 0 ? (
         <div className="chart-empty">
           {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}
@@ -887,6 +887,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
                   onUpdated={onUpdateSession}
                   onDeleted={onDeleteSession}
                   exercises={exercises}
+                  filterExerciseId={filters.exerciseId}
                   isAuthenticated={isAuthenticated}
                   rowRef={el => { rowRefs.current[s.sessionId] = el; }}
                   onBackToCalendar={phase ? () => wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) : undefined}

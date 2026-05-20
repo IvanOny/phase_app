@@ -223,6 +223,10 @@ export async function updateExercise(exerciseId, payload) {
   return apiFetch('PATCH', `/v1/exercises/${exerciseId}`, payload);
 }
 
+export async function mergeExercise(sourceId, targetId) {
+  return apiFetch('POST', '/v1/exercises/merge', { sourceId, targetId });
+}
+
 // ---- Metrics ----
 
 export async function getBenchE1rm(sessionId) {

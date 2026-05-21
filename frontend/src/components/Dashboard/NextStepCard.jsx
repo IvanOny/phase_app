@@ -176,6 +176,7 @@ export function NextStepTile({ progression, sessions, onFocusSession }) {
       .sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate))[0] ?? null;
     if (!lastRun) return null;
     return {
+      lastSessionId: lastRun.sessionId,
       lastDate: lastRun.sessionDate,
       lastDistKm: lastRun.distanceKm,
       targetDistKm: Math.round(lastRun.distanceKm * 1.1 * 10) / 10,
@@ -209,7 +210,7 @@ export function NextStepTile({ progression, sessions, onFocusSession }) {
           <div className="nsc-kind nsc-kind--up">↑ +10% distance</div>
           <button
             className="nsc-last-session"
-            onClick={() => onFocusSession?.({ sessionType: 'run', sessionId: null })}
+            onClick={() => onFocusSession?.({ sessionType: 'run', sessionId: runSuggestion.lastSessionId })}
           >
             Last: {formatDate(runSuggestion.lastDate)} · {runSuggestion.lastDistKm} km ↓
           </button>

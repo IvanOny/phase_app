@@ -12,7 +12,7 @@ import { formatDuration, formatPace, parseDuration, parsePace, runSummary } from
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 import PhaseCalendar from './PhaseCalendar.jsx';
 
-const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
+const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
 
 const TYPE_COLORS = {
   heavy_bench:  '#7c3aed',

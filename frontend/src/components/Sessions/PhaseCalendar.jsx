@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from 'react';
 import { createSession } from '../../api/client.js';
 
-const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
+const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
 
 const TYPE_COLORS = {
   heavy_bench:  '#7c3aed',
@@ -73,6 +73,7 @@ export default function PhaseCalendar({
   const [tappedDate, setTappedDate] = useState(null);
   const [pickerDate, setPickerDate] = useState(null);
   const [pickerType, setPickerType] = useState(SESSION_TYPES[0]);
+  const [pickerDeload, setPickerDeload] = useState(false);
   const [pickerSession, setPickerSession] = useState(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -135,9 +136,11 @@ export default function PhaseCalendar({
         sessionDate: pickerDate,
         sessionType: pickerType,
         isPlanned: true,
+        isDeload: pickerDeload,
       });
       onSessionCreated(session);
       setPickerDate(null);
+      setPickerDeload(false);
     } finally {
       setCreating(false);
     }
@@ -229,7 +232,9 @@ export default function PhaseCalendar({
                   const isTapped = tappedDate === day.date;
                   const showTooltip = (isHovered || isTapped) && s && !s.isPlanned;
                   const topResult = showTooltip
-                    ? getSessionTopResult(s.sessionId, exerciseVolumes)
+                    ? (s.sessionType === 'run' && s.distanceKm != null
+                        ? `${s.distanceKm} km`
+                        : getSessionTopResult(s.sessionId, exerciseVolumes))
                     : null;
                   const tooltipBelow = wi === 0;
                   const isOpenSlot = !s && day.inPhase;
@@ -296,6 +301,10 @@ export default function PhaseCalendar({
               <option key={t} value={t}>{formatType(t)}</option>
             ))}
           </select>
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={pickerDeload} onChange={e => setPickerDeload(e.target.checked)} />
+            Deload
+          </label>
           <div className="cal-picker-actions">
             {isAuthenticated ? (
               <button className="btn btn-primary btn-xs" onClick={handleCreate} disabled={creating}>
@@ -304,7 +313,7 @@ export default function PhaseCalendar({
             ) : (
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Log in to save</span>
             )}
-            <button className="btn btn-ghost btn-xs" onClick={() => setPickerDate(null)}>Cancel</button>
+            <button className="btn btn-ghost btn-xs" onClick={() => { setPickerDate(null); setPickerDeload(false); }}>Cancel</button>
           </div>
         </div>
       )}

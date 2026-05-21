@@ -317,3 +317,17 @@ export async function importScreenshot(file) {
     reader.readAsDataURL(file);
   });
 }
+
+export async function importScreenshots(files) {
+  const images = await Promise.all(files.map(file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const [header, imageBase64] = e.target.result.split(',');
+      const mediaType = header.match(/data:([^;]+)/)[1];
+      resolve({ imageBase64, mediaType });
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  })));
+  return apiFetch('POST', '/v1/import/screenshots', { images });
+}

@@ -28,23 +28,18 @@ function fmtPlates(plates) {
   return counts.map(({ p, n }) => n > 1 ? `${n}×${p}` : `${p}`).join(' + ');
 }
 
-const REP_RANGES = {
+const SESSION_RANGES = {
   heavy_bench:  { min: 3, max: 5,  increment: 2.5 },
   volume_bench: { min: 6, max: 8,  increment: 2.5 },
   speed_bench:  { min: 3, max: 5,  increment: 2.5 },
   pull:         { min: 6, max: 8,  increment: 2.5 },
 };
 
-const ACCESSORY_RANGE = { min: 8, max: 12, increment: 2.5 };
-
 function getRule(item) {
-  if (/row/i.test(item.exerciseName)) return ACCESSORY_RANGE;
-  const sessionRule = REP_RANGES[item.lastSessionType] ?? null;
-  if (!sessionRule) return null;
-  // If the athlete was doing well above the session's rep ceiling, treat as accessory
-  const avgReps = item.workingSets.reduce((s, w) => s + w.reps, 0) / item.workingSets.length;
-  if (avgReps > sessionRule.max * 1.5) return ACCESSORY_RANGE;
-  return sessionRule;
+  if (item.repMin != null && item.repMax != null) {
+    return { min: item.repMin, max: item.repMax, increment: 2.5 };
+  }
+  return SESSION_RANGES[item.lastSessionType] ?? null;
 }
 
 function formatDate(dateStr) {
@@ -95,12 +90,12 @@ function SuggestionDisplay({ item, onFocusSession, showLastSession = true, showL
   } else if (showLbs) {
     const lbs = Math.round(sugg.loadKg * 2.20462 / 5) * 5;
     loadLabel = `${lbs} lbs`;
-    if (isBarbell) {
-      const plates = calcPlatesLbs(sugg.loadKg);
-      platesInfo = plates ? fmtPlates(plates) + ' / side' : null;
-    }
   } else {
     loadLabel = `${sugg.loadKg}kg`;
+  }
+  if (isBarbell && sugg.loadKg !== null) {
+    const plates = calcPlatesLbs(sugg.loadKg);
+    platesInfo = plates ? fmtPlates(plates) + ' / side' : null;
   }
 
   const kindLabel = {
@@ -140,11 +135,15 @@ function SuggestionDisplay({ item, onFocusSession, showLastSession = true, showL
 export function NextStepTile({ progression, sessions, onFocusSession }) {
   const today = new Date().toISOString().slice(0, 10);
 
-  const nextPlanned = useMemo(() => (
+  const upcomingPlanned = useMemo(() => (
     (sessions || [])
       .filter(s => s.isPlanned && String(s.sessionDate).slice(0, 10) >= today)
-      .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))[0] ?? null
+      .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
   ), [sessions, today]);
+
+  const [plannedIdx, setPlannedIdx] = useState(0);
+  const safePlannedIdx = Math.min(plannedIdx, Math.max(0, upcomingPlanned.length - 1));
+  const nextPlanned = upcomingPlanned[safePlannedIdx] ?? null;
 
   // Last executed session of the upcoming type — drives the exercise list
   const lastExecutedOfType = useMemo(() => {
@@ -185,7 +184,16 @@ export function NextStepTile({ progression, sessions, onFocusSession }) {
 
   const [idx, setIdx] = useState(0);
   const [showLbs, setShowLbs] = useState(false);
+  const [deloadPct, setDeloadPct] = useState(20);
   const safeIdx = Math.min(idx, Math.max(0, actionable.length - 1));
+
+  const deloadExercises = useMemo(() => {
+    if (!nextPlanned?.isDeload || !lastExecutedOfType) return [];
+    return progression.filter(p =>
+      p.lastSessionType === nextPlanned.sessionType &&
+      p.lastSessionId === lastExecutedOfType.sessionId
+    );
+  }, [progression, nextPlanned, lastExecutedOfType]);
 
   const emptyReason = nextPlanned && !lastExecutedOfType
     ? `No prior ${formatType(nextPlanned.sessionType)} session logged.`
@@ -196,13 +204,64 @@ export function NextStepTile({ progression, sessions, onFocusSession }) {
       <div className="nsc-header">
         <div className="card-title" style={{ marginBottom: 0 }}>Next Step</div>
         {nextPlanned && (
-          <div className="nsc-next-session-label">
-            {formatDate(nextPlanned.sessionDate)} · {formatType(nextPlanned.sessionType)}
+          <div className="nsc-session-nav">
+            <button className="nsc-nav-btn" onClick={() => setPlannedIdx(i => Math.max(0, i - 1))} disabled={safePlannedIdx === 0}>‹</button>
+            <div className="nsc-next-session-label">
+              {formatDate(nextPlanned.sessionDate)} · {formatType(nextPlanned.sessionType)}
+              {upcomingPlanned.length > 1 && <span style={{ opacity: 0.5, marginLeft: 4 }}>{safePlannedIdx + 1}/{upcomingPlanned.length}</span>}
+            </div>
+            <button className="nsc-nav-btn" onClick={() => setPlannedIdx(i => Math.min(upcomingPlanned.length - 1, i + 1))} disabled={safePlannedIdx === upcomingPlanned.length - 1}>›</button>
           </div>
         )}
       </div>
 
-      {isRunNext && runSuggestion ? (
+      {nextPlanned?.isDeload ? (
+        <div className="nsc-suggestion">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 'var(--space-3)' }}>
+            <span className="nsc-kind" style={{ color: 'var(--text-secondary)' }}>↓ Deload</span>
+            <label style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 12, color: 'var(--text-secondary)' }}>
+              <input
+                type="number" min="5" max="50" step="5"
+                value={deloadPct}
+                onChange={e => setDeloadPct(Number(e.target.value))}
+                className="inline-input"
+                style={{ width: 46, fontSize: 13, textAlign: 'center' }}
+              />
+              % drop
+            </label>
+          </div>
+          {deloadExercises.length === 0 ? (
+            <div className="nsc-empty" style={{ marginTop: 0 }}>No prior {formatType(nextPlanned.sessionType)} session logged.</div>
+          ) : deloadExercises.map(item => {
+            const maxKg = Math.max(...item.workingSets.map(s => s.loadKg));
+            const targetKg = maxKg * (1 - deloadPct / 100);
+            const targetLbs = Math.round(targetKg * 2.20462 / 5) * 5;
+            const isBarbell = item.isBarbellBenchPress || /barbell/i.test(item.exerciseName);
+            const plates = isBarbell ? calcPlatesLbs(targetKg) : null;
+            const platesInfo = plates ? fmtPlates(plates) + ' / side' : null;
+            return (
+              <div key={item.exerciseId} style={{ padding: '3px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{item.exerciseName}</span>
+                  <button className="nsc-load" style={{ fontSize: 15, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                    onClick={() => setShowLbs(v => !v)}
+                    title="Toggle lbs / kg"
+                  >
+                    {showLbs ? `${targetLbs} lbs` : `${targetKg.toFixed(1)} kg`}
+                  </button>
+                </div>
+                {platesInfo && <div className="nsc-plates" style={{ textAlign: 'right' }}>{platesInfo}</div>}
+              </div>
+            );
+          })}
+          {deloadExercises.length > 0 && (
+            <button className="nsc-last-session" style={{ marginTop: 'var(--space-3)' }}
+              onClick={() => onFocusSession?.({ exerciseId: null, sessionType: nextPlanned.sessionType, sessionId: lastExecutedOfType?.sessionId })}>
+              Last: {formatDate(lastExecutedOfType?.sessionDate)} · {formatType(nextPlanned.sessionType)} ↓
+            </button>
+          )}
+        </div>
+      ) : isRunNext && runSuggestion ? (
         <div className="nsc-suggestion">
           <div className="nsc-target">
             <span className="nsc-load">{runSuggestion.targetDistKm} km</span>

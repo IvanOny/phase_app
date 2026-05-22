@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  importScreenshot,
+  importScreenshots,
   createSession,
   createSessionExercise,
   createExercise,
@@ -15,6 +15,7 @@ const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pul
 export default function ScreenshotImportForm({ phases, selectedPhaseId, exercises, onImportComplete, onExerciseCreated }) {
   const [stage, setStage] = useState('idle');
   const [dragOver, setDragOver] = useState(false);
+  const [pendingImages, setPendingImages] = useState([]);
   const [editedData, setEditedData] = useState(null);
   const [phaseId, setPhaseId] = useState(selectedPhaseId || phases[0]?.phaseId || '');
   const [error, setError] = useState(null);
@@ -26,12 +27,12 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) processFile(file);
+    Array.from(e.dataTransfer.files).forEach(f => addFile(f));
   }, []);
 
   const handleFileInput = (e) => {
-    if (e.target.files[0]) processFile(e.target.files[0]);
+    Array.from(e.target.files).forEach(f => addFile(f));
+    e.target.value = '';
   };
 
   useEffect(() => {
@@ -41,28 +42,42 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
       const imageItem = items.find(item => item.type.startsWith('image/'));
       if (imageItem) {
         const file = imageItem.getAsFile();
-        if (file) processFile(file);
+        if (file) addFile(file);
       }
     }
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
   }, [stage]);
 
-  async function processFile(file) {
+  function addFile(file) {
     if (!file.type.startsWith('image/')) {
-      setError('Please drop an image file (PNG, JPEG, or WEBP).');
+      setError('Please use image files (PNG, JPEG, or WEBP).');
       return;
     }
     setError(null);
+    const previewUrl = URL.createObjectURL(file);
+    setPendingImages(prev => [...prev, { file, previewUrl }]);
+  }
+
+  function removeImage(idx) {
+    setPendingImages(prev => {
+      URL.revokeObjectURL(prev[idx].previewUrl);
+      return prev.filter((_, i) => i !== idx);
+    });
+  }
+
+  async function parsePending() {
+    if (!pendingImages.length) return;
+    setError(null);
     setStage('parsing');
     try {
-      const result = await importScreenshot(file);
+      const result = await importScreenshots(pendingImages.map(p => p.file));
       if (!result.sessionDate) result.sessionDate = new Date().toISOString().slice(0, 10);
       result.eliteHrvReadiness = '';
       setEditedData(JSON.parse(JSON.stringify(result)));
       setStage('preview');
     } catch (err) {
-      setError(err.message || 'Failed to parse screenshot.');
+      setError(err.message || 'Failed to parse screenshots.');
       setStage('idle');
     }
   }
@@ -186,6 +201,7 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
   }
 
   function handleReset() {
+    setPendingImages(prev => { prev.forEach(p => URL.revokeObjectURL(p.previewUrl)); return []; });
     setStage('idle');
     setEditedData(null);
     setError(null);
@@ -210,22 +226,46 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
             ref={fileInputRef}
             type="file"
             accept="image/*"
+            multiple
             style={{ display: 'none' }}
             onChange={handleFileInput}
           />
           {stage === 'parsing' ? (
             <>
               <div className="screenshot-spinner" />
-              <p className="screenshot-hint">Analysing screenshot&hellip;</p>
+              <p className="screenshot-hint">Analysing {pendingImages.length} screenshot{pendingImages.length !== 1 ? 's' : ''}&hellip;</p>
             </>
           ) : (
             <>
               <div className="screenshot-icon">&#128247;</div>
-              <p className="screenshot-hint">Drop or paste a workout screenshot</p>
+              <p className="screenshot-hint">{pendingImages.length > 0 ? 'Add more screenshots' : 'Drop or paste workout screenshots'}</p>
               <p className="screenshot-subhint">drag &amp; drop, Ctrl+V, or click to browse &mdash; PNG, JPEG, WEBP</p>
             </>
           )}
         </div>
+
+        {pendingImages.length > 0 && stage === 'idle' && (
+          <div className="screenshot-queue">
+            {pendingImages.map((img, i) => (
+              <div key={i} className="screenshot-thumb">
+                <img src={img.previewUrl} alt={`Screenshot ${i + 1}`} />
+                <button
+                  type="button"
+                  className="screenshot-thumb-remove"
+                  onClick={e => { e.stopPropagation(); removeImage(i); }}
+                  aria-label="Remove screenshot"
+                >&#x2715;</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {pendingImages.length > 0 && stage === 'idle' && (
+          <button type="button" className="btn btn-primary" style={{ marginTop: 12, width: '100%' }} onClick={parsePending}>
+            Parse {pendingImages.length} screenshot{pendingImages.length !== 1 ? 's' : ''}
+          </button>
+        )}
+
         {error && <div className="form-error">{error}</div>}
       </div>
     );

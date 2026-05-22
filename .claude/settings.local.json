@@ -9,7 +9,16 @@
       "mcp__Claude_in_Chrome__javascript_tool",
       "mcp__Claude_in_Chrome__read_console_messages",
       "Bash(wmic process *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(gh pr create --title 'UI polish: session detail, calendar, Next Step, progress bar' --body ' *)",
+      "Bash(git reset *)",
+      "Bash(git -C \"C:\\\\Users\\\\Oleks\\\\OneDrive\\\\Desktop\\\\Ivan\\\\IT\\\\claude\\\\phase_app\\\\.claude\\\\worktrees\\\\sad-dubinsky-b14e40\" add frontend/src/App.jsx frontend/src/api/client.js frontend/src/components/Dashboard/Dashboard.css frontend/src/components/Dashboard/MaintenancePanel.jsx frontend/src/components/DataEntry/DataEntryPanel.jsx frontend/src/components/DataEntry/ExerciseCatalogForm.jsx phase_app/api.py)",
+      "Bash(git -C 'C:\\\\Users\\\\Oleks\\\\OneDrive\\\\Desktop\\\\Ivan\\\\IT\\\\claude\\\\phase_app\\\\.claude\\\\worktrees\\\\sad-dubinsky-b14e40' commit -m ' *)",
+      "Bash(git -C \"C:\\\\Users\\\\Oleks\\\\OneDrive\\\\Desktop\\\\Ivan\\\\IT\\\\claude\\\\phase_app\\\\.claude\\\\worktrees\\\\sad-dubinsky-b14e40\" diff --stat)",
+      "Bash(git -C \"C:\\\\Users\\\\Oleks\\\\OneDrive\\\\Desktop\\\\Ivan\\\\IT\\\\claude\\\\phase_app\\\\.claude\\\\worktrees\\\\sad-dubinsky-b14e40\" log --oneline -5)",
+      "Bash(git -C \"C:\\\\Users\\\\Oleks\\\\OneDrive\\\\Desktop\\\\Ivan\\\\IT\\\\claude\\\\phase_app\\\\.claude\\\\worktrees\\\\sad-dubinsky-b14e40\" add frontend/src/components/Dashboard/NextStepCard.jsx frontend/src/components/Sessions/SessionsList.jsx)",
+      "Bash(git -C \"C:\\\\Users\\\\Oleks\\\\OneDrive\\\\Desktop\\\\Ivan\\\\IT\\\\claude\\\\phase_app\\\\.claude\\\\worktrees\\\\sad-dubinsky-b14e40\" push origin HEAD)",
+      "Bash(gh pr create --base main --head claude/sad-dubinsky-b14e40 --title 'Exercise merge UI, calendar today highlight, run session expand fix' --body ' *)"
     ]
   }
 }

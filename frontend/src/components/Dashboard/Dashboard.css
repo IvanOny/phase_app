@@ -581,8 +581,8 @@
 
 .maintenance-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-4);
   padding: var(--space-4) 0;
   border-bottom: 1px solid var(--border);
@@ -603,19 +603,36 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-secondary);
-  min-width: 72px;
 }
 
 .maintenance-stats {
-  display: flex;
-  gap: var(--space-6);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
 }
 
 .maintenance-stat {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 1px;
+  align-items: flex-start;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.maintenance-stat:nth-child(2n) {
+  border-right: none;
+}
+
+.maintenance-stat:nth-last-child(-n+2):not(:nth-child(2n-1) ~ *),
+.maintenance-stat:last-child,
+.maintenance-stat:nth-last-child(2):nth-child(odd) {
+  border-bottom: none;
+}
+
+.maintenance-stat:nth-last-child(-n+2) {
+  border-bottom: none;
 }
 
 .maintenance-stat--hoverable {
@@ -638,13 +655,6 @@
   color: var(--text-muted);
 }
 
-@media (max-width: 600px) {
-  .stat-label {
-    min-height: 2.8em;
-    display: flex;
-    align-items: flex-end;
-  }
-}
 
 .stat-value {
   font-size: 15px;
@@ -660,19 +670,26 @@
 }
 
 .sessions-back-to-cal-btn {
-  display: block;
-  background: none;
-  border: none;
-  padding: 0 0 var(--space-3) 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--bg-hover, rgba(0,0,0,0.05));
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-3);
   font-size: 11px;
+  font-weight: 600;
   font-family: inherit;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: color 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
   text-align: left;
 }
 .sessions-back-to-cal-btn:hover {
   color: var(--accent);
+  border-color: var(--accent);
+  background: transparent;
 }
 
 .sessions-show-more-btn {
@@ -701,7 +718,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
   margin-bottom: var(--space-4);
+}
+.nsc-header .card-title {
+  white-space: nowrap;
+}
+.nsc-session-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 .nsc-dropdown {
   font-size: 13px;
@@ -823,8 +852,16 @@
   color: var(--text-secondary);
 }
 .nsc-next-session-label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
   font-size: 12px;
   color: var(--text-muted);
+  line-height: 1.4;
+  min-height: calc(2 * 1.4em);
+  overflow: hidden;
 }
 .nsc-exercise-name {
   font-size: 14px;

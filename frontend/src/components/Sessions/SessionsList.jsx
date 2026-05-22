@@ -12,7 +12,7 @@ import { formatDuration, formatPace, parseDuration, parsePace, runSummary } from
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 import PhaseCalendar from './PhaseCalendar.jsx';
 
-const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
+const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
 
 const TYPE_COLORS = {
   heavy_bench:  '#7c3aed',
@@ -684,19 +684,21 @@ function FilterBar({ filters, onChange, exercises }) {
           </button>
         ))}
       </div>
-      <div className="filter-section">
-        <span className="filter-label">Exercise:</span>
-        <select
-          value={filters.exerciseId}
-          onChange={e => onChange({ ...filters, exerciseId: e.target.value })}
-          className="inline-input"
-        >
-          <option value="">All</option>
-          {exercises.map(ex => (
-            <option key={ex.exerciseId} value={ex.exerciseId}>{ex.exerciseName}</option>
-          ))}
-        </select>
-      </div>
+      {!filters.types.every(t => t === 'run') && (
+        <div className="filter-section">
+          <span className="filter-label">Exercise:</span>
+          <select
+            value={filters.exerciseId}
+            onChange={e => onChange({ ...filters, exerciseId: e.target.value })}
+            className="inline-input"
+          >
+            <option value="">All</option>
+            {exercises.map(ex => (
+              <option key={ex.exerciseId} value={ex.exerciseId}>{ex.exerciseName}</option>
+            ))}
+          </select>
+        </div>
+      )}
       {isActive && (
         <button
           className="filter-chip"
@@ -752,6 +754,12 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
       next = { ...next, exerciseId: '' };
     }
     setFilters(next);
+    const isRunOnly = next.types.length === 1 && next.types[0] === 'run';
+    if (isRunOnly) {
+      const runIds = sessions.filter(s => s.sessionType === 'run' && !s.isPlanned).map(s => s.sessionId);
+      setExpanded(new Set(runIds));
+      setShowAll(true);
+    }
   }
 
   function toggleRow(sessionId) {
@@ -820,18 +828,20 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
   useEffect(() => {
     if (!focusFilter) return;
     setFilters({ types: [focusFilter.sessionType], exerciseId: focusFilter.exerciseId ? String(focusFilter.exerciseId) : '' });
-    if (focusFilter.sessionId) {
+    const targetId = focusFilter.sessionId ?? [...sessions]
+      .filter(s => !s.isPlanned && s.sessionType === focusFilter.sessionType)
+      .sort((a, b) => new Date(b.sessionDate) - new Date(a.sessionDate))[0]?.sessionId;
+    if (targetId) {
       setShowAll(true);
-      setExpanded(new Set([focusFilter.sessionId]));
+      setExpanded(new Set([targetId]));
     }
     setTimeout(() => {
       tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
   }, [focusFilter]);
 
-  const countBase     = filters.types.length === SESSION_TYPES.length ? sessions : sessions.filter(s => filters.types.includes(s.sessionType));
-  const realCount     = countBase.filter(s => !s.isPlanned).length;
-  const plannedCount  = countBase.filter(s =>  s.isPlanned).length;
+  const realCount    = executedFiltered.length;
+  const plannedCount = plannedFiltered.length;
 
   return (
     <div className="chart-wrapper" ref={wrapperRef}>

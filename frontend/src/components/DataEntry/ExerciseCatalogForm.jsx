@@ -14,6 +14,8 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
       exerciseName: exercise.exerciseName,
       isBarbellBenchPress: exercise.isBarbellBenchPress,
       isBodyweight: exercise.isBodyweight,
+      repMin: exercise.repMin ?? '',
+      repMax: exercise.repMax ?? '',
     });
     setEditing(true);
   }
@@ -21,7 +23,11 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
   async function saveEdit() {
     setSaving(true);
     try {
-      await onUpdate(exercise.exerciseId, form);
+      await onUpdate(exercise.exerciseId, {
+        ...form,
+        repMin: form.repMin !== '' ? Number(form.repMin) : null,
+        repMax: form.repMax !== '' ? Number(form.repMax) : null,
+      });
       setEditing(false);
     } catch {
       alert('Failed to save exercise.');
@@ -85,6 +91,19 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
         <td style={{ textAlign: 'center' }}>
           <input type="checkbox" checked={form.isBodyweight} onChange={e => setForm(f => ({ ...f, isBodyweight: e.target.checked }))} />
         </td>
+        <td style={{ textAlign: 'center' }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
+            <input type="number" min="1" max="30" placeholder="—"
+              value={form.repMin}
+              onChange={e => setForm(f => ({ ...f, repMin: e.target.value }))}
+              className="inline-input" style={{ width: 38 }} />
+            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>–</span>
+            <input type="number" min="1" max="30" placeholder="—"
+              value={form.repMax}
+              onChange={e => setForm(f => ({ ...f, repMax: e.target.value }))}
+              className="inline-input" style={{ width: 38 }} />
+          </div>
+        </td>
         <td>
           <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
           <button className="icon-btn" onClick={() => setEditing(false)} title="Cancel">✕</button>
@@ -99,6 +118,9 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
         <td>{exercise.exerciseName}</td>
         <td style={{ textAlign: 'center' }}>{exercise.isBarbellBenchPress ? '✓' : ''}</td>
         <td style={{ textAlign: 'center' }}>{exercise.isBodyweight ? '✓' : ''}</td>
+        <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
+          {exercise.repMin != null && exercise.repMax != null ? `${exercise.repMin}–${exercise.repMax}` : '—'}
+        </td>
         <td>
           <button className="icon-btn" onClick={startEdit} title="Edit exercise">✏</button>
           <button className="icon-btn" onClick={() => setMerging(true)} title="Merge into another exercise">⇒</button>
@@ -120,6 +142,8 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
   const [newName, setNewName] = useState('');
   const [newIsBench, setNewIsBench] = useState(false);
   const [newIsBodyweight, setNewIsBodyweight] = useState(false);
+  const [newRepMin, setNewRepMin] = useState('');
+  const [newRepMax, setNewRepMax] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState(null);
 
@@ -132,10 +156,14 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
         exerciseName: newName.trim(),
         isBarbellBenchPress: newIsBench,
         isBodyweight: newIsBodyweight,
+        repMin: newRepMin !== '' ? Number(newRepMin) : null,
+        repMax: newRepMax !== '' ? Number(newRepMax) : null,
       });
       setNewName('');
       setNewIsBench(false);
       setNewIsBodyweight(false);
+      setNewRepMin('');
+      setNewRepMax('');
     } catch {
       setError('Failed to add exercise. Name may already exist.');
     } finally {
@@ -151,6 +179,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
             <th style={{ textAlign: 'left' }}>Exercise</th>
             <th>Bench press</th>
             <th>Bodyweight</th>
+            <th>Rep range</th>
             <th></th>
           </tr>
         </thead>
@@ -177,6 +206,16 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
               <input type="checkbox" checked={newIsBodyweight} onChange={e => setNewIsBodyweight(e.target.checked)} />
               Bodyweight
             </label>
+          </div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', paddingBottom: 2 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Rep range</span>
+            <input type="number" min="1" max="30" placeholder="min" value={newRepMin}
+              onChange={e => setNewRepMin(e.target.value)}
+              style={{ width: 46 }} />
+            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>–</span>
+            <input type="number" min="1" max="30" placeholder="max" value={newRepMax}
+              onChange={e => setNewRepMax(e.target.value)}
+              style={{ width: 46 }} />
           </div>
           <button className="btn btn-primary" onClick={handleAdd} disabled={adding} style={{ whiteSpace: 'nowrap' }}>
             {adding ? 'Adding…' : '+ Add'}

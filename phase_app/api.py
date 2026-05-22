@@ -136,6 +136,8 @@ class PhaseApi:
 
         if method == "POST" and path == "/v1/import/screenshot":
             return self.import_screenshot(body)
+        if method == "POST" and path == "/v1/import/screenshots":
+            return self.import_screenshots(body)
 
         if method == "POST" and path == "/v1/auth/login":
             return self.login(body)
@@ -186,16 +188,17 @@ class PhaseApi:
         if missing:
             return ApiResponse(400, {"error": "validation_error", "missing": missing})
         is_planned = bool(payload.get("isPlanned", False))
+        is_deload = bool(payload.get("isDeload", False))
         try:
             row = self._exec(
                 "INSERT INTO sessions "
-                "(phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, is_planned, "
+                "(phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, is_planned, is_deload, "
                 "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
                 "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-                "RETURNING *, COALESCE(is_planned, FALSE) AS is_planned",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING *, COALESCE(is_planned, FALSE) AS is_planned, COALESCE(is_deload, FALSE) AS is_deload",
                 (payload["phaseId"], payload["sessionDate"], payload["sessionType"],
-                 payload.get("eliteHrvReadiness"), payload.get("garminOvernightHrv"), payload.get("notes"), is_planned,
+                 payload.get("eliteHrvReadiness"), payload.get("garminOvernightHrv"), payload.get("notes"), is_planned, is_deload,
                  payload.get("distanceKm"), payload.get("durationSeconds"),
                  payload.get("avgHr"), payload.get("avgPaceSecPerKm"),
                  payload.get("runType"), payload.get("maxHr"),
@@ -267,7 +270,7 @@ class PhaseApi:
     def get_session(self, session_id: int) -> ApiResponse:
         row = self._exec(
             "SELECT session_id, phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, "
-            "COALESCE(is_planned, FALSE) AS is_planned, "
+            "COALESCE(is_planned, FALSE) AS is_planned, COALESCE(is_deload, FALSE) AS is_deload, "
             "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
             "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km "
             "FROM sessions WHERE session_id = %s",
@@ -331,6 +334,7 @@ class PhaseApi:
             "garminOvernightHrv": r["garmin_overnight_hrv"],
             "notes": r["notes"],
             "isPlanned": bool(r.get("is_planned", False)),
+            "isDeload": bool(r.get("is_deload", False)),
             "distanceKm": float(r["distance_km"]) if r.get("distance_km") is not None else None,
             "durationSeconds": r.get("duration_seconds"),
             "avgHr": r.get("avg_hr"),
@@ -351,7 +355,7 @@ class PhaseApi:
         rows = self._exec(
             "SELECT session_id, phase_id, session_date, session_type, "
             "elite_hrv_readiness, garmin_overnight_hrv, notes, "
-            "COALESCE(is_planned, FALSE) AS is_planned, "
+            "COALESCE(is_planned, FALSE) AS is_planned, COALESCE(is_deload, FALSE) AS is_deload, "
             "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
             "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km "
             "FROM sessions WHERE phase_id = %s ORDER BY session_date",
@@ -361,7 +365,7 @@ class PhaseApi:
 
     def list_exercises(self) -> ApiResponse:
         rows = self._exec(
-            "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight "
+            "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max "
             "FROM exercises ORDER BY exercise_name"
         ).fetchall()
         return ApiResponse(200, {"items": [{
@@ -369,6 +373,8 @@ class PhaseApi:
             "exerciseName": r["exercise_name"],
             "isBarbellBenchPress": bool(r["is_barbell_bench_press"]),
             "isBodyweight": bool(r["is_bodyweight"]),
+            "repMin": r["rep_min"],
+            "repMax": r["rep_max"],
         } for r in rows]})
 
     def list_benchmarks(self, qp: dict[str, str]) -> ApiResponse:
@@ -526,7 +532,7 @@ class PhaseApi:
     def update_session(self, session_id: int, payload: dict[str, Any]) -> ApiResponse:
         allowed = {"sessionDate": "session_date", "sessionType": "session_type",
                    "eliteHrvReadiness": "elite_hrv_readiness", "garminOvernightHrv": "garmin_overnight_hrv",
-                   "notes": "notes",
+                   "notes": "notes", "isDeload": "is_deload",
                    "distanceKm": "distance_km", "durationSeconds": "duration_seconds",
                    "avgHr": "avg_hr", "avgPaceSecPerKm": "avg_pace_sec_per_km",
                    "runType": "run_type", "maxHr": "max_hr",
@@ -540,7 +546,7 @@ class PhaseApi:
         try:
             cur = self._exec(
                 f"UPDATE sessions SET {set_clause} WHERE session_id = %s "
-                "RETURNING *, COALESCE(is_planned, FALSE) AS is_planned",
+                "RETURNING *, COALESCE(is_planned, FALSE) AS is_planned, COALESCE(is_deload, FALSE) AS is_deload",
                 (*updates.values(), session_id),
             )
             row = cur.fetchone()
@@ -705,13 +711,17 @@ class PhaseApi:
     def create_exercise(self, payload: dict[str, Any]) -> ApiResponse:
         if "exerciseName" not in payload:
             return ApiResponse(400, {"error": "validation_error", "missing": ["exerciseName"]})
+        rep_min = payload.get("repMin")
+        rep_max = payload.get("repMax")
         try:
             row = self._exec(
-                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight) "
-                "VALUES (%s, %s, %s) RETURNING exercise_id",
+                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING exercise_id",
                 (payload["exerciseName"],
                  int(payload.get("isBarbellBenchPress", False)),
-                 int(payload.get("isBodyweight", False))),
+                 int(payload.get("isBodyweight", False)),
+                 int(rep_min) if rep_min is not None else None,
+                 int(rep_max) if rep_max is not None else None),
             ).fetchone()
             self.conn.commit()
         except psycopg2.DatabaseError as exc:
@@ -722,22 +732,29 @@ class PhaseApi:
             "exerciseName": payload["exerciseName"],
             "isBarbellBenchPress": bool(payload.get("isBarbellBenchPress", False)),
             "isBodyweight": bool(payload.get("isBodyweight", False)),
+            "repMin": int(rep_min) if rep_min is not None else None,
+            "repMax": int(rep_max) if rep_max is not None else None,
         })
 
     def update_exercise(self, exercise_id: int, payload: dict[str, Any]) -> ApiResponse:
         allowed = {"exerciseName": "exercise_name", "isBarbellBenchPress": "is_barbell_bench_press",
-                   "isBodyweight": "is_bodyweight"}
+                   "isBodyweight": "is_bodyweight", "repMin": "rep_min", "repMax": "rep_max"}
         raw = {col: payload[key] for key, col in allowed.items() if key in payload}
         if not raw:
             return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields provided"})
         updates = {}
         for col, val in raw.items():
-            updates[col] = int(val) if col in ("is_barbell_bench_press", "is_bodyweight") else val
+            if col in ("is_barbell_bench_press", "is_bodyweight"):
+                updates[col] = int(val)
+            elif col in ("rep_min", "rep_max"):
+                updates[col] = int(val) if val is not None else None
+            else:
+                updates[col] = val
         set_clause = ", ".join(f"{col} = %s" for col in updates)
         try:
             cur = self._exec(
                 f"UPDATE exercises SET {set_clause} WHERE exercise_id = %s "
-                "RETURNING exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight",
+                "RETURNING exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max",
                 (*updates.values(), exercise_id),
             )
             row = cur.fetchone()
@@ -752,6 +769,8 @@ class PhaseApi:
             "exerciseName": row["exercise_name"],
             "isBarbellBenchPress": bool(row["is_barbell_bench_press"]),
             "isBodyweight": bool(row["is_bodyweight"]),
+            "repMin": row["rep_min"],
+            "repMax": row["rep_max"],
         })
 
     def delete_exercise(self, exercise_id: int) -> ApiResponse:
@@ -841,6 +860,8 @@ class PhaseApi:
                 e.exercise_name,
                 e.is_bodyweight,
                 e.is_barbell_bench_press,
+                e.rep_min,
+                e.rep_max,
                 s.session_id,
                 s.session_date,
                 s.session_type
@@ -849,10 +870,12 @@ class PhaseApi:
               JOIN exercises e ON e.exercise_id = se.exercise_id
               WHERE s.phase_id = %s
                 AND COALESCE(s.is_planned, FALSE) = FALSE
+                AND COALESCE(s.is_deload, FALSE) = FALSE
               ORDER BY e.exercise_id, s.session_type, s.session_date DESC, s.session_id DESC
             )
             SELECT
               ls.exercise_id, ls.exercise_name, ls.is_bodyweight, ls.is_barbell_bench_press,
+              ls.rep_min, ls.rep_max,
               ls.session_id  AS last_session_id,
               ls.session_date AS last_session_date,
               ls.session_type AS last_session_type,
@@ -877,6 +900,8 @@ class PhaseApi:
                     "exerciseName": r["exercise_name"],
                     "isBodyweight": bool(r["is_bodyweight"]),
                     "isBarbellBenchPress": bool(r["is_barbell_bench_press"]),
+                    "repMin": r["rep_min"],
+                    "repMax": r["rep_max"],
                     "lastSessionId": r["last_session_id"],
                     "lastSessionDate": str(r["last_session_date"]),
                     "lastSessionType": r["last_session_type"],
@@ -965,6 +990,113 @@ class PhaseApi:
                     {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
                     {"type": "text", "text": prompt},
                 ]}],
+            )
+        except Exception as exc:
+            return ApiResponse(502, {"error": "upstream_error", "detail": str(exc)})
+
+        raw = message.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return ApiResponse(422, {"error": "parse_error", "raw": raw})
+
+        if "error" in parsed:
+            return ApiResponse(422, {"error": "not_a_workout"})
+
+        if not isinstance(parsed.get("exercises"), list):
+            return ApiResponse(422, {"error": "parse_error", "raw": raw})
+
+        return ApiResponse(200, parsed)
+
+    def import_screenshots(self, payload: dict[str, Any]) -> ApiResponse:
+        import base64
+        import anthropic
+
+        images = payload.get("images", [])
+        if not images:
+            return ApiResponse(400, {"error": "validation_error", "missing": ["images"]})
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return ApiResponse(500, {"error": "server_error", "detail": "ANTHROPIC_API_KEY not configured"})
+
+        content_blocks: list[dict] = []
+        for img in images:
+            b64 = img.get("imageBase64")
+            media_type = img.get("mediaType", "image/png")
+            if not b64:
+                return ApiResponse(400, {"error": "validation_error", "detail": "each image must have imageBase64"})
+            try:
+                base64.b64decode(b64, validate=True)
+            except Exception:
+                return ApiResponse(400, {"error": "validation_error", "detail": "imageBase64 is not valid base64"})
+            content_blocks.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}})
+
+        prompt = (
+            f"You are given {len(images)} screenshot(s) from the same workout session in a fitness app "
+            "(e.g. Garmin Connect, Strong, Hevy). Combine all screenshots into a single unified session.\n"
+            "Extract all exercises and sets across all images. Return ONLY valid JSON — no markdown, no commentary.\n"
+            "Schema:\n"
+            "{\n"
+            '  "sessionDate": "YYYY-MM-DD",\n'
+            '  "sessionType": "other",\n'
+            '  "notes": null,\n'
+            '  "exercises": [\n'
+            '    {\n'
+            '      "exerciseName": "Bench Press",\n'
+            '      "sets": [\n'
+            '        { "setNumber": 1, "reps": 5, "loadKg": 100.0, "isTopSet": false, "isWorkingSet": true }\n'
+            '      ]\n'
+            '    }\n'
+            '  ]\n'
+            "}\n"
+            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, run, pull, other.\n"
+            "Rules:\n"
+            "- Combine exercises from all screenshots into one list. Do not duplicate exercises that appear in multiple screenshots.\n"
+            "- Convert lbs to kg (multiply by 0.4536). Use 0 for bodyweight exercises.\n"
+            "- Garmin Connect tables have columns: Set, Exercise Name, Time, Rest, Reps, Weight, Volume. "
+            "Use the Weight column for loadKg. Do NOT use the Volume column (Weight × Reps) — it is much larger.\n"
+            "- Run sessions (sessionType = 'run'): set exercises to [] and extract structured run metrics as top-level fields:\n"
+            "  'runType': string describing run subtype if visible (e.g. 'easy', 'long run', 'tempo', 'intervals', 'race', 'trail'), else null\n"
+            "  'distanceKm': number (e.g. 6.01)\n"
+            "  'durationSeconds': integer total seconds (e.g. 1963 for 32:43)\n"
+            "  'avgHr': integer bpm (e.g. 152)\n"
+            "  'maxHr': integer bpm (e.g. 178)\n"
+            "  'avgPaceSecPerKm': integer seconds/km for average pace (e.g. 327 for 5:27/km)\n"
+            "  'avgGapPaceSecPerKm': integer seconds/km for Grade Adjusted Pace if shown (e.g. 312 for 5:12/km)\n"
+            "  'avgCadence': integer steps per minute (e.g. 170)\n"
+            "  'avgGctMs': integer milliseconds for average ground contact time (e.g. 230)\n"
+            "  'avgVoCm': number centimetres for average vertical oscillation (e.g. 9.2)\n"
+            "  'ascentM': integer metres of total ascent/elevation gain (e.g. 48)\n"
+            "  'rpe': number 1–10 for Rate of Perceived Exertion if shown (e.g. 6.5)\n"
+            "  Omit any field not visible in the screenshots. Set notes to null.\n"
+            "- Non-run cardio/warmup activities inside a strength session have no sets: include them with sets: [].\n"
+            "- Warmup detection: for each exercise, sets at the start that are significantly lighter than the "
+            "working weight (typically ≤ 60% of the top set weight) should have isWorkingSet: false. "
+            "All other sets default to isWorkingSet: true.\n"
+            "- Top set: set isTopSet: true for the heaviest working set. In Garmin, bolded or highlighted rows indicate the top set. "
+            "For volume_bench sessions, never mark any set as isTopSet: true (volume work has no single top set).\n"
+            "- sessionType: derive primarily from the workout title/name shown in the screenshots "
+            "(e.g. 'volume bench' → 'volume_bench', 'heavy bench' → 'heavy_bench', 'speed bench' → 'speed_bench'). "
+            "If no title, infer from exercises: 'run' for cardio/run, 'pull' for pull-only, "
+            "'volume_bench'/'heavy_bench'/'speed_bench' if bench dominant, else 'other'.\n"
+            "- Extract the exact session date shown in the screenshots.\n"
+            'If these are not workout screenshots, return: {"error": "not_a_workout"}'
+        )
+        content_blocks.append({"type": "text", "text": prompt})
+
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2048,
+                messages=[{"role": "user", "content": content_blocks}],
             )
         except Exception as exc:
             return ApiResponse(502, {"error": "upstream_error", "detail": str(exc)})

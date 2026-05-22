@@ -134,13 +134,13 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
             """
             SELECT e.exercise_id, e.exercise_name, e.is_bodyweight, e.is_barbell_bench_press,
                    s.session_id, s.session_date,
-                   es.set_number, es.load_kg, es.reps
+                   es.set_number, es.load_kg, es.reps,
+                   es.is_working_set, es.is_top_set
             FROM sessions s
             JOIN session_exercises se ON se.session_id = s.session_id
             JOIN exercises e ON e.exercise_id = se.exercise_id
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
             WHERE s.phase_id = %s
-              AND (es.is_working_set = 1 OR es.is_top_set = 1)
             ORDER BY e.exercise_name, s.session_date, es.set_number
             """,
             (phase_id,),
@@ -168,12 +168,13 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
                 "sets": [],
             }
         sess = exercises[eid]["sessions"][sid]
-        load = float(row["load_kg"])
-        reps = int(row["reps"])
-        sess["volumeKgReps"] = round(sess["volumeKgReps"] + load * reps, 2)
-        if load > sess["topLoadKg"]:
-            sess["topLoadKg"] = load
-        sess["sets"].append({"loadKg": load, "reps": reps})
+        if row["is_working_set"] or row["is_top_set"]:
+            load = float(row["load_kg"])
+            reps = int(row["reps"])
+            sess["volumeKgReps"] = round(sess["volumeKgReps"] + load * reps, 2)
+            if load > sess["topLoadKg"]:
+                sess["topLoadKg"] = load
+            sess["sets"].append({"loadKg": load, "reps": reps})
 
     return [
         {

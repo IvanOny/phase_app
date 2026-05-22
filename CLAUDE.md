@@ -77,3 +77,4 @@ Backend dev server: `http://localhost:5001`
 ## env vars (backend Vercel project)
 
 `DATABASE_URL` — Supabase connection string
+

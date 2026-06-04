@@ -178,10 +178,13 @@ class PhaseApi:
         return ApiResponse(200, {"token": token})
 
     def create_phase(self, payload: dict[str, Any]) -> ApiResponse:
-        required = ["phaseType", "startDate", "endDate"]
+        required = ["phaseType", "startDate"]
         missing = [field for field in required if field not in payload]
         if missing:
             return ApiResponse(400, {"error": "validation_error", "missing": missing})
+        # end_date is optional for powerlifting phases (open-ended until class goal is hit)
+        if payload["phaseType"] != "powerlifting" and not payload.get("endDate"):
+            return ApiResponse(400, {"error": "validation_error", "missing": ["endDate"]})
         try:
             row = self._exec(
                 "INSERT INTO phases (phase_type, start_date, end_date, name, notes) "

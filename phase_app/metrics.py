@@ -330,6 +330,100 @@ def get_session_bench_metrics(conn: psycopg2.extensions.connection, phase_id: in
     return {"e1rm": e1rm_map, "volume": vol_map}
 
 
+def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) -> dict[str, Any]:
+    """
+    Return squat / bench / deadlift e1RM per session plus confirmed 1RMs —
+    all in one round-trip. Used by the Phase 2 powerlifting dashboard.
+    """
+    with conn.cursor() as cur:
+        # Best top-set e1RM per session for each of the three lifts
+        for lift, flag in [("squat", "is_squat"), ("bench", "is_barbell_bench_press"), ("deadlift", "is_deadlift")]:
+            cur.execute(
+                f"""
+                SELECT DISTINCT ON (s.session_id)
+                    s.session_id,
+                    s.session_date,
+                    es.load_kg,
+                    es.reps,
+                    ROUND((es.load_kg * (1 + es.reps / 30.0))::numeric, 2) AS e1rm_kg
+                FROM sessions s
+                JOIN session_exercises se ON se.session_id = s.session_id
+                JOIN exercises e ON e.exercise_id = se.exercise_id
+                JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+                WHERE s.phase_id = %s
+                  AND e.{flag} = 1
+                  AND es.is_top_set = 1
+                ORDER BY s.session_id, es.load_kg DESC, es.reps DESC, es.exercise_set_id DESC
+                """,
+                (phase_id,),
+            )
+            if lift == "squat":
+                squat_rows = cur.fetchall()
+            elif lift == "bench":
+                bench_rows = cur.fetchall()
+            else:
+                deadlift_rows = cur.fetchall()
+
+        # Confirmed 1RMs for this phase
+        cur.execute(
+            "SELECT lift_type, weight_kg, logged_date, session_id "
+            "FROM confirmed_1rm WHERE phase_id = %s ORDER BY logged_date",
+            (phase_id,),
+        )
+        confirmed_rows = cur.fetchall()
+
+        # Bodyweight log for this phase
+        cur.execute(
+            "SELECT log_id, session_id, logged_date, weight_kg "
+            "FROM bodyweight_log WHERE phase_id = %s ORDER BY logged_date",
+            (phase_id,),
+        )
+        bw_rows = cur.fetchall()
+
+    def _map_e1rm(rows: list) -> dict[str, dict]:
+        result: dict[str, dict] = {}
+        for r in rows:
+            result[str(r["session_id"])] = {
+                "sessionDate":   str(r["session_date"]),
+                "topSetLoadKg":  float(r["load_kg"]),
+                "topSetReps":    int(r["reps"]),
+                "topSetE1rmKg":  float(r["e1rm_kg"]),
+            }
+        return result
+
+    # Confirmed 1RM grouped by lift type
+    confirmed: dict[str, list] = {"bench": [], "squat": [], "deadlift": []}
+    for r in confirmed_rows:
+        confirmed[r["lift_type"]].append({
+            "rmId":        r.get("rm_id"),
+            "sessionId":   r["session_id"],
+            "loggedDate":  str(r["logged_date"]),
+            "weightKg":    float(r["weight_kg"]),
+        })
+
+    return {
+        "e1rm": {
+            "squat":    _map_e1rm(squat_rows),
+            "bench":    _map_e1rm(bench_rows),
+            "deadlift": _map_e1rm(deadlift_rows),
+        },
+        "confirmedMax": {
+            lift: max((e["weightKg"] for e in entries), default=None)
+            for lift, entries in confirmed.items()
+        },
+        "confirmedRms": confirmed,
+        "bodyweightLog": [
+            {
+                "logId":       r["log_id"],
+                "sessionId":   r["session_id"],
+                "loggedDate":  str(r["logged_date"]),
+                "weightKg":    float(r["weight_kg"]),
+            }
+            for r in bw_rows
+        ],
+    }
+
+
 def get_bench_volume(conn: psycopg2.extensions.connection, session_id: int) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPhase } from '../../api/client.js';
 
-const PHASE_TYPES = ['bench', 'pull_ups', 'run'];
+const PHASE_TYPES = ['powerlifting', 'bench', 'pull_ups', 'run'];
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -52,8 +52,8 @@ export default function CreatePhaseForm({ initialPhaseType, onPhaseCreated }) {
         <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} required />
       </div>
       <div className="form-group">
-        <label>End Date</label>
-        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} required />
+        <label>End Date {phaseType === 'powerlifting' && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>optional — ends when class goal is hit</span>}</label>
+        <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} required={phaseType !== 'powerlifting'} />
       </div>
       {error && <div className="form-error">{error}</div>}
       <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={submitting}>

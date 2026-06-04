@@ -8,6 +8,7 @@ import E1rmChart from '../Charts/E1rmChart.jsx';
 import VolumeChart from '../Charts/VolumeChart.jsx';
 import SessionsList from '../Sessions/SessionsList.jsx';
 import { NextStepTile } from './NextStepCard.jsx';
+import PowerliftingDashboard from '../Powerlifting/PowerliftingDashboard.jsx';
 
 export default function Dashboard({
   phases,
@@ -40,6 +41,32 @@ export default function Dashboard({
   function handleFocusSession(filter) {
     setFocusFilter(null);
     setTimeout(() => setFocusFilter(filter), 0);
+  }
+
+  // Powerlifting phases get their own dedicated dashboard
+  if (selectedPhase?.phaseType === 'powerlifting') {
+    return (
+      <PowerliftingDashboard
+        phases={phases}
+        selectedPhase={selectedPhase}
+        sessions={sessions}
+        exercises={exercises}
+        exerciseVolumes={exerciseVolumes}
+        onSelectPhase={onSelectPhase}
+        onOpenPanel={onOpenPanel}
+        onAddPhase={onAddPhase}
+        onUpdatePhase={onUpdatePhase}
+        onDeletePhase={onDeletePhase}
+        onUpdateSession={onUpdateSession}
+        onDeleteSession={onDeleteSession}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        isAuthenticated={isAuthenticated}
+        onLogout={onLogout}
+        onLoginClick={onLoginClick}
+        onFaqClick={onFaqClick}
+      />
+    );
   }
 
   return (

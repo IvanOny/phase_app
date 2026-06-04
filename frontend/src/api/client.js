@@ -283,6 +283,53 @@ export async function getPhaseProgression(phaseId) {
   return apiFetchList('GET', `/v1/phases/${phaseId}/progression`);
 }
 
+// ---- Powerlifting metrics ----
+
+export async function getSessionPlMetrics(phaseId) {
+  if (MOCK_MODE) return Promise.resolve({ e1rm: { squat: {}, bench: {}, deadlift: {} }, confirmedMax: { bench: null, squat: null, deadlift: null }, confirmedRms: { bench: [], squat: [], deadlift: [] }, bodyweightLog: [] });
+  return apiFetch('GET', `/v1/metrics/phases/${phaseId}/session-pl-metrics`);
+}
+
+export async function getClassification(phaseId, bodyweightKg) {
+  if (MOCK_MODE) return Promise.resolve(null);
+  const bwParam = bodyweightKg != null ? `?bodyweightKg=${bodyweightKg}` : '';
+  return apiFetch('GET', `/v1/metrics/phases/${phaseId}/classification${bwParam}`, undefined, { allow404: false });
+}
+
+// ---- Bodyweight log ----
+
+export async function getBodyweightLog(phaseId) {
+  if (MOCK_MODE) return Promise.resolve([]);
+  return apiFetchList('GET', `/v1/bodyweight?phaseId=${phaseId}`);
+}
+
+export async function createBodyweightEntry(payload) {
+  if (MOCK_MODE) return Promise.resolve({ logId: nextId(), ...payload });
+  return apiFetch('POST', '/v1/bodyweight', payload);
+}
+
+export async function deleteBodyweightEntry(logId) {
+  if (MOCK_MODE) return Promise.resolve({ deleted: true });
+  return apiFetch('DELETE', `/v1/bodyweight/${logId}`);
+}
+
+// ---- Confirmed 1RM ----
+
+export async function getConfirmedRms(phaseId) {
+  if (MOCK_MODE) return Promise.resolve([]);
+  return apiFetchList('GET', `/v1/confirmed-1rm?phaseId=${phaseId}`);
+}
+
+export async function createConfirmedRm(payload) {
+  if (MOCK_MODE) return Promise.resolve({ rmId: nextId(), ...payload });
+  return apiFetch('POST', '/v1/confirmed-1rm', payload);
+}
+
+export async function deleteConfirmedRm(rmId) {
+  if (MOCK_MODE) return Promise.resolve({ deleted: true });
+  return apiFetch('DELETE', `/v1/confirmed-1rm/${rmId}`);
+}
+
 // ---- Screenshot import ----
 
 export async function importScreenshot(file) {

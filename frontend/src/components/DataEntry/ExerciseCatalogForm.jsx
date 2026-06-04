@@ -14,6 +14,8 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
       exerciseName: exercise.exerciseName,
       isBarbellBenchPress: exercise.isBarbellBenchPress,
       isBodyweight: exercise.isBodyweight,
+      isSquat: exercise.isSquat ?? false,
+      isDeadlift: exercise.isDeadlift ?? false,
       repMin: exercise.repMin ?? '',
       repMax: exercise.repMax ?? '',
     });
@@ -89,6 +91,12 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
           <input type="checkbox" checked={form.isBarbellBenchPress} onChange={e => setForm(f => ({ ...f, isBarbellBenchPress: e.target.checked }))} />
         </td>
         <td style={{ textAlign: 'center' }}>
+          <input type="checkbox" checked={form.isSquat} onChange={e => setForm(f => ({ ...f, isSquat: e.target.checked }))} />
+        </td>
+        <td style={{ textAlign: 'center' }}>
+          <input type="checkbox" checked={form.isDeadlift} onChange={e => setForm(f => ({ ...f, isDeadlift: e.target.checked }))} />
+        </td>
+        <td style={{ textAlign: 'center' }}>
           <input type="checkbox" checked={form.isBodyweight} onChange={e => setForm(f => ({ ...f, isBodyweight: e.target.checked }))} />
         </td>
         <td style={{ textAlign: 'center' }}>
@@ -117,6 +125,8 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
       <tr>
         <td>{exercise.exerciseName}</td>
         <td style={{ textAlign: 'center' }}>{exercise.isBarbellBenchPress ? '✓' : ''}</td>
+        <td style={{ textAlign: 'center' }}>{exercise.isSquat ? '✓' : ''}</td>
+        <td style={{ textAlign: 'center' }}>{exercise.isDeadlift ? '✓' : ''}</td>
         <td style={{ textAlign: 'center' }}>{exercise.isBodyweight ? '✓' : ''}</td>
         <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
           {exercise.repMin != null && exercise.repMax != null ? `${exercise.repMin}–${exercise.repMax}` : '—'}
@@ -141,6 +151,8 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
 export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onExerciseUpdated, onExerciseDeleted, onExerciseMerged }) {
   const [newName, setNewName] = useState('');
   const [newIsBench, setNewIsBench] = useState(false);
+  const [newIsSquat, setNewIsSquat] = useState(false);
+  const [newIsDeadlift, setNewIsDeadlift] = useState(false);
   const [newIsBodyweight, setNewIsBodyweight] = useState(false);
   const [newRepMin, setNewRepMin] = useState('');
   const [newRepMax, setNewRepMax] = useState('');
@@ -155,12 +167,16 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
       await onExerciseCreated({
         exerciseName: newName.trim(),
         isBarbellBenchPress: newIsBench,
+        isSquat: newIsSquat,
+        isDeadlift: newIsDeadlift,
         isBodyweight: newIsBodyweight,
         repMin: newRepMin !== '' ? Number(newRepMin) : null,
         repMax: newRepMax !== '' ? Number(newRepMax) : null,
       });
       setNewName('');
       setNewIsBench(false);
+      setNewIsSquat(false);
+      setNewIsDeadlift(false);
       setNewIsBodyweight(false);
       setNewRepMin('');
       setNewRepMax('');
@@ -177,8 +193,10 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
         <thead>
           <tr>
             <th style={{ textAlign: 'left' }}>Exercise</th>
-            <th>Bench press</th>
-            <th>Bodyweight</th>
+            <th>Bench</th>
+            <th>Squat</th>
+            <th>Deadlift</th>
+            <th>BW</th>
             <th>Rep range</th>
             <th></th>
           </tr>
@@ -197,15 +215,18 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
             <label>Name</label>
             <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
           </div>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center', paddingBottom: 2 }}>
-            <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={newIsBench} onChange={e => setNewIsBench(e.target.checked)} />
-              Barbell bench
-            </label>
-            <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={newIsBodyweight} onChange={e => setNewIsBodyweight(e.target.checked)} />
-              Bodyweight
-            </label>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', paddingBottom: 2, flexWrap: 'wrap' }}>
+            {[
+              ['Bench', newIsBench, setNewIsBench],
+              ['Squat', newIsSquat, setNewIsSquat],
+              ['Deadlift', newIsDeadlift, setNewIsDeadlift],
+              ['Bodyweight', newIsBodyweight, setNewIsBodyweight],
+            ].map(([label, val, setter]) => (
+              <label key={label} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={val} onChange={e => setter(e.target.checked)} />
+                {label}
+              </label>
+            ))}
           </div>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center', paddingBottom: 2 }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Rep range</span>

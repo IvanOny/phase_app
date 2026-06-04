@@ -130,6 +130,26 @@ class PhaseApi:
             return self.get_phase_maintenance_metrics(int(path.split("/")[4]))
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/session-bench-metrics", path):
             return self.get_session_bench_metrics(int(path.split("/")[4]))
+        if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/session-pl-metrics", path):
+            return self.get_session_pl_metrics(int(path.split("/")[4]))
+        if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/classification", path):
+            return self.get_classification(int(path.split("/")[4]), qp)
+
+        # Bodyweight log
+        if method == "GET" and path == "/v1/bodyweight":
+            return self.list_bodyweight(qp)
+        if method == "POST" and path == "/v1/bodyweight":
+            return self.create_bodyweight(body)
+        if method == "DELETE" and re.fullmatch(r"/v1/bodyweight/\d+", path):
+            return self.delete_bodyweight(int(path.split("/")[3]))
+
+        # Confirmed 1RM
+        if method == "GET" and path == "/v1/confirmed-1rm":
+            return self.list_confirmed_1rm(qp)
+        if method == "POST" and path == "/v1/confirmed-1rm":
+            return self.create_confirmed_1rm(body)
+        if method == "DELETE" and re.fullmatch(r"/v1/confirmed-1rm/\d+", path):
+            return self.delete_confirmed_1rm(int(path.split("/")[3]))
 
         if method == "GET" and re.fullmatch(r"/v1/phases/\d+/progression", path):
             return self.get_phase_progression(int(path.split("/")[3]))
@@ -365,16 +385,27 @@ class PhaseApi:
 
     def list_exercises(self) -> ApiResponse:
         rows = self._exec(
+<<<<<<< HEAD
             "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max "
+=======
+            "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, "
+            "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift "
+>>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
             "FROM exercises ORDER BY exercise_name"
         ).fetchall()
         return ApiResponse(200, {"items": [{
-            "exerciseId": r["exercise_id"],
-            "exerciseName": r["exercise_name"],
+            "exerciseId":          r["exercise_id"],
+            "exerciseName":        r["exercise_name"],
             "isBarbellBenchPress": bool(r["is_barbell_bench_press"]),
+<<<<<<< HEAD
             "isBodyweight": bool(r["is_bodyweight"]),
             "repMin": r["rep_min"],
             "repMax": r["rep_max"],
+=======
+            "isBodyweight":        bool(r["is_bodyweight"]),
+            "isSquat":             bool(r["is_squat"]),
+            "isDeadlift":          bool(r["is_deadlift"]),
+>>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
         } for r in rows]})
 
     def list_benchmarks(self, qp: dict[str, str]) -> ApiResponse:
@@ -715,22 +746,32 @@ class PhaseApi:
         rep_max = payload.get("repMax")
         try:
             row = self._exec(
+<<<<<<< HEAD
                 "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max) "
+=======
+                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift) "
+>>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
                 "VALUES (%s, %s, %s, %s, %s) RETURNING exercise_id",
                 (payload["exerciseName"],
                  int(payload.get("isBarbellBenchPress", False)),
                  int(payload.get("isBodyweight", False)),
+<<<<<<< HEAD
                  int(rep_min) if rep_min is not None else None,
                  int(rep_max) if rep_max is not None else None),
+=======
+                 int(payload.get("isSquat", False)),
+                 int(payload.get("isDeadlift", False))),
+>>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
             ).fetchone()
             self.conn.commit()
         except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(201, {
-            "exerciseId": row["exercise_id"],
-            "exerciseName": payload["exerciseName"],
+            "exerciseId":          row["exercise_id"],
+            "exerciseName":        payload["exerciseName"],
             "isBarbellBenchPress": bool(payload.get("isBarbellBenchPress", False)),
+<<<<<<< HEAD
             "isBodyweight": bool(payload.get("isBodyweight", False)),
             "repMin": int(rep_min) if rep_min is not None else None,
             "repMax": int(rep_max) if rep_max is not None else None,
@@ -772,6 +813,14 @@ class PhaseApi:
             "repMin": row["rep_min"],
             "repMax": row["rep_max"],
         })
+=======
+            "isBodyweight":        bool(payload.get("isBodyweight", False)),
+            "isSquat":             bool(payload.get("isSquat", False)),
+            "isDeadlift":          bool(payload.get("isDeadlift", False)),
+        })
+
+    # update_exercise defined above (near powerlifting metrics section)
+>>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
 
     def delete_exercise(self, exercise_id: int) -> ApiResponse:
         try:
@@ -851,6 +900,7 @@ class PhaseApi:
         from phase_app.metrics import get_phase_maintenance
         return ApiResponse(200, get_phase_maintenance(self.conn, phase_id))
 
+<<<<<<< HEAD
     def get_phase_progression(self, phase_id: int) -> ApiResponse:
         rows = self._exec(
             """
@@ -912,6 +962,206 @@ class PhaseApi:
                 "loadKg": float(r["load_kg"]) if r["load_kg"] is not None else 0.0,
             })
         return ApiResponse(200, {"items": list(exercises.values())})
+=======
+    # ------------------------------------------------------------------ #
+    # Exercises — update to support is_squat / is_deadlift               #
+    # ------------------------------------------------------------------ #
+
+    def update_exercise(self, exercise_id: int, payload: dict[str, Any]) -> ApiResponse:
+        allowed = {
+            "exerciseName":         "exercise_name",
+            "isBarbellBenchPress":  "is_barbell_bench_press",
+            "isBodyweight":         "is_bodyweight",
+            "isSquat":              "is_squat",
+            "isDeadlift":           "is_deadlift",
+        }
+        raw = {col: payload[key] for key, col in allowed.items() if key in payload}
+        if not raw:
+            return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields provided"})
+        bool_cols = {"is_barbell_bench_press", "is_bodyweight", "is_squat", "is_deadlift"}
+        updates = {col: (int(val) if col in bool_cols else val) for col, val in raw.items()}
+        set_clause = ", ".join(f"{col} = %s" for col in updates)
+        try:
+            cur = self._exec(
+                f"UPDATE exercises SET {set_clause} WHERE exercise_id = %s "
+                "RETURNING exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift",
+                (*updates.values(), exercise_id),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return ApiResponse(404, {"error": "not_found"})
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(200, {
+            "exerciseId":           row["exercise_id"],
+            "exerciseName":         row["exercise_name"],
+            "isBarbellBenchPress":  bool(row["is_barbell_bench_press"]),
+            "isBodyweight":         bool(row["is_bodyweight"]),
+            "isSquat":              bool(row["is_squat"]),
+            "isDeadlift":           bool(row["is_deadlift"]),
+        })
+
+    # ------------------------------------------------------------------ #
+    # Powerlifting metrics                                                 #
+    # ------------------------------------------------------------------ #
+
+    def get_session_pl_metrics(self, phase_id: int) -> ApiResponse:
+        from phase_app.metrics import get_session_pl_metrics
+        return ApiResponse(200, get_session_pl_metrics(self.conn, phase_id))
+
+    def get_classification(self, phase_id: int, qp: dict[str, str]) -> ApiResponse:
+        from phase_app.classification import classification_payload
+        # Use bodyweight from query param if supplied, else latest log entry for phase
+        bw_str = qp.get("bodyweightKg")
+        if bw_str:
+            try:
+                bw = float(bw_str)
+            except ValueError:
+                return ApiResponse(400, {"error": "validation_error", "detail": "invalid bodyweightKg"})
+        else:
+            row = self._exec(
+                "SELECT weight_kg FROM bodyweight_log WHERE phase_id = %s ORDER BY logged_date DESC LIMIT 1",
+                (phase_id,),
+            ).fetchone()
+            if row is None:
+                return ApiResponse(400, {"error": "no_bodyweight", "detail": "No bodyweight logged for this phase"})
+            bw = float(row["weight_kg"])
+
+        # Best effective max per lift = MAX(e1RM across sessions, confirmed 1RM)
+        totals: dict[str, float] = {}
+        for lift, flag in [("squat", "is_squat"), ("bench", "is_barbell_bench_press"), ("deadlift", "is_deadlift")]:
+            e1rm_row = self._exec(
+                f"""
+                SELECT MAX(ROUND((es.load_kg * (1 + es.reps / 30.0))::numeric, 2)) AS best_e1rm
+                FROM sessions s
+                JOIN session_exercises se ON se.session_id = s.session_id
+                JOIN exercises e ON e.exercise_id = se.exercise_id
+                JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+                WHERE s.phase_id = %s AND e.{flag} = 1 AND es.is_top_set = 1
+                """,
+                (phase_id,),
+            ).fetchone()
+            confirmed_row = self._exec(
+                "SELECT MAX(weight_kg) AS best_confirmed FROM confirmed_1rm "
+                "WHERE phase_id = %s AND lift_type = %s",
+                (phase_id, lift),
+            ).fetchone()
+            e1rm_val = float(e1rm_row["best_e1rm"]) if e1rm_row and e1rm_row["best_e1rm"] else 0.0
+            conf_val = float(confirmed_row["best_confirmed"]) if confirmed_row and confirmed_row["best_confirmed"] else 0.0
+            totals[lift] = max(e1rm_val, conf_val)
+
+        total_kg = totals["squat"] + totals["bench"] + totals["deadlift"]
+        payload = classification_payload(bw, total_kg)
+        payload["liftMaxes"] = totals
+        return ApiResponse(200, payload)
+
+    # ------------------------------------------------------------------ #
+    # Bodyweight log                                                       #
+    # ------------------------------------------------------------------ #
+
+    def list_bodyweight(self, qp: dict[str, str]) -> ApiResponse:
+        if "phaseId" not in qp:
+            return ApiResponse(400, {"error": "validation_error", "missing": ["phaseId"]})
+        rows = self._exec(
+            "SELECT log_id, phase_id, session_id, logged_date, weight_kg "
+            "FROM bodyweight_log WHERE phase_id = %s ORDER BY logged_date DESC",
+            (int(qp["phaseId"]),),
+        ).fetchall()
+        return ApiResponse(200, {"items": [{
+            "logId":       r["log_id"],
+            "phaseId":     r["phase_id"],
+            "sessionId":   r["session_id"],
+            "loggedDate":  str(r["logged_date"]),
+            "weightKg":    float(r["weight_kg"]),
+        } for r in rows]})
+
+    def create_bodyweight(self, payload: dict[str, Any]) -> ApiResponse:
+        required = ["phaseId", "loggedDate", "weightKg"]
+        missing = [f for f in required if f not in payload]
+        if missing:
+            return ApiResponse(400, {"error": "validation_error", "missing": missing})
+        try:
+            row = self._exec(
+                "INSERT INTO bodyweight_log (phase_id, session_id, logged_date, weight_kg) "
+                "VALUES (%s, %s, %s, %s) RETURNING log_id",
+                (payload["phaseId"], payload.get("sessionId"), payload["loggedDate"], payload["weightKg"]),
+            ).fetchone()
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(201, {
+            "logId":      row["log_id"],
+            "phaseId":    payload["phaseId"],
+            "sessionId":  payload.get("sessionId"),
+            "loggedDate": payload["loggedDate"],
+            "weightKg":   payload["weightKg"],
+        })
+
+    def delete_bodyweight(self, log_id: int) -> ApiResponse:
+        cur = self._exec("DELETE FROM bodyweight_log WHERE log_id = %s RETURNING log_id", (log_id,))
+        if cur.fetchone() is None:
+            return ApiResponse(404, {"error": "not_found"})
+        self.conn.commit()
+        return ApiResponse(200, {"deleted": True, "logId": log_id})
+
+    # ------------------------------------------------------------------ #
+    # Confirmed 1RM                                                        #
+    # ------------------------------------------------------------------ #
+
+    def list_confirmed_1rm(self, qp: dict[str, str]) -> ApiResponse:
+        if "phaseId" not in qp:
+            return ApiResponse(400, {"error": "validation_error", "missing": ["phaseId"]})
+        rows = self._exec(
+            "SELECT rm_id, phase_id, session_id, logged_date, lift_type, weight_kg "
+            "FROM confirmed_1rm WHERE phase_id = %s ORDER BY logged_date DESC",
+            (int(qp["phaseId"]),),
+        ).fetchall()
+        return ApiResponse(200, {"items": [{
+            "rmId":       r["rm_id"],
+            "phaseId":    r["phase_id"],
+            "sessionId":  r["session_id"],
+            "loggedDate": str(r["logged_date"]),
+            "liftType":   r["lift_type"],
+            "weightKg":   float(r["weight_kg"]),
+        } for r in rows]})
+
+    def create_confirmed_1rm(self, payload: dict[str, Any]) -> ApiResponse:
+        required = ["phaseId", "loggedDate", "liftType", "weightKg"]
+        missing = [f for f in required if f not in payload]
+        if missing:
+            return ApiResponse(400, {"error": "validation_error", "missing": missing})
+        if payload["liftType"] not in ("bench", "squat", "deadlift"):
+            return ApiResponse(400, {"error": "validation_error", "detail": "liftType must be bench, squat, or deadlift"})
+        try:
+            row = self._exec(
+                "INSERT INTO confirmed_1rm (phase_id, session_id, logged_date, lift_type, weight_kg) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING rm_id",
+                (payload["phaseId"], payload.get("sessionId"), payload["loggedDate"],
+                 payload["liftType"], payload["weightKg"]),
+            ).fetchone()
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(201, {
+            "rmId":       row["rm_id"],
+            "phaseId":    payload["phaseId"],
+            "sessionId":  payload.get("sessionId"),
+            "loggedDate": payload["loggedDate"],
+            "liftType":   payload["liftType"],
+            "weightKg":   payload["weightKg"],
+        })
+
+    def delete_confirmed_1rm(self, rm_id: int) -> ApiResponse:
+        cur = self._exec("DELETE FROM confirmed_1rm WHERE rm_id = %s RETURNING rm_id", (rm_id,))
+        if cur.fetchone() is None:
+            return ApiResponse(404, {"error": "not_found"})
+        self.conn.commit()
+        return ApiResponse(200, {"deleted": True, "rmId": rm_id})
+>>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
 
     def import_screenshot(self, payload: dict[str, Any]) -> ApiResponse:
         import base64
@@ -949,7 +1199,7 @@ class PhaseApi:
             '    }\n'
             '  ]\n'
             "}\n"
-            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, run, pull, other.\n"
+            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, squat, deadlift, mixed, run, pull, rest, other.\n"
             "Rules:\n"
             "- Convert lbs to kg (multiply by 0.4536). Use 0 for bodyweight exercises.\n"
             "- Garmin Connect tables have columns: Set, Exercise Name, Time, Rest, Reps, Weight, Volume. "

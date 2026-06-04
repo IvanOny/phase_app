@@ -1,13 +1,17 @@
 import { useState } from 'react';
-import { createSession } from '../../api/client.js';
+import { createSession, createBodyweightEntry } from '../../api/client.js';
 import { parseDuration, parsePace } from '../../utils/runMetrics.js';
 
 const SESSION_TYPES = [
+  'squat',
+  'deadlift',
+  'mixed',
   'heavy_bench',
   'volume_bench',
   'speed_bench',
   'run',
   'pull',
+  'rest',
   'other',
 ];
 
@@ -18,9 +22,10 @@ function today() {
 export default function LogSessionForm({ phases, selectedPhaseId, sessions = [], onSessionLogged }) {
   const [phaseId, setPhaseId] = useState(selectedPhaseId || (phases[0]?.phaseId ?? ''));
   const [date, setDate] = useState(today());
-  const [sessionType, setSessionType] = useState('heavy_bench');
+  const [sessionType, setSessionType] = useState('squat');
   const [eliteHrv, setEliteHrv] = useState('');
   const [garminHrv, setGarminHrv] = useState('');
+  const [bodyweight, setBodyweight] = useState('');
   const [notes, setNotes] = useState('');
   const [runType, setRunType] = useState('');
   const [distanceKm, setDistanceKm] = useState('');
@@ -44,6 +49,7 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
     setDate(today());
     setEliteHrv('');
     setGarminHrv('');
+    setBodyweight('');
     setNotes('');
     setRunType('');
     setDistanceKm('');
@@ -83,6 +89,15 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
         ascentM: ascentM !== '' ? Number(ascentM) : null,
         rpe: rpe !== '' ? Number(rpe) : null,
       });
+      // Log bodyweight if provided
+      if (bodyweight !== '') {
+        await createBodyweightEntry({
+          phaseId: Number(phaseId),
+          sessionId: session.sessionId,
+          loggedDate: date,
+          weightKg: Number(bodyweight),
+        });
+      }
       onSessionLogged(session);
       resetForm();
     } catch (err) {
@@ -167,6 +182,19 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
             onChange={e => setGarminHrv(e.target.value)}
           />
         </div>
+      </div>
+
+      <div className="form-group">
+        <label>Bodyweight (kg) <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>optional — updates GL score</span></label>
+        <input
+          type="number"
+          min="40"
+          max="200"
+          step="0.1"
+          placeholder="e.g. 82.5"
+          value={bodyweight}
+          onChange={e => setBodyweight(e.target.value)}
+        />
       </div>
 
       <div className="form-group">

@@ -633,7 +633,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
 }
 
 // ---- Filter bar ----
-function FilterBar({ filters, onChange, exercises, sessionTypes }) {
+function FilterBar({ filters, onChange, exercises, sessionTypes = SESSION_TYPES_DEFAULT }) {
   const lastTap = useRef({ type: null, time: 0 });
   const allTypesSelected = filters.types.length === sessionTypes.length;
   const isActive = !allTypesSelected || filters.exerciseId;

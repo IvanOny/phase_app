@@ -96,6 +96,7 @@ export default function PowerliftingDashboard({
       )}
 
       <SessionsList
+        phase={selectedPhase}
         sessions={sessions}
         e1rmMap={{}}
         volumeMap={{}}

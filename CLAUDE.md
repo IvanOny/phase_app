@@ -61,6 +61,13 @@ exercises       — exercise_id, exercise_name, is_barbell_bench_press, is_bodyw
 exercise_sets   — set_number, load_kg, reps, is_working_set, is_top_set
 ```
 
+## Adding a new phase type
+
+See `docs/adding-a-new-phase-type.md` for the full checklist.
+Every change required when `powerlifting` was introduced is documented there,
+including the DB constraints, backend validation, frontend config tables,
+null-guard patterns, and dashboard routing.
+
 ## Running locally
 
 ```bash

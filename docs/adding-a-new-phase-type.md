@@ -105,6 +105,35 @@ const [sessions, exerciseVolumes, runBenchmarks, progression] = await Promise.al
 
 ---
 
+---
+
+## Bugs found after powerlifting was introduced (append future ones here)
+
+**PhaseNav crash — missing type in TYPE_CONFIG**
+`PhaseNav.jsx` reads `TYPE_CONFIG[selectedType].label` unconditionally.
+If the new type is not in `TYPE_CONFIG`, this throws and blanks the entire app.
+Fix: add the type to both `TYPE_CONFIG` and `TYPE_ORDER`. Already in checklist above.
+
+**PhaseHeader NaN — null endDate passed to date arithmetic**
+`daysRemaining(endDate)` did `new Date(null)` → `Invalid Date` → NaN in arithmetic → React warning and broken `phaseState`.
+Fix: return `null` early if `endDate` is falsy; treat `null` daysLeft as `'current'` in `phaseState`.
+Already in checklist above (null-guard section).
+
+**App blank screen — unguarded Promise.all in loadPhaseData**
+`getPhaseProgression` (new endpoint) returned 404 on the live Vercel instance before a redeploy.
+The unguarded `Promise.all` rejected, state was never set, `loading` stayed false but no data rendered — blank screen with no error visible.
+Fix: every call in `loadPhaseData`'s `Promise.all` must have `.catch(() => fallback)`. Already in checklist above.
+
+**DB constraint — phase_type not in CHECK list**
+`phases_phase_type_check` listed only existing types. INSERT rejected with 400.
+Fix: migration to drop + recreate the constraint with the new type included. Already in checklist above.
+
+**DB constraint — end_date NOT NULL for open-ended phase**
+`phases_check` (or equivalent) enforced `end_date IS NOT NULL` globally.
+Fix: migration to replace with a partial constraint allowing null only for the open-ended type. Already in checklist above.
+
+---
+
 ## Quick checklist
 
 ```

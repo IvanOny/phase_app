@@ -107,6 +107,11 @@ export default function PhaseNav({
   const tabColor = TYPE_CONFIG[selectedType]?.color ?? 'var(--accent)';
   const isEditing = editingId === visiblePhase?.phaseId;
 
+  // Only show tabs for types that have at least one phase, plus always the active type
+  const existingTypes = new Set(phases.map(p => p.phaseType));
+  existingTypes.add(selectedType);
+  const visibleTypeOrder = TYPE_ORDER.filter(t => existingTypes.has(t));
+
   return (
     <div className="phase-nav-container">
       <div className="phase-type-tabs">
@@ -114,12 +119,12 @@ export default function PhaseNav({
           className="phase-nav-arrow"
           style={{ '--tab-color': tabColor }}
           onClick={() => {
-            const i = TYPE_ORDER.indexOf(selectedType);
-            if (i > 0) handleTypeTab(TYPE_ORDER[i - 1]);
+            const i = visibleTypeOrder.indexOf(selectedType);
+            if (i > 0) handleTypeTab(visibleTypeOrder[i - 1]);
           }}
-          disabled={TYPE_ORDER.indexOf(selectedType) === 0}
+          disabled={visibleTypeOrder.indexOf(selectedType) === 0}
         >‹</button>
-        {TYPE_ORDER.map(type => {
+        {visibleTypeOrder.map(type => {
           const cfg = TYPE_CONFIG[type];
           const isActive = selectedType === type;
           return (
@@ -138,10 +143,10 @@ export default function PhaseNav({
           className="phase-nav-arrow"
           style={{ '--tab-color': tabColor }}
           onClick={() => {
-            const i = TYPE_ORDER.indexOf(selectedType);
-            if (i < TYPE_ORDER.length - 1) handleTypeTab(TYPE_ORDER[i + 1]);
+            const i = visibleTypeOrder.indexOf(selectedType);
+            if (i < visibleTypeOrder.length - 1) handleTypeTab(visibleTypeOrder[i + 1]);
           }}
-          disabled={TYPE_ORDER.indexOf(selectedType) === TYPE_ORDER.length - 1}
+          disabled={visibleTypeOrder.indexOf(selectedType) === visibleTypeOrder.length - 1}
         >›</button>
       </div>
 

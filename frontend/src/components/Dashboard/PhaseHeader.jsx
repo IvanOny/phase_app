@@ -3,6 +3,7 @@ import { useExpandable } from '../../hooks/useExpandable.js';
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
 const PHASE_LABELS = {
+  powerlifting: 'Powerlifting',
   bench: 'Bench',
   pull_ups: 'Pull-ups',
   run: 'Run',
@@ -15,6 +16,7 @@ const PHASE_TYPES = [
 ];
 
 function daysRemaining(endDate) {
+  if (!endDate) return null;
   const end = new Date(endDate);
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -76,7 +78,8 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
   const daysLeft = daysRemaining(phase.endDate);
   const daysToStart = daysUntilStart(phase.startDate);
   // future: not started yet | current: in progress | past: ended
-  const phaseState = daysToStart > 0 ? 'future' : daysLeft >= 0 ? 'current' : 'past';
+  // daysLeft is null for open-ended phases (powerlifting) — treat as current
+  const phaseState = daysToStart > 0 ? 'future' : (daysLeft === null || daysLeft >= 0) ? 'current' : 'past';
   const label = PHASE_LABELS[phase.phaseType] || phase.phaseType;
   const pct = phaseProgress(phase.startDate, phase.endDate);
   const start = new Date(phase.startDate);

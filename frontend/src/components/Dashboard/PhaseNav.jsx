@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 
 const TYPE_CONFIG = {
-  bench:    { label: 'Push', color: 'var(--type-push)' },
-  pull_ups: { label: 'Pull', color: 'var(--type-pull)' },
-  run:      { label: 'Run',  color: 'var(--type-run)'  },
+  powerlifting: { label: 'Powerlifting', color: 'var(--type-pl, #a78bfa)' },
+  bench:        { label: 'Push', color: 'var(--type-push)' },
+  pull_ups:     { label: 'Pull', color: 'var(--type-pull)' },
+  run:          { label: 'Run',  color: 'var(--type-run)'  },
 };
 
-const TYPE_ORDER = ['bench', 'pull_ups', 'run'];
+const TYPE_ORDER = ['powerlifting', 'bench', 'pull_ups', 'run'];
 
 function today() {
   return new Date().toISOString().slice(0, 10);

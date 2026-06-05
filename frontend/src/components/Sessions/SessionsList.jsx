@@ -12,12 +12,17 @@ import { formatDuration, formatPace, parseDuration, parsePace, runSummary } from
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 import PhaseCalendar from './PhaseCalendar.jsx';
 
-const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
+const SESSION_TYPES_BENCH = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
+const SESSION_TYPES_PL    = ['squat', 'deadlift', 'run', 'other'];
+const SESSION_TYPES_DEFAULT = SESSION_TYPES_BENCH;
 
 const TYPE_COLORS = {
   heavy_bench:  '#7c3aed',
   volume_bench: '#a855f7',
   speed_bench:  '#ec4899',
+  squat:        '#6366f1',
+  deadlift:     '#10b981',
+  mixed:        '#f59e0b',
   run:          '#22c55e',
   pull:         '#3b82f6',
   other:        '#64748b',
@@ -494,7 +499,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
             <div className="session-edit-row1">
               <input type="date" value={form.sessionDate} onChange={e => setForm(f => ({ ...f, sessionDate: e.target.value }))} className="inline-input" />
               <select value={form.sessionType} onChange={e => setForm(f => ({ ...f, sessionType: e.target.value }))} className="inline-input">
-                {SESSION_TYPES.map(t => <option key={t} value={t}>{formatType(t)}</option>)}
+                {['squat','deadlift','mixed','heavy_bench','volume_bench','speed_bench','run','pull','rest','other'].map(t => <option key={t} value={t}>{formatType(t)}</option>)}
               </select>
               <input type="number" min="0" max="10" step="0.1" value={form.eliteHrvReadiness} onChange={e => setForm(f => ({ ...f, eliteHrvReadiness: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="HRV" />
               <div className="session-edit-actions">
@@ -628,9 +633,9 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
 }
 
 // ---- Filter bar ----
-function FilterBar({ filters, onChange, exercises }) {
+function FilterBar({ filters, onChange, exercises, sessionTypes }) {
   const lastTap = useRef({ type: null, time: 0 });
-  const allTypesSelected = filters.types.length === SESSION_TYPES.length;
+  const allTypesSelected = filters.types.length === sessionTypes.length;
   const isActive = !allTypesSelected || filters.exerciseId;
 
   function handleTypeClick(type, e) {
@@ -669,11 +674,11 @@ function FilterBar({ filters, onChange, exercises }) {
         <span className="filter-label">Type:</span>
         <button
           className={`filter-chip${allTypesSelected ? ' active' : ''}`}
-          onClick={() => onChange({ ...filters, types: SESSION_TYPES })}
+          onClick={() => onChange({ ...filters, types: sessionTypes })}
         >
           All
         </button>
-        {SESSION_TYPES.map(t => (
+        {sessionTypes.map(t => (
           <button
             key={t}
             className={`filter-chip${filters.types.includes(t) ? ' active' : ''}`}
@@ -702,7 +707,7 @@ function FilterBar({ filters, onChange, exercises }) {
       {isActive && (
         <button
           className="filter-chip"
-          onClick={() => onChange({ types: SESSION_TYPES, exerciseId: '' })}
+          onClick={() => onChange({ types: sessionTypes, exerciseId: '' })}
         >
           Clear filters
         </button>
@@ -712,8 +717,9 @@ function FilterBar({ filters, onChange, exercises }) {
 }
 
 export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exercises, exerciseVolumes, onUpdateSession, onDeleteSession, onSessionCreated, isAuthenticated, focusFilter }) {
+  const sessionTypes = phase?.phaseType === 'powerlifting' ? SESSION_TYPES_PL : SESSION_TYPES_DEFAULT;
   const [expanded, setExpanded] = useState(new Set());
-  const [filters, setFilters] = useState({ types: SESSION_TYPES, exerciseId: '' });
+  const [filters, setFilters] = useState({ types: sessionTypes, exerciseId: '' });
   const [showAll, setShowAll] = useState(false);
   const rowRefs = useRef({});
   const wrapperRef = useRef(null);
@@ -733,7 +739,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
   }, [exerciseVolumes]);
 
   // Exercises that appear in at least one session matching the active type filter
-  const allTypesSelected = filters.types.length === SESSION_TYPES.length;
+  const allTypesSelected = filters.types.length === sessionTypes.length;
   const availableExercises = useMemo(() => {
     if (allTypesSelected) return exercises;
     const matchingSessionIds = new Set(
@@ -771,7 +777,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
 
   function handleCalendarSelectSession(sessionId) {
     // Clear all filters so the session is visible regardless of type or exercise filter
-    setFilters({ types: SESSION_TYPES, exerciseId: '' });
+    setFilters({ types: sessionTypes, exerciseId: '' });
     setShowAll(true);
     setExpanded(new Set([sessionId]));
     setTimeout(() => {
@@ -861,7 +867,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
           </div>
         )}
         <div className="sessions-filter-col">
-          <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} />
+          <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} sessionTypes={sessionTypes} />
         </div>
       </div>
       <div style={{ marginBottom: 'var(--space-3)', marginTop: 'var(--space-2)' }}>

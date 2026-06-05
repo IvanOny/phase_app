@@ -82,15 +82,15 @@ function App() {
     const [sessions, exerciseVolumes, runBenchmarks, progression] = await Promise.all([
       getSessionsByPhase(phaseId),
       getPhaseExerciseVolumes(phaseId),
-      getRunBenchmarks(phaseId),
-      getPhaseProgression(phaseId),
+      getRunBenchmarks(phaseId).catch(() => []),
+      getPhaseProgression(phaseId).catch(() => []),
     ]);
     setSessionsMap(prev => ({ ...prev, [phaseId]: sessions }));
     setExerciseVolumesMap(prev => ({ ...prev, [phaseId]: exerciseVolumes }));
     setRunBenchmarksMap(prev => ({ ...prev, [phaseId]: runBenchmarks }));
     setProgressionMap(prev => ({ ...prev, [phaseId]: progression }));
 
-    const benchMetrics = await getPhaseSessionBenchMetrics(phaseId);
+    const benchMetrics = await getPhaseSessionBenchMetrics(phaseId).catch(() => ({ e1rm: {}, volume: {} }));
     setE1rmMap(prev => ({ ...prev, ...benchMetrics.e1rm }));
     setVolumeMap(prev => ({ ...prev, ...benchMetrics.volume }));
   }, []);

@@ -80,7 +80,12 @@ export default function PhaseCalendar({
 
   const today = new Date().toISOString().slice(0, 10);
   const phaseStart = normDate(phase.startDate);
-  const phaseEnd   = normDate(phase.endDate);
+  // Open-ended phases (no endDate) show calendar through end of current month
+  const phaseEnd = normDate(phase.endDate) || (() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1, 0); // last day of current month
+    return d.toISOString().slice(0, 10);
+  })();
 
   const sessionByDate = {};
   sessions.forEach(s => {
@@ -109,7 +114,7 @@ export default function PhaseCalendar({
     const week = [];
     for (let d = 0; d < 7; d++) {
       const date = addDays(gridStart, w * 7 + d);
-      const inPhase = date >= phaseStart && date <= phaseEnd;
+      const inPhase = date >= phaseStart && (!phase.endDate || date <= phaseEnd);
       const session = inPhase ? (sessionByDate[date] ?? null) : null;
       const isPast = date < today;
       const isToday = date === today;

@@ -68,6 +68,10 @@ Every change required when `powerlifting` was introduced is documented there,
 including the DB constraints, backend validation, frontend config tables,
 null-guard patterns, and dashboard routing.
 
+**IMPORTANT:** Whenever a bug is fixed that is caused by introducing a new phase type
+(e.g. a missing type in a config table, a missing null guard, a constraint error),
+always append it to `docs/adding-a-new-phase-type.md` so the checklist stays complete.
+
 ## Running locally
 
 ```bash

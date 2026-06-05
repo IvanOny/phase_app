@@ -139,6 +139,10 @@ const [sessions, exerciseVolumes, runBenchmarks, progression] = await Promise.al
 
 ## Bugs found after powerlifting was introduced (append future ones here)
 
+**PhaseCalendar crash on null endDate**
+`PhaseCalendar` used `normDate(phase.endDate)` (returns `''`) then passed it to `addDays()` → `new Date('T12:00:00')` → Invalid Date.
+Fix: fall back to end of current month when `phase.endDate` is null. Also guard `inPhase` check to skip upper bound when `phase.endDate` is absent.
+
 **DB trigger rejects sessions for open-ended phases (null end_date)**
 `check_session_date_in_phase()` did `session_date <= end_date`. When `end_date IS NULL`, the comparison returns NULL (falsy) and the trigger raises. Fix: skip the end_date check when `end_date IS NULL`. Requires `CREATE OR REPLACE FUNCTION` migration.
 

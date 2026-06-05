@@ -388,27 +388,19 @@ class PhaseApi:
 
     def list_exercises(self) -> ApiResponse:
         rows = self._exec(
-<<<<<<< HEAD
-            "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max "
-=======
-            "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, "
+            "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max, "
             "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift "
->>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
             "FROM exercises ORDER BY exercise_name"
         ).fetchall()
         return ApiResponse(200, {"items": [{
             "exerciseId":          r["exercise_id"],
             "exerciseName":        r["exercise_name"],
             "isBarbellBenchPress": bool(r["is_barbell_bench_press"]),
-<<<<<<< HEAD
-            "isBodyweight": bool(r["is_bodyweight"]),
-            "repMin": r["rep_min"],
-            "repMax": r["rep_max"],
-=======
             "isBodyweight":        bool(r["is_bodyweight"]),
             "isSquat":             bool(r["is_squat"]),
             "isDeadlift":          bool(r["is_deadlift"]),
->>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
+            "repMin":              r["rep_min"],
+            "repMax":              r["rep_max"],
         } for r in rows]})
 
     def list_benchmarks(self, qp: dict[str, str]) -> ApiResponse:
@@ -749,22 +741,15 @@ class PhaseApi:
         rep_max = payload.get("repMax")
         try:
             row = self._exec(
-<<<<<<< HEAD
-                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max) "
-=======
-                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift) "
->>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
-                "VALUES (%s, %s, %s, %s, %s) RETURNING exercise_id",
+                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift, rep_min, rep_max) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING exercise_id",
                 (payload["exerciseName"],
                  int(payload.get("isBarbellBenchPress", False)),
                  int(payload.get("isBodyweight", False)),
-<<<<<<< HEAD
+                 int(payload.get("isSquat", False)),
+                 int(payload.get("isDeadlift", False)),
                  int(rep_min) if rep_min is not None else None,
                  int(rep_max) if rep_max is not None else None),
-=======
-                 int(payload.get("isSquat", False)),
-                 int(payload.get("isDeadlift", False))),
->>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
             ).fetchone()
             self.conn.commit()
         except psycopg2.DatabaseError as exc:
@@ -774,56 +759,12 @@ class PhaseApi:
             "exerciseId":          row["exercise_id"],
             "exerciseName":        payload["exerciseName"],
             "isBarbellBenchPress": bool(payload.get("isBarbellBenchPress", False)),
-<<<<<<< HEAD
-            "isBodyweight": bool(payload.get("isBodyweight", False)),
-            "repMin": int(rep_min) if rep_min is not None else None,
-            "repMax": int(rep_max) if rep_max is not None else None,
-        })
-
-    def update_exercise(self, exercise_id: int, payload: dict[str, Any]) -> ApiResponse:
-        allowed = {"exerciseName": "exercise_name", "isBarbellBenchPress": "is_barbell_bench_press",
-                   "isBodyweight": "is_bodyweight", "repMin": "rep_min", "repMax": "rep_max"}
-        raw = {col: payload[key] for key, col in allowed.items() if key in payload}
-        if not raw:
-            return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields provided"})
-        updates = {}
-        for col, val in raw.items():
-            if col in ("is_barbell_bench_press", "is_bodyweight"):
-                updates[col] = int(val)
-            elif col in ("rep_min", "rep_max"):
-                updates[col] = int(val) if val is not None else None
-            else:
-                updates[col] = val
-        set_clause = ", ".join(f"{col} = %s" for col in updates)
-        try:
-            cur = self._exec(
-                f"UPDATE exercises SET {set_clause} WHERE exercise_id = %s "
-                "RETURNING exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max",
-                (*updates.values(), exercise_id),
-            )
-            row = cur.fetchone()
-            if row is None:
-                return ApiResponse(404, {"error": "not_found"})
-            self.conn.commit()
-        except psycopg2.DatabaseError as exc:
-            self.conn.rollback()
-            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
-        return ApiResponse(200, {
-            "exerciseId": row["exercise_id"],
-            "exerciseName": row["exercise_name"],
-            "isBarbellBenchPress": bool(row["is_barbell_bench_press"]),
-            "isBodyweight": bool(row["is_bodyweight"]),
-            "repMin": row["rep_min"],
-            "repMax": row["rep_max"],
-        })
-=======
             "isBodyweight":        bool(payload.get("isBodyweight", False)),
             "isSquat":             bool(payload.get("isSquat", False)),
             "isDeadlift":          bool(payload.get("isDeadlift", False)),
+            "repMin":              int(rep_min) if rep_min is not None else None,
+            "repMax":              int(rep_max) if rep_max is not None else None,
         })
-
-    # update_exercise defined above (near powerlifting metrics section)
->>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
 
     def delete_exercise(self, exercise_id: int) -> ApiResponse:
         try:
@@ -903,7 +844,6 @@ class PhaseApi:
         from phase_app.metrics import get_phase_maintenance
         return ApiResponse(200, get_phase_maintenance(self.conn, phase_id))
 
-<<<<<<< HEAD
     def get_phase_progression(self, phase_id: int) -> ApiResponse:
         rows = self._exec(
             """
@@ -965,9 +905,9 @@ class PhaseApi:
                 "loadKg": float(r["load_kg"]) if r["load_kg"] is not None else 0.0,
             })
         return ApiResponse(200, {"items": list(exercises.values())})
-=======
+
     # ------------------------------------------------------------------ #
-    # Exercises — update to support is_squat / is_deadlift               #
+    # Exercises — update to support is_squat / is_deadlift / rep_min/max #
     # ------------------------------------------------------------------ #
 
     def update_exercise(self, exercise_id: int, payload: dict[str, Any]) -> ApiResponse:
@@ -977,17 +917,28 @@ class PhaseApi:
             "isBodyweight":         "is_bodyweight",
             "isSquat":              "is_squat",
             "isDeadlift":           "is_deadlift",
+            "repMin":               "rep_min",
+            "repMax":               "rep_max",
         }
         raw = {col: payload[key] for key, col in allowed.items() if key in payload}
         if not raw:
             return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields provided"})
         bool_cols = {"is_barbell_bench_press", "is_bodyweight", "is_squat", "is_deadlift"}
-        updates = {col: (int(val) if col in bool_cols else val) for col, val in raw.items()}
+        int_cols = {"rep_min", "rep_max"}
+        updates = {}
+        for col, val in raw.items():
+            if col in bool_cols:
+                updates[col] = int(val)
+            elif col in int_cols:
+                updates[col] = int(val) if val is not None else None
+            else:
+                updates[col] = val
         set_clause = ", ".join(f"{col} = %s" for col in updates)
         try:
             cur = self._exec(
                 f"UPDATE exercises SET {set_clause} WHERE exercise_id = %s "
-                "RETURNING exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift",
+                "RETURNING exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, "
+                "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift, rep_min, rep_max",
                 (*updates.values(), exercise_id),
             )
             row = cur.fetchone()
@@ -1004,6 +955,8 @@ class PhaseApi:
             "isBodyweight":         bool(row["is_bodyweight"]),
             "isSquat":              bool(row["is_squat"]),
             "isDeadlift":           bool(row["is_deadlift"]),
+            "repMin":               row["rep_min"],
+            "repMax":               row["rep_max"],
         })
 
     # ------------------------------------------------------------------ #
@@ -1164,7 +1117,6 @@ class PhaseApi:
             return ApiResponse(404, {"error": "not_found"})
         self.conn.commit()
         return ApiResponse(200, {"deleted": True, "rmId": rm_id})
->>>>>>> 7a959c5 (feat: Phase 2 powerlifting tracker)
 
     def import_screenshot(self, payload: dict[str, Any]) -> ApiResponse:
         import base64

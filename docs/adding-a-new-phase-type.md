@@ -109,6 +109,10 @@ const [sessions, exerciseVolumes, runBenchmarks, progression] = await Promise.al
 
 ## Bugs found after powerlifting was introduced (append future ones here)
 
+**PhaseNav layout overflow — too many type tabs**
+Adding a new type increases the number of tabs in `PhaseNav`. Long labels (e.g. "POWERLIFTING") cause overflow.
+Fix: filter `TYPE_ORDER` to only show types that have at least one existing phase (`visibleTypeOrder`). Active type is always included. Arrow navigation uses `visibleTypeOrder` not `TYPE_ORDER`.
+
 **PhaseNav crash — missing type in TYPE_CONFIG**
 `PhaseNav.jsx` reads `TYPE_CONFIG[selectedType].label` unconditionally.
 If the new type is not in `TYPE_CONFIG`, this throws and blanks the entire app.

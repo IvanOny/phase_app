@@ -109,6 +109,12 @@ const [sessions, exerciseVolumes, runBenchmarks, progression] = await Promise.al
 
 ## Bugs found after powerlifting was introduced (append future ones here)
 
+**DB trigger rejects sessions for open-ended phases (null end_date)**
+`check_session_date_in_phase()` did `session_date <= end_date`. When `end_date IS NULL`, the comparison returns NULL (falsy) and the trigger raises. Fix: skip the end_date check when `end_date IS NULL`. Requires `CREATE OR REPLACE FUNCTION` migration.
+
+**SessionsList shows wrong session type filter chips for new phase**
+`SESSION_TYPES` was hardcoded to bench-specific types. Fix: define per-phase-type arrays (`SESSION_TYPES_PL`, etc.) and pass `sessionTypes` as a prop to `FilterBar`. Also update `allTypesSelected` and reset logic.
+
 **PhaseNav layout overflow — too many type tabs**
 Adding a new type increases the number of tabs in `PhaseNav`. Long labels (e.g. "POWERLIFTING") cause overflow.
 Fix: filter `TYPE_ORDER` to only show types that have at least one existing phase (`visibleTypeOrder`). Active type is always included. Arrow navigation uses `visibleTypeOrder` not `TYPE_ORDER`.

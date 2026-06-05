@@ -1,5 +1,35 @@
 # Adding a New Phase Type — Reference Checklist
 
+## Questions to ask before building
+
+Before writing any code, ask the user these questions. Do not start implementing until all are answered.
+
+1. **Phase name** — What is the `phase_type` slug? (lowercase, underscores, e.g. `olympic_lifting`)
+
+2. **End date** — Is this phase open-ended (ends when a goal is hit) or does it require a fixed end date?
+
+3. **Session types** — Which session types are relevant for this phase? Current full list:
+   `squat`, `deadlift`, `mixed`, `heavy_bench`, `volume_bench`, `speed_bench`, `run`, `pull`, `rest`, `other`
+   Which of these apply, and are any new ones needed?
+
+4. **Primary metric** — What is the main thing being tracked? (e.g. e1RM, total kg, distance, reps, time)
+
+5. **Dashboard layout** — Does this phase need its own dashboard, or can it reuse the standard one (e1RM chart + volume chart + sessions list)?
+
+6. **Exercise flags** — Does this phase introduce new exercise classification flags? (e.g. `is_squat`, `is_deadlift`). If yes, new DB columns and migrations are needed.
+
+7. **Classification or scoring** — Is there a target/goal system? (e.g. federation class, distance PR, time goal). If yes, what is the data source for thresholds?
+
+8. **Bodyweight relevance** — Does bodyweight need to be logged per session? (affects scoring, weight categories, etc.)
+
+9. **Phase color** — What color should the phase tab pill use in the nav? (hex or CSS var)
+
+10. **FAQ content** — What should be explained to the user about this phase in the FAQ section?
+
+---
+
+
+
 Use this whenever implementing a new phase type (e.g. `olympic_lifting`, `marathon`).
 Every item here was discovered the hard way when adding `powerlifting` in Phase 2.
 

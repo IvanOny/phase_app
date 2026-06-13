@@ -69,6 +69,11 @@ export default function Dashboard({
     );
   }
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const phaseEndDate = selectedPhase?.endDate ? new Date(selectedPhase.endDate) : null;
+  const isCurrentPhase = !phaseEndDate || phaseEndDate >= today;
+
   return (
     <div className="dashboard">
       <PhaseHeader
@@ -89,7 +94,7 @@ export default function Dashboard({
         </div>
       ) : (
         <>
-          {progression && (
+          {progression && isCurrentPhase && (
             <NextStepTile
               progression={progression}
               sessions={sessions}

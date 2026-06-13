@@ -73,7 +73,7 @@ These are hardcoded lookup objects that must be updated in every new phase type:
 | `frontend/src/components/Dashboard/PhaseNav.jsx` | `TYPE_ORDER` | Add type to display order |
 | `frontend/src/components/Dashboard/PhaseHeader.jsx` | `PHASE_LABELS` | Add human-readable name |
 | `frontend/src/components/DataEntry/CreatePhaseForm.jsx` | `PHASE_TYPES` | Add to dropdown |
-| `frontend/src/components/DataEntry/LogSessionForm.jsx` | `SESSION_TYPES` | Add any new session types |
+| `frontend/src/components/DataEntry/LogSessionForm.jsx` | `SESSION_TYPES_BY_PHASE` | Add entry for new phase type with relevant session types |
 
 ---
 
@@ -176,6 +176,34 @@ Fix: migration to drop + recreate the constraint with the new type included. Alr
 `phases_check` (or equivalent) enforced `end_date IS NOT NULL` globally.
 Fix: migration to replace with a partial constraint allowing null only for the open-ended type. Already in checklist above.
 
+**DB trigger fails with TEXT date columns — explicit casts required**
+`check_session_date_in_phase()` declared `p_start DATE` and `p_end DATE` but the `phases` table stores `start_date` and `end_date` as TEXT. The trigger also compared `NEW.session_date` (TEXT) to a DATE variable.
+Fix: use `start_date::date`, `end_date::date`, and `NEW.session_date::date` explicitly in the trigger. See migration `009_fix_session_date_trigger_text_casts.sql`.
+
+**DB date arithmetic produces timestamp string, not date string**
+Running `(start_date::date + INTERVAL '10 years')::text` in PostgreSQL returns `"2036-06-01 00:00:00"` (timestamp format), not `"2036-06-01"`. This breaks `normDate()` in PhaseCalendar (which splits on `'T'`) and `new Date(dateStr)` calls throughout the frontend.
+Fix: always cast to DATE before text: `(start_date::date + INTERVAL '10 years')::date::text`. Or just set a literal string: `'2036-06-01'`.
+
+**Backend create_phase sends NULL end_date for open-ended phases — breaks DB trigger**
+Even after relaxing the constraint, inserting `end_date = NULL` causes the session date trigger to fail on the first session logged (can't compare TEXT session_date against a NULL DATE).
+Fix: in `create_phase()`, auto-set `end_date = start_date + 10 years` when the phase type is open-ended and no end_date is supplied. See `api.py`. Also update existing rows in the DB with a one-time SQL statement.
+
+**LogSessionForm shows all session types regardless of phase type**
+The type dropdown used a single flat `SESSION_TYPES` constant for all phases. Powerlifting phases showed bench-specific types like `heavy_bench`, `volume_bench`, etc.
+Fix: define `SESSION_TYPES_BY_PHASE` keyed by `phaseType`, derive `sessionTypes` from the selected phase, and reset the selected type when the phase changes. Also update the checklist entry for `LogSessionForm.jsx`.
+
+**sessions_session_type_check constraint missing new phase session types**
+The DB constraint only allowed bench/run/pull types. Inserting a `squat` or `deadlift` session for a powerlifting phase raised a 400.
+Fix: drop and recreate the constraint to include the new types. See migration `010_add_powerlifting_session_types.sql`. Add this step to the checklist.
+
+**NextStepTile shown on completed phases**
+`NextStepTile` rendered whenever `progression` was truthy, with no check for whether the phase was still active.
+Fix: compute `isCurrentPhase` from `selectedPhase.endDate` in `Dashboard.jsx` and gate the tile on it.
+
+**PhaseCalendar renders full phase duration (up to 10 years)**
+After setting a far-future `end_date`, `PhaseCalendar` computed a grid spanning the entire phase — thousands of cells, causing severe render slowdown.
+Fix: cap the calendar display to end of next month regardless of `phase.endDate`.
+
 ---
 
 ## Quick checklist
@@ -183,6 +211,7 @@ Fix: migration to replace with a partial constraint allowing null only for the o
 ```
 [ ] SQL: add type to phases_phase_type_check
 [ ] SQL: relax end_date constraint if open-ended
+[ ] SQL: add new session types to sessions_session_type_check
 [ ] SQL: new tables/columns if needed
 [ ] api.py: create_phase validation
 [ ] api.py: new routes + handlers

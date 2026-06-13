@@ -1,5 +1,7 @@
 # Phase App — Claude Context
 
+> **CRITICAL — Phase type bugs:** Whenever a bug is fixed that was caused by introducing a new phase type (missing config entry, missing null guard, DB constraint gap, etc.), **always append it to `docs/adding-a-new-phase-type.md`** so the checklist stays complete for the next phase type.
+
 ## What this app is
 
 Phase-based training tracker. A phase is a fixed training block (bench / pull-ups / run) with a start and end date. Each phase contains sessions; each session contains exercises and sets. The app tracks volume, e1RM, and HRV readiness over time.

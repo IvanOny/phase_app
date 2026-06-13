@@ -2,18 +2,18 @@ import { useState } from 'react';
 import { createSession, createBodyweightEntry } from '../../api/client.js';
 import { parseDuration, parsePace } from '../../utils/runMetrics.js';
 
-const SESSION_TYPES = [
-  'squat',
-  'deadlift',
-  'mixed',
-  'heavy_bench',
-  'volume_bench',
-  'speed_bench',
-  'run',
-  'pull',
-  'rest',
-  'other',
-];
+const SESSION_TYPES_BY_PHASE = {
+  bench:        ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'rest', 'other'],
+  pull_ups:     ['pull', 'run', 'rest', 'other'],
+  run:          ['run', 'rest', 'other'],
+  powerlifting: ['squat', 'deadlift', 'mix', 'run', 'other'],
+};
+const SESSION_TYPES_DEFAULT = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'rest', 'other'];
+
+function sessionTypesForPhase(phases, phaseId) {
+  const phase = phases.find(p => p.phaseId === Number(phaseId));
+  return SESSION_TYPES_BY_PHASE[phase?.phaseType] ?? SESSION_TYPES_DEFAULT;
+}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -22,7 +22,8 @@ function today() {
 export default function LogSessionForm({ phases, selectedPhaseId, sessions = [], onSessionLogged }) {
   const [phaseId, setPhaseId] = useState(selectedPhaseId || (phases[0]?.phaseId ?? ''));
   const [date, setDate] = useState(today());
-  const [sessionType, setSessionType] = useState('squat');
+  const sessionTypes = sessionTypesForPhase(phases, phaseId);
+  const [sessionType, setSessionType] = useState(sessionTypes[0] ?? 'other');
   const [eliteHrv, setEliteHrv] = useState('');
   const [garminHrv, setGarminHrv] = useState('');
   const [bodyweight, setBodyweight] = useState('');
@@ -142,7 +143,7 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
     <form onSubmit={handleSubmit}>
       <div className="form-group">
         <label>Phase</label>
-        <select value={phaseId} onChange={e => setPhaseId(e.target.value)} required>
+        <select value={phaseId} onChange={e => { setPhaseId(e.target.value); setSessionType(sessionTypesForPhase(phases, e.target.value)[0] ?? 'other'); }} required>
           {phases.map(p => (
             <option key={p.phaseId} value={p.phaseId}>{p.name}</option>
           ))}
@@ -157,7 +158,7 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
       <div className="form-group">
         <label>Session Type</label>
         <select value={sessionType} onChange={e => setSessionType(e.target.value)}>
-          {SESSION_TYPES.map(t => (
+          {sessionTypes.map(t => (
             <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
           ))}
         </select>

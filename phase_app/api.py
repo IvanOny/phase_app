@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import date as _date
 from dataclasses import dataclass
 from typing import Any
 
@@ -182,14 +183,18 @@ class PhaseApi:
         missing = [field for field in required if field not in payload]
         if missing:
             return ApiResponse(400, {"error": "validation_error", "missing": missing})
-        # end_date is optional for powerlifting phases (open-ended until class goal is hit)
         if payload["phaseType"] != "powerlifting" and not payload.get("endDate"):
             return ApiResponse(400, {"error": "validation_error", "missing": ["endDate"]})
+        # Powerlifting phases default to 10 years from start date if no end date given
+        end_date = payload.get("endDate")
+        if payload["phaseType"] == "powerlifting" and not end_date:
+            start = _date.fromisoformat(payload["startDate"])
+            end_date = start.replace(year=start.year + 10).isoformat()
         try:
             row = self._exec(
                 "INSERT INTO phases (phase_type, start_date, end_date, name, notes) "
                 "VALUES (%s, %s, %s, %s, %s) RETURNING phase_id",
-                (payload["phaseType"], payload["startDate"], payload["endDate"],
+                (payload["phaseType"], payload["startDate"], end_date,
                  payload.get("name"), payload.get("notes")),
             ).fetchone()
             self.conn.commit()
@@ -200,7 +205,7 @@ class PhaseApi:
             "phaseId": row["phase_id"],
             "phaseType": payload["phaseType"],
             "startDate": payload["startDate"],
-            "endDate": payload["endDate"],
+            "endDate": end_date,
             "name": payload.get("name"),
             "notes": payload.get("notes"),
         })

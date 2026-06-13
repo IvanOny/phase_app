@@ -80,12 +80,14 @@ export default function PhaseCalendar({
 
   const today = new Date().toISOString().slice(0, 10);
   const phaseStart = normDate(phase.startDate);
-  // Open-ended phases (no endDate) show calendar through end of current month
-  const phaseEnd = normDate(phase.endDate) || (() => {
+  // Always cap display to end of next month (current + upcoming)
+  const displayCap = (() => {
     const d = new Date();
-    d.setMonth(d.getMonth() + 1, 0); // last day of current month
+    d.setMonth(d.getMonth() + 2, 0); // last day of next month
     return d.toISOString().slice(0, 10);
   })();
+  const rawEnd = normDate(phase.endDate);
+  const phaseEnd = (!rawEnd || rawEnd > displayCap) ? displayCap : rawEnd;
 
   const sessionByDate = {};
   sessions.forEach(s => {

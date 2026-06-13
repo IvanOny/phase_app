@@ -111,6 +111,11 @@ export default function LogSessionForm({ phases, selectedPhaseId, sessions = [],
     e.preventDefault();
     setError(null);
 
+    if (!date) {
+      setError('Date is required');
+      return;
+    }
+
     if (eliteHrv !== '' && (Number(eliteHrv) < 0 || Number(eliteHrv) > 10)) {
       setError('Readiness must be between 0 and 10');
       return;

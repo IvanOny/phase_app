@@ -1,7 +1,13 @@
 import { useState, useEffect, Fragment } from 'react';
 import { createSession } from '../../api/client.js';
 
-const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
+const SESSION_TYPES_BY_PHASE = {
+  bench:        ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'],
+  pull_ups:     ['pull', 'run'],
+  run:          ['run'],
+  powerlifting: ['squat', 'deadlift', 'mix', 'run'],
+};
+const SESSION_TYPES_DEFAULT = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
 
 const TYPE_COLORS = {
   heavy_bench:  '#7c3aed',
@@ -68,11 +74,12 @@ export default function PhaseCalendar({
   onSessionDeleted,
   isAuthenticated,
 }) {
-  const allTypesActive = !activeTypes || activeTypes.length === SESSION_TYPES.length;
+  const sessionTypes = SESSION_TYPES_BY_PHASE[phase?.phaseType] ?? SESSION_TYPES_DEFAULT;
+  const allTypesActive = !activeTypes || activeTypes.length === sessionTypes.length;
   const [hoveredDate, setHoveredDate] = useState(null);
   const [tappedDate, setTappedDate] = useState(null);
   const [pickerDate, setPickerDate] = useState(null);
-  const [pickerType, setPickerType] = useState(SESSION_TYPES[0]);
+  const [pickerType, setPickerType] = useState(sessionTypes[0]);
   const [pickerDeload, setPickerDeload] = useState(false);
   const [pickerSession, setPickerSession] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -197,7 +204,7 @@ export default function PhaseCalendar({
 
     setPickerDate(day.date);
     setPickerSession(null);
-    setPickerType(SESSION_TYPES[0]);
+    setPickerType(sessionTypes[0]);
   }
 
   return (
@@ -304,7 +311,7 @@ export default function PhaseCalendar({
             className="inline-input"
             style={{ fontSize: 12 }}
           >
-            {SESSION_TYPES.map(t => (
+            {sessionTypes.map(t => (
               <option key={t} value={t}>{formatType(t)}</option>
             ))}
           </select>

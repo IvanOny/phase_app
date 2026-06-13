@@ -66,5 +66,15 @@ def handle(path: str):
         return make_response("", 204)
     query_params = {k: v for k, v in request.args.items()}
     body = request.get_json(silent=True) or {}
-    resp = _get_api().handle(request.method, "/" + path, body, query_params)
+    try:
+        resp = _get_api().handle(request.method, "/" + path, body, query_params)
+    except Exception:
+        # Roll back any aborted transaction so the connection is reusable.
+        global _conn
+        try:
+            if _conn and not _conn.closed:
+                _conn.rollback()
+        except Exception:
+            pass
+        raise
     return jsonify(resp.body), resp.status

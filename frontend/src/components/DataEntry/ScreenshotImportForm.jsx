@@ -10,7 +10,18 @@ import {
 import { formatDuration, formatPace, parseDuration, parsePace } from '../../utils/runMetrics.js';
 import './ScreenshotImportForm.css';
 
-const SESSION_TYPES = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
+const SESSION_TYPES_BY_PHASE = {
+  bench:        ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'],
+  pull_ups:     ['pull', 'run', 'other'],
+  run:          ['run', 'other'],
+  powerlifting: ['squat', 'deadlift', 'mix', 'run', 'other'],
+};
+const SESSION_TYPES_DEFAULT = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull', 'other'];
+
+function sessionTypesForPhase(phases, phaseId) {
+  const phase = phases.find(p => p.phaseId === Number(phaseId));
+  return SESSION_TYPES_BY_PHASE[phase?.phaseType] ?? SESSION_TYPES_DEFAULT;
+}
 
 export default function ScreenshotImportForm({ phases, selectedPhaseId, exercises, onImportComplete, onExerciseCreated }) {
   const [stage, setStage] = useState('idle');
@@ -315,7 +326,7 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
         <div className="form-group">
           <label>Type</label>
           <select value={editedData.sessionType} onChange={e => updateField('sessionType', e.target.value)}>
-            {SESSION_TYPES.map(t => (
+            {sessionTypesForPhase(phases, phaseId).map(t => (
               <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
             ))}
           </select>

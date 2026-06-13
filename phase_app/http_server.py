@@ -19,8 +19,6 @@ CORS_ORIGINS = {
 
 
 class AppHandler(BaseHTTPRequestHandler):
-    api: PhaseApi
-
     def _cors_headers(self):
         origin = self.headers.get("Origin", "")
         if origin in CORS_ORIGINS:
@@ -50,6 +48,9 @@ class AppHandler(BaseHTTPRequestHandler):
         self._cors_headers()
         self.end_headers()
 
+    def _api(self):
+        return PhaseApi(get_connection())
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
@@ -60,7 +61,7 @@ class AppHandler(BaseHTTPRequestHandler):
         if path == "/app.js":
             return self._send_file(FRONTEND_ROOT / "app.js", "text/javascript; charset=utf-8")
 
-        response = self.api.handle("GET", path, query_params=query)
+        response = self._api().handle("GET", path, query_params=query)
         self._send_json(response.status, response.body)
 
     def _check_auth(self, method: str, path: str) -> bool:
@@ -85,7 +86,7 @@ class AppHandler(BaseHTTPRequestHandler):
         payload = self._parse_json_body()
         if payload is None:
             return
-        response = self.api.handle("POST", parsed.path, payload)
+        response = self._api().handle("POST", parsed.path, payload)
         self._send_json(response.status, response.body)
 
     def do_PATCH(self):
@@ -95,22 +96,20 @@ class AppHandler(BaseHTTPRequestHandler):
         payload = self._parse_json_body()
         if payload is None:
             return
-        response = self.api.handle("PATCH", parsed.path, payload)
+        response = self._api().handle("PATCH", parsed.path, payload)
         self._send_json(response.status, response.body)
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
         if not self._check_auth("DELETE", parsed.path):
             return self._send_json(401, {"error": "unauthorized"})
-        response = self.api.handle("DELETE", parsed.path)
+        response = self._api().handle("DELETE", parsed.path)
         self._send_json(response.status, response.body)
 
 
 
 def run_server(host: str = "0.0.0.0", port: int | None = None):
     port = port or int(os.environ.get("PORT", 8000))
-    conn = get_connection()
-    AppHandler.api = PhaseApi(conn)
     server = ThreadingHTTPServer((host, port), AppHandler)
     print(f"Server running at http://{host}:{port}")
     server.serve_forever()

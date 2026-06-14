@@ -8,6 +8,25 @@ import {
   getExercises,
 } from '../../api/client.js';
 import { formatDuration, formatPace, parseDuration, parsePace } from '../../utils/runMetrics.js';
+
+function fmtHms(totalSeconds) {
+  if (totalSeconds == null) return '';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function parseHms(str) {
+  if (!str) return null;
+  const parts = str.split(':').map(Number);
+  if (parts.some(isNaN)) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return null;
+}
 import './ScreenshotImportForm.css';
 
 const SESSION_TYPES_BY_PHASE = {
@@ -137,12 +156,17 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
     }));
   }
 
-  async function resolveExerciseId(exerciseName) {
+  async function resolveExerciseId(exerciseName, exerciseMeta = {}) {
     const normalized = exerciseName.trim().toLowerCase();
     const match = exercises.find(ex => ex.exerciseName.toLowerCase() === normalized);
     if (match) return match.exerciseId;
     try {
-      const created = await createExercise({ exerciseName: exerciseName.trim() });
+      const created = await createExercise({
+        exerciseName: exerciseName.trim(),
+        isBarbellBenchPress: exerciseMeta.isBarbellBenchPress ?? false,
+        isSquat: exerciseMeta.isSquat ?? false,
+        isDeadlift: exerciseMeta.isDeadlift ?? false,
+      });
       onExerciseCreated?.(created);
       return created.exerciseId;
     } catch {
@@ -173,7 +197,12 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
         avgVoCm: editedData.avgVoCm ?? null,
         ascentM: editedData.ascentM ?? null,
         rpe: editedData.rpe !== '' && editedData.rpe != null ? Number(editedData.rpe) : null,
-      } : {};
+      } : {
+        durationSeconds: editedData.durationSeconds ?? null,
+        workDurationSeconds: editedData.workDurationSeconds ?? null,
+        avgHr: editedData.avgHr ?? null,
+        calories: editedData.calories != null && editedData.calories !== '' ? Number(editedData.calories) : null,
+      };
       const session = await createSession({
         phaseId: Number(phaseId),
         sessionDate: editedData.sessionDate,
@@ -187,7 +216,7 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
       for (let exIdx = 0; exIdx < exercisesWithSets.length; exIdx++) {
         const ex = exercisesWithSets[exIdx];
         setImportProgress(`Adding exercise ${exIdx + 1}/${exercisesWithSets.length}: ${ex.exerciseName}…`);
-        const exerciseId = await resolveExerciseId(ex.exerciseName);
+        const exerciseId = await resolveExerciseId(ex.exerciseName, ex);
         const sessionExercise = await createSessionExercise(session.sessionId, {
           exerciseId,
           exerciseOrder: exIdx + 1,
@@ -355,6 +384,43 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
           onChange={e => updateField('notes', e.target.value)}
         />
       </div>
+
+      {editedData.sessionType !== 'run' && (
+        <div className="form-row" style={{ flexWrap: 'wrap' }}>
+          <div className="form-group">
+            <label>Total time (H:MM:SS)</label>
+            <input
+              type="text" placeholder="1:37:10"
+              defaultValue={fmtHms(editedData.durationSeconds)}
+              onBlur={e => updateField('durationSeconds', parseHms(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Work time (MM:SS)</label>
+            <input
+              type="text" placeholder="45:31"
+              defaultValue={fmtHms(editedData.workDurationSeconds)}
+              onBlur={e => updateField('workDurationSeconds', parseHms(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Avg HR (bpm)</label>
+            <input
+              type="number" min="0" placeholder="114"
+              value={editedData.avgHr ?? ''}
+              onChange={e => updateField('avgHr', e.target.value === '' ? null : Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Calories</label>
+            <input
+              type="number" min="0" placeholder="667"
+              value={editedData.calories ?? ''}
+              onChange={e => updateField('calories', e.target.value === '' ? null : Number(e.target.value))}
+            />
+          </div>
+        </div>
+      )}
 
       {editedData.sessionType === 'run' && (
         <>

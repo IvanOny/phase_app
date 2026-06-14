@@ -80,45 +80,43 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
   if (editing) {
     return (
       <tr>
-        <td>
-          <input
-            value={form.exerciseName}
-            onChange={e => setForm(f => ({ ...f, exerciseName: e.target.value }))}
-            className="inline-input"
-            style={{ width: '100%' }}
-          />
-        </td>
-        <td style={{ textAlign: 'center' }}>
-          <input type="checkbox" checked={form.isBarbellBenchPress} onChange={e => setForm(f => ({ ...f, isBarbellBenchPress: e.target.checked }))} />
-        </td>
-        <td style={{ textAlign: 'center' }}>
-          <input type="checkbox" checked={form.isSquat} onChange={e => setForm(f => ({ ...f, isSquat: e.target.checked }))} />
-        </td>
-        <td style={{ textAlign: 'center' }}>
-          <input type="checkbox" checked={form.isDeadlift} onChange={e => setForm(f => ({ ...f, isDeadlift: e.target.checked }))} />
-        </td>
-        <td style={{ textAlign: 'center' }}>
-          <input type="checkbox" checked={form.isBodyweight} onChange={e => setForm(f => ({ ...f, isBodyweight: e.target.checked }))} />
-        </td>
-        <td style={{ textAlign: 'center' }}>
-          <input type="checkbox" checked={form.isTimed} onChange={e => setForm(f => ({ ...f, isTimed: e.target.checked }))} />
-        </td>
-        <td style={{ textAlign: 'center' }}>
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
-            <input type="number" min="1" max="30" placeholder="—"
-              value={form.repMin}
-              onChange={e => setForm(f => ({ ...f, repMin: e.target.value }))}
-              className="inline-input" style={{ width: 38 }} />
-            <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>–</span>
-            <input type="number" min="1" max="30" placeholder="—"
-              value={form.repMax}
-              onChange={e => setForm(f => ({ ...f, repMax: e.target.value }))}
-              className="inline-input" style={{ width: 38 }} />
+        <td colSpan={8} style={{ padding: '6px 0 8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                value={form.exerciseName}
+                onChange={e => setForm(f => ({ ...f, exerciseName: e.target.value }))}
+                className="inline-input"
+                style={{ flex: 1 }}
+              />
+              <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
+              <button className="icon-btn" onClick={() => setEditing(false)} title="Cancel">✕</button>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              {[
+                ['Bench', 'isBarbellBenchPress'],
+                ['Squat', 'isSquat'],
+                ['Deadlift', 'isDeadlift'],
+                ['Bodyweight', 'isBodyweight'],
+                ['Timed', 'isTimed'],
+              ].map(([label, key]) => (
+                <label key={key} className={`ex-flag-toggle${form[key] ? ' active' : ''}`}>
+                  <input type="checkbox" checked={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))} style={{ display: 'none' }} />
+                  {label}
+                </label>
+              ))}
+              <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--text-muted)' }}>Reps</span>
+              <input type="number" min="1" max="30" placeholder="min"
+                value={form.repMin}
+                onChange={e => setForm(f => ({ ...f, repMin: e.target.value }))}
+                className="inline-input" style={{ width: 38 }} />
+              <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>–</span>
+              <input type="number" min="1" max="30" placeholder="max"
+                value={form.repMax}
+                onChange={e => setForm(f => ({ ...f, repMax: e.target.value }))}
+                className="inline-input" style={{ width: 38 }} />
+            </div>
           </div>
-        </td>
-        <td>
-          <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
-          <button className="icon-btn" onClick={() => setEditing(false)} title="Cancel">✕</button>
         </td>
       </tr>
     );
@@ -197,16 +195,26 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
 
   return (
     <div>
-      <table className="sets-table" style={{ width: '100%', marginBottom: 16 }}>
+      <table className="sets-table exercise-catalog-table" style={{ width: '100%', marginBottom: 16 }}>
+        <colgroup>
+          <col style={{ width: '38%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '9%' }} />
+          <col style={{ width: '6%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '11%' }} />
+          <col style={{ width: '15%' }} />
+        </colgroup>
         <thead>
           <tr>
             <th style={{ textAlign: 'left' }}>Exercise</th>
-            <th>Bench</th>
-            <th>Squat</th>
-            <th>Deadlift</th>
-            <th>BW</th>
-            <th>Timed</th>
-            <th>Rep range</th>
+            <th style={{ textAlign: 'center' }}>Bench</th>
+            <th style={{ textAlign: 'center' }}>Squat</th>
+            <th style={{ textAlign: 'center' }}>Deadlift</th>
+            <th style={{ textAlign: 'center' }}>BW</th>
+            <th style={{ textAlign: 'center' }}>Timed</th>
+            <th style={{ textAlign: 'center' }}>Reps</th>
             <th></th>
           </tr>
         </thead>
@@ -224,7 +232,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
             <label>Name</label>
             <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()} />
           </div>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', paddingBottom: 2, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', paddingBottom: 2, flexWrap: 'wrap' }}>
             {[
               ['Bench', newIsBench, setNewIsBench],
               ['Squat', newIsSquat, setNewIsSquat],
@@ -232,8 +240,8 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
               ['Bodyweight', newIsBodyweight, setNewIsBodyweight],
               ['Timed', newIsTimed, setNewIsTimed],
             ].map(([label, val, setter]) => (
-              <label key={label} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
-                <input type="checkbox" checked={val} onChange={e => setter(e.target.checked)} />
+              <label key={label} className={`ex-flag-toggle${val ? ' active' : ''}`}>
+                <input type="checkbox" checked={val} onChange={e => setter(e.target.checked)} style={{ display: 'none' }} />
                 {label}
               </label>
             ))}

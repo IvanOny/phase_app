@@ -222,8 +222,9 @@ class PhaseApi:
                 "INSERT INTO sessions "
                 "(phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, is_planned, is_deload, "
                 "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
-                "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km, "
+                "work_duration_seconds, calories) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
                 "RETURNING *, COALESCE(is_planned, FALSE) AS is_planned, COALESCE(is_deload, FALSE) AS is_deload",
                 (payload["phaseId"], payload["sessionDate"], payload["sessionType"],
                  payload.get("eliteHrvReadiness"), payload.get("garminOvernightHrv"), payload.get("notes"), is_planned, is_deload,
@@ -232,7 +233,8 @@ class PhaseApi:
                  payload.get("runType"), payload.get("maxHr"),
                  payload.get("avgCadence"), payload.get("avgGctMs"),
                  payload.get("avgVoCm"), payload.get("ascentM"),
-                 payload.get("rpe"), payload.get("avgGapPaceSecPerKm")),
+                 payload.get("rpe"), payload.get("avgGapPaceSecPerKm"),
+                 payload.get("workDurationSeconds"), payload.get("calories")),
             ).fetchone()
             if not is_planned:
                 self._exec(
@@ -316,7 +318,8 @@ class PhaseApi:
             "SELECT session_id, phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, "
             "COALESCE(is_planned, FALSE) AS is_planned, COALESCE(is_deload, FALSE) AS is_deload, "
             "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
-            "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km "
+            "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km, "
+            "work_duration_seconds, calories "
             "FROM sessions WHERE session_id = %s",
             (session_id,),
         ).fetchone()
@@ -392,6 +395,8 @@ class PhaseApi:
             "ascentM": r.get("ascent_m"),
             "rpe": float(r["rpe"]) if r.get("rpe") is not None else None,
             "avgGapPaceSecPerKm": r.get("avg_gap_pace_sec_per_km"),
+            "workDurationSeconds": r.get("work_duration_seconds"),
+            "calories": r.get("calories"),
         }
 
     def list_sessions(self, qp: dict[str, str]) -> ApiResponse:
@@ -402,7 +407,8 @@ class PhaseApi:
             "elite_hrv_readiness, garmin_overnight_hrv, notes, "
             "COALESCE(is_planned, FALSE) AS is_planned, COALESCE(is_deload, FALSE) AS is_deload, "
             "distance_km, duration_seconds, avg_hr, avg_pace_sec_per_km, "
-            "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km "
+            "run_type, max_hr, avg_cadence, avg_gct_ms, avg_vo_cm, ascent_m, rpe, avg_gap_pace_sec_per_km, "
+            "work_duration_seconds, calories "
             "FROM sessions WHERE phase_id = %s ORDER BY session_date",
             (int(qp["phaseId"]),),
         ).fetchall()
@@ -774,7 +780,7 @@ class PhaseApi:
                  int(payload.get("isDeadlift", False)),
                  int(rep_min) if rep_min is not None else None,
                  int(rep_max) if rep_max is not None else None,
-                 int(payload.get("isTimed", False))),
+                 bool(payload.get("isTimed", False))),
             ).fetchone()
             self.conn.commit()
         except psycopg2.DatabaseError as exc:
@@ -950,12 +956,15 @@ class PhaseApi:
         raw = {col: payload[key] for key, col in allowed.items() if key in payload}
         if not raw:
             return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields provided"})
-        bool_cols = {"is_barbell_bench_press", "is_bodyweight", "is_squat", "is_deadlift", "is_timed"}
+        bool_cols = {"is_barbell_bench_press", "is_bodyweight", "is_squat", "is_deadlift"}
+        native_bool_cols = {"is_timed"}
         int_cols = {"rep_min", "rep_max"}
         updates = {}
         for col, val in raw.items():
             if col in bool_cols:
                 updates[col] = int(val)
+            elif col in native_bool_cols:
+                updates[col] = bool(val)
             elif col in int_cols:
                 updates[col] = int(val) if val is not None else None
             else:
@@ -1177,6 +1186,9 @@ class PhaseApi:
             '  "exercises": [\n'
             '    {\n'
             '      "exerciseName": "Bench Press",\n'
+            '      "isBarbellBenchPress": false,\n'
+            '      "isSquat": false,\n'
+            '      "isDeadlift": false,\n'
             '      "sets": [\n'
             '        { "setNumber": 1, "reps": 5, "loadKg": 100.0, "isTopSet": false, "isWorkingSet": true }\n'
             '      ]\n'
@@ -1188,6 +1200,11 @@ class PhaseApi:
             "- Convert lbs to kg (multiply by 0.4536). Use 0 for bodyweight exercises.\n"
             "- Garmin Connect tables have columns: Set, Exercise Name, Time, Rest, Reps, Weight, Volume. "
             "Use the Weight column for loadKg. Do NOT use the Volume column (Weight × Reps) — it is much larger.\n"
+            "- Exercise classification flags (set on each exercise object):\n"
+            "  isBarbellBenchPress: true for barbell bench press variants (flat, incline, close-grip bench with a barbell).\n"
+            "  isSquat: true for barbell squat variants (back squat, front squat, low-bar squat, high-bar squat).\n"
+            "  isDeadlift: true for barbell deadlift variants (conventional, sumo, Romanian/RDL, trap-bar deadlift).\n"
+            "  All three default to false. Only one flag can be true per exercise.\n"
             "- Run sessions (sessionType = 'run'): set exercises to [] and extract structured run metrics as top-level fields:\n"
             "  'runType': string describing run subtype if visible (e.g. 'easy', 'long run', 'tempo', 'intervals', 'race', 'trail'), else null\n"
             "  'distanceKm': number (e.g. 6.01)\n"
@@ -1213,6 +1230,12 @@ class PhaseApi:
             "If no title, infer from exercises: 'run' for cardio/run, 'pull' for pull-only, "
             "'volume_bench'/'heavy_bench'/'speed_bench' if bench dominant, else 'other'.\n"
             "- Extract the exact session date shown in the screenshot.\n"
+            "- Strength/non-run sessions: if the screenshot shows session summary stats (e.g. Garmin header row), "
+            "extract these as top-level fields (omit if not visible):\n"
+            "  'durationSeconds': integer total seconds for Total Time (e.g. 5830 for 1:37:10)\n"
+            "  'workDurationSeconds': integer total seconds for Work Time (e.g. 2731 for 45:31)\n"
+            "  'avgHr': integer bpm for Avg HR (e.g. 114)\n"
+            "  'calories': integer kcal burned (e.g. 667)\n"
             'If this is not a workout screenshot, return: {"error": "not_a_workout"}'
         )
 
@@ -1229,6 +1252,7 @@ class PhaseApi:
             return ApiResponse(502, {"error": "upstream_error", "detail": str(exc)})
 
         raw = message.content[0].text.strip()
+        print("=== PARSER RAW RESPONSE ===\n", raw, "\n===========================")
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
@@ -1284,18 +1308,26 @@ class PhaseApi:
             '  "exercises": [\n'
             '    {\n'
             '      "exerciseName": "Bench Press",\n'
+            '      "isBarbellBenchPress": false,\n'
+            '      "isSquat": false,\n'
+            '      "isDeadlift": false,\n'
             '      "sets": [\n'
             '        { "setNumber": 1, "reps": 5, "loadKg": 100.0, "isTopSet": false, "isWorkingSet": true }\n'
             '      ]\n'
             '    }\n'
             '  ]\n'
             "}\n"
-            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, run, pull, other.\n"
+            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, squat, deadlift, mixed, run, pull, rest, other.\n"
             "Rules:\n"
             "- Combine exercises from all screenshots into one list. Do not duplicate exercises that appear in multiple screenshots.\n"
             "- Convert lbs to kg (multiply by 0.4536). Use 0 for bodyweight exercises.\n"
             "- Garmin Connect tables have columns: Set, Exercise Name, Time, Rest, Reps, Weight, Volume. "
             "Use the Weight column for loadKg. Do NOT use the Volume column (Weight × Reps) — it is much larger.\n"
+            "- Exercise classification flags (set on each exercise object):\n"
+            "  isBarbellBenchPress: true for barbell bench press variants (flat, incline, close-grip bench with a barbell).\n"
+            "  isSquat: true for barbell squat variants (back squat, front squat, low-bar squat, high-bar squat).\n"
+            "  isDeadlift: true for barbell deadlift variants (conventional, sumo, Romanian/RDL, trap-bar deadlift).\n"
+            "  All three default to false. Only one flag can be true per exercise.\n"
             "- Run sessions (sessionType = 'run'): set exercises to [] and extract structured run metrics as top-level fields:\n"
             "  'runType': string describing run subtype if visible (e.g. 'easy', 'long run', 'tempo', 'intervals', 'race', 'trail'), else null\n"
             "  'distanceKm': number (e.g. 6.01)\n"
@@ -1321,6 +1353,12 @@ class PhaseApi:
             "If no title, infer from exercises: 'run' for cardio/run, 'pull' for pull-only, "
             "'volume_bench'/'heavy_bench'/'speed_bench' if bench dominant, else 'other'.\n"
             "- Extract the exact session date shown in the screenshots.\n"
+            "- Strength/non-run sessions: if any screenshot shows session summary stats (e.g. Garmin header row), "
+            "extract these as top-level fields (omit if not visible):\n"
+            "  'durationSeconds': integer total seconds for Total Time (e.g. 5830 for 1:37:10)\n"
+            "  'workDurationSeconds': integer total seconds for Work Time (e.g. 2731 for 45:31)\n"
+            "  'avgHr': integer bpm for Avg HR (e.g. 114)\n"
+            "  'calories': integer kcal burned (e.g. 667)\n"
             'If these are not workout screenshots, return: {"error": "not_a_workout"}'
         )
         content_blocks.append({"type": "text", "text": prompt})
@@ -1336,6 +1374,7 @@ class PhaseApi:
             return ApiResponse(502, {"error": "upstream_error", "detail": str(exc)})
 
         raw = message.content[0].text.strip()
+        print("=== PARSER RAW RESPONSE (multi) ===\n", raw, "\n====================================")
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):

@@ -311,3 +311,70 @@ button.flag-badge {
   padding: var(--space-2) var(--space-3);
   margin-bottom: var(--space-4);
 }
+
+/* Exercise flag toggle pills (edit row) */
+.ex-flag-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.ex-flag-toggle:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.ex-flag-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Exercise catalog table — compact data table */
+.exercise-catalog-table {
+  table-layout: fixed;
+}
+
+.exercise-catalog-table th {
+  padding: 4px 6px 4px 0;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.exercise-catalog-table td {
+  padding: 3px 6px 3px 0;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.exercise-catalog-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.exercise-catalog-table col.col-name {
+  width: 40%;
+}
+
+.exercise-catalog-table td:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.exercise-catalog-table td:last-child {
+  white-space: nowrap;
+  text-align: right;
+  padding-right: 0;
+}

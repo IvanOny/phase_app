@@ -1,0 +1,2 @@
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS work_duration_seconds INTEGER;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS calories INTEGER;

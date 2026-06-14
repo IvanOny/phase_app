@@ -16,6 +16,7 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
       isBodyweight: exercise.isBodyweight,
       isSquat: exercise.isSquat ?? false,
       isDeadlift: exercise.isDeadlift ?? false,
+      isTimed: exercise.isTimed ?? false,
       repMin: exercise.repMin ?? '',
       repMax: exercise.repMax ?? '',
     });
@@ -100,6 +101,9 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
           <input type="checkbox" checked={form.isBodyweight} onChange={e => setForm(f => ({ ...f, isBodyweight: e.target.checked }))} />
         </td>
         <td style={{ textAlign: 'center' }}>
+          <input type="checkbox" checked={form.isTimed} onChange={e => setForm(f => ({ ...f, isTimed: e.target.checked }))} />
+        </td>
+        <td style={{ textAlign: 'center' }}>
           <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
             <input type="number" min="1" max="30" placeholder="—"
               value={form.repMin}
@@ -128,6 +132,7 @@ function ExerciseRow({ exercise, exercises, onUpdate, onDelete, onMerge }) {
         <td style={{ textAlign: 'center' }}>{exercise.isSquat ? '✓' : ''}</td>
         <td style={{ textAlign: 'center' }}>{exercise.isDeadlift ? '✓' : ''}</td>
         <td style={{ textAlign: 'center' }}>{exercise.isBodyweight ? '✓' : ''}</td>
+        <td style={{ textAlign: 'center' }}>{exercise.isTimed ? '✓' : ''}</td>
         <td style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>
           {exercise.repMin != null && exercise.repMax != null ? `${exercise.repMin}–${exercise.repMax}` : '—'}
         </td>
@@ -154,6 +159,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
   const [newIsSquat, setNewIsSquat] = useState(false);
   const [newIsDeadlift, setNewIsDeadlift] = useState(false);
   const [newIsBodyweight, setNewIsBodyweight] = useState(false);
+  const [newIsTimed, setNewIsTimed] = useState(false);
   const [newRepMin, setNewRepMin] = useState('');
   const [newRepMax, setNewRepMax] = useState('');
   const [adding, setAdding] = useState(false);
@@ -170,6 +176,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
         isSquat: newIsSquat,
         isDeadlift: newIsDeadlift,
         isBodyweight: newIsBodyweight,
+        isTimed: newIsTimed,
         repMin: newRepMin !== '' ? Number(newRepMin) : null,
         repMax: newRepMax !== '' ? Number(newRepMax) : null,
       });
@@ -178,6 +185,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
       setNewIsSquat(false);
       setNewIsDeadlift(false);
       setNewIsBodyweight(false);
+      setNewIsTimed(false);
       setNewRepMin('');
       setNewRepMax('');
     } catch {
@@ -197,6 +205,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
             <th>Squat</th>
             <th>Deadlift</th>
             <th>BW</th>
+            <th>Timed</th>
             <th>Rep range</th>
             <th></th>
           </tr>
@@ -221,6 +230,7 @@ export default function ExerciseCatalogForm({ exercises, onExerciseCreated, onEx
               ['Squat', newIsSquat, setNewIsSquat],
               ['Deadlift', newIsDeadlift, setNewIsDeadlift],
               ['Bodyweight', newIsBodyweight, setNewIsBodyweight],
+              ['Timed', newIsTimed, setNewIsTimed],
             ].map(([label, val, setter]) => (
               <label key={label} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={val} onChange={e => setter(e.target.checked)} />

@@ -293,7 +293,7 @@ export async function getSessionPlMetrics(phaseId) {
 export async function getClassification(phaseId, bodyweightKg) {
   if (MOCK_MODE) return Promise.resolve(null);
   const bwParam = bodyweightKg != null ? `?bodyweightKg=${bodyweightKg}` : '';
-  return apiFetch('GET', `/v1/metrics/phases/${phaseId}/classification${bwParam}`, undefined, { allow404: false });
+  return apiFetch('GET', `/v1/metrics/phases/${phaseId}/classification${bwParam}`, undefined, { allow404: true });
 }
 
 // ---- Bodyweight log ----

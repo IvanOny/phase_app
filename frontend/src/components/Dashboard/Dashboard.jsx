@@ -35,6 +35,7 @@ export default function Dashboard({
   onLogout,
   onLoginClick,
   onFaqClick,
+  bwRefreshKey,
 }) {
   const [focusFilter, setFocusFilter] = useState(null);
 
@@ -65,6 +66,7 @@ export default function Dashboard({
         onLogout={onLogout}
         onLoginClick={onLoginClick}
         onFaqClick={onFaqClick}
+        bwRefreshKey={bwRefreshKey}
       />
     );
   }

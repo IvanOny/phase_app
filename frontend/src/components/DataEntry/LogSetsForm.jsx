@@ -11,6 +11,7 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
 
   const [reps, setReps] = useState('');
   const [loadKg, setLoadKg] = useState('');
+  const [timeMinutes, setTimeMinutes] = useState('');
   const [isTopSet, setIsTopSet] = useState(false);
   const [isWorkingSet, setIsWorkingSet] = useState(true);
   const [error, setError] = useState(null);
@@ -47,17 +48,18 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
     setError(null);
     setSubmittingSet(true);
     try {
-      const set = await createExerciseSet(sessionExerciseId, {
-        setNumber,
-        reps: Number(reps),
-        loadKg: Number(loadKg),
-        isTopSet,
-        isWorkingSet,
-      });
-      setSets(prev => [...prev, { ...set, reps: Number(reps), loadKg: Number(loadKg), isTopSet, isWorkingSet, setNumber }]);
+      const payload = isTimed
+        ? { setNumber, timeMinutes: Number(timeMinutes), isTopSet, isWorkingSet }
+        : { setNumber, reps: Number(reps), loadKg: Number(loadKg), isTopSet, isWorkingSet };
+      const set = await createExerciseSet(sessionExerciseId, payload);
+      setSets(prev => [...prev, { ...payload, ...set, setNumber }]);
       setSetNumber(n => n + 1);
-      setReps('');
-      setLoadKg('');
+      if (isTimed) {
+        setTimeMinutes('');
+      } else {
+        setReps('');
+        setLoadKg('');
+      }
       setIsTopSet(false);
     } catch (err) {
       setError(err.message);
@@ -77,6 +79,7 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
   }
 
   const selectedExercise = exercises.find(ex => ex.exerciseId === Number(exerciseId));
+  const isTimed = selectedExercise?.isTimed ?? false;
 
   const nonRunSessions = sessions.filter(s => s.sessionType !== 'run' && !s.isPlanned);
 
@@ -154,14 +157,23 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
               <label>Set #</label>
               <input type="number" value={setNumber} readOnly style={{ opacity: 0.6 }} />
             </div>
-            <div className="form-group">
-              <label>Reps</label>
-              <input type="number" min="1" value={reps} onChange={e => setReps(e.target.value)} required />
-            </div>
-            <div className="form-group">
-              <label>Load (kg)</label>
-              <input type="number" min="0" step="0.5" value={loadKg} onChange={e => setLoadKg(e.target.value)} required />
-            </div>
+            {isTimed ? (
+              <div className="form-group">
+                <label>Time (min)</label>
+                <input type="number" min="0.1" step="0.5" value={timeMinutes} onChange={e => setTimeMinutes(e.target.value)} required />
+              </div>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label>Reps</label>
+                  <input type="number" min="1" value={reps} onChange={e => setReps(e.target.value)} required />
+                </div>
+                <div className="form-group">
+                  <label>Load (kg)</label>
+                  <input type="number" min="0" step="0.5" value={loadKg} onChange={e => setLoadKg(e.target.value)} required />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="form-checkboxes">
@@ -184,13 +196,17 @@ export default function LogSetsForm({ sessions, exercises, onSetsLogged }) {
       {sets.length > 0 && (
         <div className="sets-list">
           <div className="sets-list-header">
-            <span>Set</span><span>Load</span><span>Reps</span><span>Flags</span>
+            <span>Set</span>
+            {isTimed ? <span>Time</span> : <><span>Load</span><span>Reps</span></>}
+            <span>Flags</span>
           </div>
           {sets.map(s => (
             <div key={s.setNumber} className="set-row">
               <span>{s.setNumber}</span>
-              <span>{s.loadKg} kg</span>
-              <span>{s.reps}</span>
+              {isTimed
+                ? <span>{s.timeMinutes} min</span>
+                : <><span>{s.loadKg} kg</span><span>{s.reps}</span></>
+              }
               <span className="set-flags">
                 {s.isTopSet && <span className="flag-badge flag-top">TOP</span>}
                 {s.isWorkingSet && <span className="flag-badge flag-work">W</span>}

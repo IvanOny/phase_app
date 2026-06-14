@@ -25,6 +25,7 @@ export default function PowerliftingDashboard({
   onLogout,
   onLoginClick,
   onFaqClick,
+  bwRefreshKey,
 }) {
   const [plMetrics, setPlMetrics] = useState(null);
   const [classification, setClassification] = useState(null);
@@ -57,7 +58,6 @@ export default function PowerliftingDashboard({
     }
   }, [selectedPhase?.phaseId, loadPlData]);
 
-  // Reload classification whenever sessions change (new bodyweight might have been logged)
   useEffect(() => {
     if (selectedPhase?.phaseId && sessions.length > 0) {
       getClassification(selectedPhase.phaseId, null)
@@ -65,6 +65,14 @@ export default function PowerliftingDashboard({
         .catch(() => {});
     }
   }, [sessions.length, selectedPhase?.phaseId]);
+
+  useEffect(() => {
+    if (bwRefreshKey > 0 && selectedPhase?.phaseId) {
+      getClassification(selectedPhase.phaseId, null)
+        .then(setClassification)
+        .catch(() => {});
+    }
+  }, [bwRefreshKey, selectedPhase?.phaseId]);
 
   return (
     <div className="dashboard">

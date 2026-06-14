@@ -62,6 +62,7 @@ function App() {
   const [initialPhaseType, setInitialPhaseType] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('dashboard');
+  const [bwKey, setBwKey] = useState(0);
 
   useEffect(() => {
     Promise.all([getPhases(), getExercises()]).then(([ps, exs]) => {
@@ -232,6 +233,7 @@ function App() {
         onLogout={logout}
         onLoginClick={() => setShowLogin(true)}
         onFaqClick={() => setPage('faq')}
+        bwRefreshKey={bwKey}
       />
       {isAuthenticated && (
         <DataEntryPanel
@@ -244,6 +246,7 @@ function App() {
           selectedPhaseId={selectedPhaseId}
           sessions={sessions}
           exercises={exercises}
+          isAuthenticated={isAuthenticated}
           onSessionLogged={session => {
             handleSessionLogged(session);
             setPanelOpen(false);
@@ -268,6 +271,7 @@ function App() {
             setSummaryKey(k => k + 1);
             setPanelOpen(false);
           }}
+          onBodyweightSaved={() => setBwKey(k => k + 1)}
         />
       )}
     </>

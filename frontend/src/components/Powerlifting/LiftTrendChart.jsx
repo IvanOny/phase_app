@@ -169,7 +169,7 @@ export default function LiftTrendChart({ sessions, plMetrics }) {
                     strokeWidth={lift === 'total' ? 2.5 : 1.8}
                     strokeDasharray={lift === 'total' ? '5 3' : undefined}
                     connectNulls
-                    dot={makeDot(lift)()}
+                    dot={makeDot(lift)}
                     activeDot={false}
                   />
                 ))}

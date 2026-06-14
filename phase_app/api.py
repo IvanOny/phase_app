@@ -270,30 +270,46 @@ class PhaseApi:
         })
 
     def create_exercise_set(self, session_exercise_id: int, payload: dict[str, Any]) -> ApiResponse:
-        required = ["setNumber", "reps", "loadKg"]
+        is_timed = "timeMinutes" in payload
+        if is_timed:
+            required = ["setNumber", "timeMinutes"]
+        else:
+            required = ["setNumber", "reps", "loadKg"]
         missing = [field for field in required if field not in payload]
         if missing:
             return ApiResponse(400, {"error": "validation_error", "missing": missing})
         try:
-            row = self._exec(
-                "INSERT INTO exercise_sets (session_exercise_id, set_number, reps, load_kg, is_top_set, is_working_set) "
-                "VALUES (%s, %s, %s, %s, %s, %s) RETURNING exercise_set_id",
-                (session_exercise_id, payload["setNumber"], payload["reps"], payload["loadKg"],
-                 int(payload.get("isTopSet", False)), int(payload.get("isWorkingSet", True))),
-            ).fetchone()
+            if is_timed:
+                row = self._exec(
+                    "INSERT INTO exercise_sets (session_exercise_id, set_number, time_minutes, is_top_set, is_working_set) "
+                    "VALUES (%s, %s, %s, %s, %s) RETURNING exercise_set_id",
+                    (session_exercise_id, payload["setNumber"], payload["timeMinutes"],
+                     int(payload.get("isTopSet", False)), int(payload.get("isWorkingSet", True))),
+                ).fetchone()
+            else:
+                row = self._exec(
+                    "INSERT INTO exercise_sets (session_exercise_id, set_number, reps, load_kg, is_top_set, is_working_set) "
+                    "VALUES (%s, %s, %s, %s, %s, %s) RETURNING exercise_set_id",
+                    (session_exercise_id, payload["setNumber"], payload["reps"], payload["loadKg"],
+                     int(payload.get("isTopSet", False)), int(payload.get("isWorkingSet", True))),
+                ).fetchone()
             self.conn.commit()
         except psycopg2.DatabaseError as exc:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
-        return ApiResponse(201, {
+        result = {
             "exerciseSetId": row["exercise_set_id"],
             "sessionExerciseId": session_exercise_id,
             "setNumber": payload["setNumber"],
-            "reps": payload["reps"],
-            "loadKg": payload["loadKg"],
             "isTopSet": bool(payload.get("isTopSet", False)),
             "isWorkingSet": bool(payload.get("isWorkingSet", True)),
-        })
+        }
+        if is_timed:
+            result["timeMinutes"] = payload["timeMinutes"]
+        else:
+            result["reps"] = payload["reps"]
+            result["loadKg"] = payload["loadKg"]
+        return ApiResponse(201, result)
 
     def get_session(self, session_id: int) -> ApiResponse:
         row = self._exec(
@@ -324,7 +340,7 @@ class PhaseApi:
 
     def get_exercise_sets(self, session_exercise_id: int) -> ApiResponse:
         rows = self._exec(
-            "SELECT exercise_set_id, session_exercise_id, set_number, reps, load_kg, is_top_set, is_working_set "
+            "SELECT exercise_set_id, session_exercise_id, set_number, reps, load_kg, is_top_set, is_working_set, time_minutes "
             "FROM exercise_sets WHERE session_exercise_id = %s ORDER BY set_number",
             (session_exercise_id,),
         ).fetchall()
@@ -336,6 +352,7 @@ class PhaseApi:
             "loadKg": r["load_kg"],
             "isTopSet": bool(r["is_top_set"]),
             "isWorkingSet": bool(r["is_working_set"]),
+            "timeMinutes": float(r["time_minutes"]) if r["time_minutes"] is not None else None,
         } for r in rows]})
 
     def list_phases(self) -> ApiResponse:
@@ -394,7 +411,8 @@ class PhaseApi:
     def list_exercises(self) -> ApiResponse:
         rows = self._exec(
             "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max, "
-            "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift "
+            "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift, "
+            "COALESCE(is_timed, FALSE) AS is_timed "
             "FROM exercises ORDER BY exercise_name"
         ).fetchall()
         return ApiResponse(200, {"items": [{
@@ -406,6 +424,7 @@ class PhaseApi:
             "isDeadlift":          bool(r["is_deadlift"]),
             "repMin":              r["rep_min"],
             "repMax":              r["rep_max"],
+            "isTimed":             bool(r["is_timed"]),
         } for r in rows]})
 
     def list_benchmarks(self, qp: dict[str, str]) -> ApiResponse:
@@ -637,11 +656,10 @@ class PhaseApi:
         return ApiResponse(200, {"deleted": True, "sessionExerciseId": session_exercise_id})
 
     def update_exercise_set(self, session_exercise_id: int, exercise_set_id: int, payload: dict[str, Any]) -> ApiResponse:
-        allowed = {"reps": "reps", "loadKg": "load_kg", "isTopSet": "is_top_set", "isWorkingSet": "is_working_set"}
+        allowed = {"reps": "reps", "loadKg": "load_kg", "isTopSet": "is_top_set", "isWorkingSet": "is_working_set", "timeMinutes": "time_minutes"}
         raw = {col: payload[key] for key, col in allowed.items() if key in payload}
         if not raw:
             return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields provided"})
-        # coerce booleans to int for DB
         updates = {}
         for col, val in raw.items():
             updates[col] = int(val) if col in ("is_top_set", "is_working_set") else val
@@ -650,7 +668,7 @@ class PhaseApi:
             cur = self._exec(
                 f"UPDATE exercise_sets SET {set_clause} "
                 "WHERE exercise_set_id = %s AND session_exercise_id = %s "
-                "RETURNING exercise_set_id, session_exercise_id, set_number, reps, load_kg, is_top_set, is_working_set",
+                "RETURNING exercise_set_id, session_exercise_id, set_number, reps, load_kg, is_top_set, is_working_set, time_minutes",
                 (*updates.values(), exercise_set_id, session_exercise_id),
             )
             row = cur.fetchone()
@@ -668,6 +686,7 @@ class PhaseApi:
             "loadKg": row["load_kg"],
             "isTopSet": bool(row["is_top_set"]),
             "isWorkingSet": bool(row["is_working_set"]),
+            "timeMinutes": float(row["time_minutes"]) if row["time_minutes"] is not None else None,
         })
 
     def delete_exercise_set(self, session_exercise_id: int, exercise_set_id: int) -> ApiResponse:
@@ -746,15 +765,16 @@ class PhaseApi:
         rep_max = payload.get("repMax")
         try:
             row = self._exec(
-                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift, rep_min, rep_max) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING exercise_id",
+                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift, rep_min, rep_max, is_timed) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING exercise_id",
                 (payload["exerciseName"],
                  int(payload.get("isBarbellBenchPress", False)),
                  int(payload.get("isBodyweight", False)),
                  int(payload.get("isSquat", False)),
                  int(payload.get("isDeadlift", False)),
                  int(rep_min) if rep_min is not None else None,
-                 int(rep_max) if rep_max is not None else None),
+                 int(rep_max) if rep_max is not None else None,
+                 int(payload.get("isTimed", False))),
             ).fetchone()
             self.conn.commit()
         except psycopg2.DatabaseError as exc:
@@ -769,6 +789,7 @@ class PhaseApi:
             "isDeadlift":          bool(payload.get("isDeadlift", False)),
             "repMin":              int(rep_min) if rep_min is not None else None,
             "repMax":              int(rep_max) if rep_max is not None else None,
+            "isTimed":             bool(payload.get("isTimed", False)),
         })
 
     def delete_exercise(self, exercise_id: int) -> ApiResponse:
@@ -924,11 +945,12 @@ class PhaseApi:
             "isDeadlift":           "is_deadlift",
             "repMin":               "rep_min",
             "repMax":               "rep_max",
+            "isTimed":              "is_timed",
         }
         raw = {col: payload[key] for key, col in allowed.items() if key in payload}
         if not raw:
             return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields provided"})
-        bool_cols = {"is_barbell_bench_press", "is_bodyweight", "is_squat", "is_deadlift"}
+        bool_cols = {"is_barbell_bench_press", "is_bodyweight", "is_squat", "is_deadlift", "is_timed"}
         int_cols = {"rep_min", "rep_max"}
         updates = {}
         for col, val in raw.items():
@@ -943,7 +965,8 @@ class PhaseApi:
             cur = self._exec(
                 f"UPDATE exercises SET {set_clause} WHERE exercise_id = %s "
                 "RETURNING exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, "
-                "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift, rep_min, rep_max",
+                "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift, rep_min, rep_max, "
+                "COALESCE(is_timed, FALSE) AS is_timed",
                 (*updates.values(), exercise_id),
             )
             row = cur.fetchone()
@@ -962,6 +985,7 @@ class PhaseApi:
             "isDeadlift":           bool(row["is_deadlift"]),
             "repMin":               row["rep_min"],
             "repMax":               row["rep_max"],
+            "isTimed":              bool(row["is_timed"]),
         })
 
     # ------------------------------------------------------------------ #
@@ -987,7 +1011,7 @@ class PhaseApi:
                 (phase_id,),
             ).fetchone()
             if row is None:
-                return ApiResponse(400, {"error": "no_bodyweight", "detail": "No bodyweight logged for this phase"})
+                return ApiResponse(404, {"error": "no_bodyweight", "detail": "No bodyweight logged for this phase"})
             bw = float(row["weight_kg"])
 
         # Best effective max per lift = MAX(e1RM across sessions, confirmed 1RM)

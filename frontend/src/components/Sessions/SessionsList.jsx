@@ -13,7 +13,7 @@ import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 import PhaseCalendar from './PhaseCalendar.jsx';
 
 const SESSION_TYPES_BENCH = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
-const SESSION_TYPES_PL    = ['squat', 'deadlift', 'run', 'other'];
+const SESSION_TYPES_PL    = ['squat', 'deadlift', 'mix', 'run', 'other'];
 const SESSION_TYPES_DEFAULT = SESSION_TYPES_BENCH;
 
 const TYPE_COLORS = {
@@ -22,6 +22,7 @@ const TYPE_COLORS = {
   speed_bench:  '#ec4899',
   squat:        '#6366f1',
   deadlift:     '#10b981',
+  mix:          '#f59e0b',
   mixed:        '#f59e0b',
   run:          '#22c55e',
   pull:         '#3b82f6',
@@ -257,7 +258,7 @@ function AddExerciseRow({ sessionId, catalog, nextOrder, onAdded }) {
 
   if (!open) {
     return (
-      <button className="add-inline-btn" style={{ marginTop: 8 }} onClick={() => setOpen(true)}>
+      <button className="add-inline-btn" onClick={() => setOpen(true)}>
         + Add exercise
       </button>
     );
@@ -339,87 +340,83 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
 
   if (!data) {
     return (
-      <tr>
-        <td colSpan={4} className="session-detail-cell">
-          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading…</span>
-        </td>
-      </tr>
+      <div className="session-detail-cell">
+        <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Loading…</span>
+      </div>
     );
   }
 
   return (
-    <tr>
-      <td colSpan={4} className="session-detail-cell">
-        <div className="session-detail">
-          {data.length === 0 && (
-            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
-          )}
-          {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => {
-            const catalogEx = catalog.find(e => e.exerciseId === se.exerciseId);
-            const isBodyweight = catalogEx?.isBodyweight ?? false;
-            const isTimed = catalogEx?.isTimed ?? false;
-            return (
-            <div key={se.sessionExerciseId} className="exercise-block">
-              <div className="exercise-block-header">
-                <div className="exercise-name" style={{ color: exerciseColor(se.exerciseId) }}>
-                  <span className="exercise-color-dot" style={{ background: exerciseColor(se.exerciseId) }} />
-                  {se.exerciseName}
-                </div>
-                {isAuthenticated && (
-                  <button
-                    className="icon-btn icon-btn--danger"
-                    title="Remove exercise from session"
-                    onClick={() => setConfirmExercise(se)}
-                  >🗑</button>
-                )}
+    <div className="session-detail-cell">
+      <div className="session-detail">
+        {data.length === 0 && (
+          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No exercises logged yet.</span>
+        )}
+        {data.filter(se => !filterExerciseId || se.exerciseId === Number(filterExerciseId)).map(se => {
+          const catalogEx = catalog.find(e => e.exerciseId === se.exerciseId);
+          const isBodyweight = catalogEx?.isBodyweight ?? false;
+          const isTimed = catalogEx?.isTimed ?? false;
+          return (
+          <div key={se.sessionExerciseId} className="exercise-block">
+            <div className="exercise-block-header">
+              <div className="exercise-name" style={{ color: exerciseColor(se.exerciseId) }}>
+                <span className="exercise-color-dot" style={{ background: exerciseColor(se.exerciseId) }} />
+                {se.exerciseName}
               </div>
-              <table className="sets-table">
-                <thead>
-                  <tr>
-                    <th>Set</th>
-                    {isTimed ? <th colSpan={2}>Time (min)</th> : <><th>Load</th><th>Reps</th></>}
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {se.sets.filter(s => s.isWorkingSet).map((set, idx) => (
-                    <SetRow
-                      key={set.exerciseSetId}
-                      set={set}
-                      displayNumber={idx + 1}
-                      sessionExerciseId={se.sessionExerciseId}
-                      onUpdated={updated => handleSetUpdated(se.sessionExerciseId, updated)}
-                      onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
-                      isAuthenticated={isAuthenticated}
-                      isBodyweight={isBodyweight}
-                      isTimed={isTimed}
-                      isTopSet={Boolean(set.isTopSet)}
-                    />
-                  ))}
-                  {isAuthenticated && (
-                    <AddSetRow
-                      sessionExerciseId={se.sessionExerciseId}
-                      nextSetNumber={se.sets.length + 1}
-                      onAdded={newSet => handleSetAdded(se.sessionExerciseId, newSet)}
-                      isBodyweight={isBodyweight}
-                      isTimed={isTimed}
-                    />
-                  )}
-                </tbody>
-              </table>
+              {isAuthenticated && (
+                <button
+                  className="icon-btn icon-btn--danger"
+                  title="Remove exercise from session"
+                  onClick={() => setConfirmExercise(se)}
+                >🗑</button>
+              )}
             </div>
-            );
-          })}
-          {isAuthenticated && (
-            <AddExerciseRow
-              sessionId={sessionId}
-              catalog={catalog}
-              nextOrder={data.length + 1}
-              onAdded={handleExerciseAdded}
-            />
-          )}
-        </div>
-      </td>
+            <table className="sets-table">
+              <thead>
+                <tr>
+                  <th>Set</th>
+                  {isTimed ? <th colSpan={2}>Time (min)</th> : <><th>Load</th><th>Reps</th></>}
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {se.sets.filter(s => s.isWorkingSet).map((set, idx) => (
+                  <SetRow
+                    key={set.exerciseSetId}
+                    set={set}
+                    displayNumber={idx + 1}
+                    sessionExerciseId={se.sessionExerciseId}
+                    onUpdated={updated => handleSetUpdated(se.sessionExerciseId, updated)}
+                    onDeleted={exerciseSetId => handleSetDeleted(se.sessionExerciseId, exerciseSetId)}
+                    isAuthenticated={isAuthenticated}
+                    isBodyweight={isBodyweight}
+                    isTimed={isTimed}
+                    isTopSet={Boolean(set.isTopSet)}
+                  />
+                ))}
+                {isAuthenticated && (
+                  <AddSetRow
+                    sessionExerciseId={se.sessionExerciseId}
+                    nextSetNumber={se.sets.length + 1}
+                    onAdded={newSet => handleSetAdded(se.sessionExerciseId, newSet)}
+                    isBodyweight={isBodyweight}
+                    isTimed={isTimed}
+                  />
+                )}
+              </tbody>
+            </table>
+          </div>
+          );
+        })}
+        {isAuthenticated && (
+          <AddExerciseRow
+            sessionId={sessionId}
+            catalog={catalog}
+            nextOrder={data.length + 1}
+            onAdded={handleExerciseAdded}
+          />
+        )}
+      </div>
       {confirmExercise && (
         <ConfirmDialog
           message={`Delete "${confirmExercise.exerciseName}" and all its sets?`}
@@ -427,7 +424,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
           onCancel={() => setConfirmExercise(null)}
         />
       )}
-    </tr>
+    </div>
   );
 }
 
@@ -502,123 +499,119 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
   if (editing) {
     const isRunEdit = form.sessionType === 'run';
     return (
-      <tr className="session-row session-row--editing">
-        <td colSpan={4} style={{ padding: 0 }}>
-          <div className="session-edit-inner">
-            <div className="session-edit-row1">
-              <input type="date" value={form.sessionDate} onChange={e => setForm(f => ({ ...f, sessionDate: e.target.value }))} className="inline-input" />
-              <select value={form.sessionType} onChange={e => setForm(f => ({ ...f, sessionType: e.target.value }))} className="inline-input">
-                {['squat','deadlift','mixed','heavy_bench','volume_bench','speed_bench','run','pull','rest','other'].map(t => <option key={t} value={t}>{formatType(t)}</option>)}
-              </select>
-              <input type="number" min="0" max="10" step="0.1" value={form.eliteHrvReadiness} onChange={e => setForm(f => ({ ...f, eliteHrvReadiness: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="HRV" />
-              <div className="session-edit-actions">
-                <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
-                <button className="icon-btn" onClick={e => { e.stopPropagation(); setEditing(false); }} title="Cancel">✕</button>
-              </div>
+      <div className="session-item session-item--editing" ref={rowRef}>
+        <div className="session-edit-inner">
+          <div className="session-edit-row1">
+            <input type="date" value={form.sessionDate} onChange={e => setForm(f => ({ ...f, sessionDate: e.target.value }))} className="inline-input" />
+            <select value={form.sessionType} onChange={e => setForm(f => ({ ...f, sessionType: e.target.value }))} className="inline-input">
+              {['squat','deadlift','mix','heavy_bench','volume_bench','speed_bench','run','pull','rest','other'].map(t => <option key={t} value={t}>{formatType(t)}</option>)}
+            </select>
+            <input type="number" min="0" max="10" step="0.1" value={form.eliteHrvReadiness} onChange={e => setForm(f => ({ ...f, eliteHrvReadiness: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="HRV" />
+            <div className="session-edit-actions">
+              <button className="icon-btn" onClick={saveEdit} disabled={saving} title="Save">✓</button>
+              <button className="icon-btn" onClick={e => { e.stopPropagation(); setEditing(false); }} title="Cancel">✕</button>
             </div>
-            {isRunEdit ? (
-              <>
-                <div className="session-edit-row2 session-edit-run-row">
-                  <input type="text" value={form.runType} onChange={e => setForm(f => ({ ...f, runType: e.target.value }))} className="inline-input" style={{ width: 90 }} placeholder="run type" title="Run type (easy, tempo…)" />
-                  <input type="number" min="0" step="0.01" value={form.distanceKm} onChange={e => setForm(f => ({ ...f, distanceKm: e.target.value }))} className="inline-input" style={{ width: 65 }} placeholder="km" title="Distance (km)" />
-                  <input type="text" value={form.durationDisplay} onChange={e => setForm(f => ({ ...f, durationDisplay: e.target.value }))} className="inline-input" style={{ width: 62 }} placeholder="MM:SS" title="Duration (MM:SS)" />
-                  <input type="text" value={form.paceDisplay} onChange={e => setForm(f => ({ ...f, paceDisplay: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="pace" title="Avg pace (M:SS/km)" />
-                  <input type="text" value={form.gapDisplay} onChange={e => setForm(f => ({ ...f, gapDisplay: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="GAP" title="Grade Adjusted Pace (M:SS/km)" />
-                  <input type="number" min="0" value={form.avgHr} onChange={e => setForm(f => ({ ...f, avgHr: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="HR" title="Avg HR (bpm)" />
-                  <input type="number" min="0" value={form.maxHr} onChange={e => setForm(f => ({ ...f, maxHr: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="maxHR" title="Max HR (bpm)" />
-                </div>
-                <div className="session-edit-row2 session-edit-run-row">
-                  <input type="number" min="0" value={form.avgCadence} onChange={e => setForm(f => ({ ...f, avgCadence: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="spm" title="Avg cadence (steps/min)" />
-                  <input type="number" min="0" value={form.avgGctMs} onChange={e => setForm(f => ({ ...f, avgGctMs: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="GCT ms" title="Avg ground contact time (ms)" />
-                  <input type="number" min="0" step="0.1" value={form.avgVoCm} onChange={e => setForm(f => ({ ...f, avgVoCm: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="VO cm" title="Avg vertical oscillation (cm)" />
-                  <input type="number" min="0" value={form.ascentM} onChange={e => setForm(f => ({ ...f, ascentM: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="↑ m" title="Ascent (m)" />
-                  <input type="number" min="1" max="10" step="0.5" value={form.rpe} onChange={e => setForm(f => ({ ...f, rpe: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="RPE" title="RPE (1–10)" />
-                  <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ flex: 1 }} placeholder="Notes…" />
-                </div>
-              </>
-            ) : (
-              <div className="session-edit-row2">
-                <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ width: '100%' }} placeholder="Notes…" />
-              </div>
-            )}
           </div>
-        </td>
-      </tr>
+          {isRunEdit ? (
+            <>
+              <div className="session-edit-row2 session-edit-run-row">
+                <input type="text" value={form.runType} onChange={e => setForm(f => ({ ...f, runType: e.target.value }))} className="inline-input" style={{ width: 90 }} placeholder="run type" title="Run type (easy, tempo…)" />
+                <input type="number" min="0" step="0.01" value={form.distanceKm} onChange={e => setForm(f => ({ ...f, distanceKm: e.target.value }))} className="inline-input" style={{ width: 65 }} placeholder="km" title="Distance (km)" />
+                <input type="text" value={form.durationDisplay} onChange={e => setForm(f => ({ ...f, durationDisplay: e.target.value }))} className="inline-input" style={{ width: 62 }} placeholder="MM:SS" title="Duration (MM:SS)" />
+                <input type="text" value={form.paceDisplay} onChange={e => setForm(f => ({ ...f, paceDisplay: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="pace" title="Avg pace (M:SS/km)" />
+                <input type="text" value={form.gapDisplay} onChange={e => setForm(f => ({ ...f, gapDisplay: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="GAP" title="Grade Adjusted Pace (M:SS/km)" />
+                <input type="number" min="0" value={form.avgHr} onChange={e => setForm(f => ({ ...f, avgHr: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="HR" title="Avg HR (bpm)" />
+                <input type="number" min="0" value={form.maxHr} onChange={e => setForm(f => ({ ...f, maxHr: e.target.value }))} className="inline-input" style={{ width: 50 }} placeholder="maxHR" title="Max HR (bpm)" />
+              </div>
+              <div className="session-edit-row2 session-edit-run-row">
+                <input type="number" min="0" value={form.avgCadence} onChange={e => setForm(f => ({ ...f, avgCadence: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="spm" title="Avg cadence (steps/min)" />
+                <input type="number" min="0" value={form.avgGctMs} onChange={e => setForm(f => ({ ...f, avgGctMs: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="GCT ms" title="Avg ground contact time (ms)" />
+                <input type="number" min="0" step="0.1" value={form.avgVoCm} onChange={e => setForm(f => ({ ...f, avgVoCm: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="VO cm" title="Avg vertical oscillation (cm)" />
+                <input type="number" min="0" value={form.ascentM} onChange={e => setForm(f => ({ ...f, ascentM: e.target.value }))} className="inline-input" style={{ width: 58 }} placeholder="↑ m" title="Ascent (m)" />
+                <input type="number" min="1" max="10" step="0.5" value={form.rpe} onChange={e => setForm(f => ({ ...f, rpe: e.target.value }))} className="inline-input" style={{ width: 52 }} placeholder="RPE" title="RPE (1–10)" />
+                <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ flex: 1 }} placeholder="Notes…" />
+              </div>
+            </>
+          ) : (
+            <div className="session-edit-row2">
+              <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="inline-input" style={{ width: '100%' }} placeholder="Notes…" />
+            </div>
+          )}
+        </div>
+      </div>
     );
   }
 
   const isPlanned = Boolean(session.isPlanned);
 
   return (
-    <Fragment>
-      <tr
-        ref={rowRef}
-        className={`session-row${isPlanned ? ' session-row--planned' : ''}`}
+    <div
+      className={`session-item${isPlanned ? ' session-item--planned' : ''}`}
+      ref={rowRef}
+    >
+      <div
+        className={`session-header${isOpen ? ' session-header--open' : ''}`}
         onClick={isPlanned ? undefined : onToggle}
         style={isPlanned ? { cursor: 'default', opacity: 0.65 } : {}}
       >
-        <td className="expand-icon">
-          {isPlanned
-            ? <span className="planned-badge">plan</span>
-            : <span className={`expand-caret${isOpen ? ' expand-caret--open' : ''}`} />
-          }
-        </td>
-        <td className="session-date-cell">
-          <div>{formatDate(session.sessionDate)}</div>
-          {session.sessionType === 'run' && runSummary(session) ? (
-            <div className="session-notes-preview session-run-summary">
-              {runSummary(session)}
-            </div>
-          ) : session.notes ? (
-            <div className={`session-notes-preview${isOpen ? ' session-notes-preview--expanded' : ''}`}>
-              {session.notes}
-            </div>
-          ) : null}
-        </td>
-        <td className="session-type">
-          <span className="type-dot" style={{ background: TYPE_COLORS[session.sessionType] ?? '#64748b' }} />
-          {formatType(session.sessionType)}
-        </td>
-        <td className="row-actions" onClick={e => e.stopPropagation()}>
-          {isAuthenticated && (
-            <>
-              {!isPlanned && <button className="icon-btn" onClick={startEdit} title="Edit session">✏</button>}
-              <button className="icon-btn icon-btn--danger" onClick={e => { e.stopPropagation(); setConfirmOpen(true); }} title="Delete session">🗑</button>
-            </>
-          )}
-        </td>
-      </tr>
+        <div className="session-header-row1">
+          <div className="session-caret-cell">
+            {isPlanned
+              ? <span className="planned-badge">plan</span>
+              : <span className={`expand-caret${isOpen ? ' expand-caret--open' : ''}`} />
+            }
+          </div>
+          <div className="session-date-text">{formatDate(session.sessionDate)}</div>
+          <div className="session-type-cell">
+            <span className="type-dot" style={{ background: TYPE_COLORS[session.sessionType] ?? '#64748b' }} />
+            {formatType(session.sessionType)}
+          </div>
+          <div className="session-actions-cell" onClick={e => e.stopPropagation()}>
+            {isAuthenticated && (
+              <>
+                {!isPlanned && <button className="icon-btn" onClick={startEdit} title="Edit session">✏</button>}
+                <button className="icon-btn icon-btn--danger" onClick={e => { e.stopPropagation(); setConfirmOpen(true); }} title="Delete session">🗑</button>
+              </>
+            )}
+          </div>
+        </div>
+        {(session.sessionType === 'run' ? runSummary(session) : session.notes) ? (
+          <div className="session-header-row2">
+            {session.sessionType === 'run' && runSummary(session) ? (
+              <div className="session-notes-preview session-run-summary">{runSummary(session)}</div>
+            ) : (
+              <div className={`session-notes-preview${isOpen ? ' session-notes-preview--expanded' : ''}`}>{session.notes}</div>
+            )}
+          </div>
+        ) : null}
+      </div>
       {isOpen && !isPlanned && onBackToCalendar && (
-        <tr>
-          <td colSpan={4} style={{ paddingBottom: 0, paddingLeft: 'var(--space-6)', paddingTop: 'var(--space-4)' }}>
-            <button className="sessions-back-to-cal-btn" onClick={onBackToCalendar}>
-              ↑ Schedule &amp; Filters
-            </button>
-          </td>
-        </tr>
+        <div className="session-back-bar">
+          <button className="sessions-back-to-cal-btn" onClick={onBackToCalendar}>
+            ↑ Schedule &amp; Filters
+          </button>
+        </div>
       )}
       {isOpen && !isPlanned && session.sessionType === 'run' && (
-        <tr>
-          <td colSpan={4} className="session-detail-cell">
-            <div className="session-detail session-run-detail">
-              {session.runType && <div className="run-type-badge">{session.runType}</div>}
-              <div className="run-metrics-grid">
-                {session.distanceKm != null && <div className="run-metric-item"><span className="run-metric-label">Distance</span><span className="run-metric-value">{session.distanceKm} km</span></div>}
-                {session.durationSeconds != null && <div className="run-metric-item"><span className="run-metric-label">Duration</span><span className="run-metric-value">{formatDuration(session.durationSeconds)}</span></div>}
-                {session.avgPaceSecPerKm != null && <div className="run-metric-item"><span className="run-metric-label">Avg pace</span><span className="run-metric-value">{formatPace(session.avgPaceSecPerKm)}</span></div>}
-                {session.avgGapPaceSecPerKm != null && <div className="run-metric-item"><span className="run-metric-label">GAP</span><span className="run-metric-value">{formatPace(session.avgGapPaceSecPerKm)}</span></div>}
-                {session.avgHr != null && <div className="run-metric-item"><span className="run-metric-label">Avg HR</span><span className="run-metric-value">{session.avgHr} bpm</span></div>}
-                {session.maxHr != null && <div className="run-metric-item"><span className="run-metric-label">Max HR</span><span className="run-metric-value">{session.maxHr} bpm</span></div>}
-                {session.avgCadence != null && <div className="run-metric-item"><span className="run-metric-label">Cadence</span><span className="run-metric-value">{session.avgCadence} spm</span></div>}
-                {session.avgGctMs != null && <div className="run-metric-item"><span className="run-metric-label">GCT</span><span className="run-metric-value">{session.avgGctMs} ms</span></div>}
-                {session.avgVoCm != null && <div className="run-metric-item"><span className="run-metric-label">Vert. osc.</span><span className="run-metric-value">{session.avgVoCm} cm</span></div>}
-                {session.ascentM != null && <div className="run-metric-item"><span className="run-metric-label">Ascent</span><span className="run-metric-value">{session.ascentM} m</span></div>}
-                {session.rpe != null && <div className="run-metric-item"><span className="run-metric-label">RPE</span><span className="run-metric-value">{session.rpe}/10</span></div>}
-              </div>
-              {session.notes && <div className="run-metrics-notes">{session.notes}</div>}
+        <div className="session-detail-cell">
+          <div className="session-detail session-run-detail">
+            {session.runType && <div className="run-type-badge">{session.runType}</div>}
+            <div className="run-metrics-grid">
+              {session.distanceKm != null && <div className="run-metric-item"><span className="run-metric-label">Distance</span><span className="run-metric-value">{session.distanceKm} km</span></div>}
+              {session.durationSeconds != null && <div className="run-metric-item"><span className="run-metric-label">Duration</span><span className="run-metric-value">{formatDuration(session.durationSeconds)}</span></div>}
+              {session.avgPaceSecPerKm != null && <div className="run-metric-item"><span className="run-metric-label">Avg pace</span><span className="run-metric-value">{formatPace(session.avgPaceSecPerKm)}</span></div>}
+              {session.avgGapPaceSecPerKm != null && <div className="run-metric-item"><span className="run-metric-label">GAP</span><span className="run-metric-value">{formatPace(session.avgGapPaceSecPerKm)}</span></div>}
+              {session.avgHr != null && <div className="run-metric-item"><span className="run-metric-label">Avg HR</span><span className="run-metric-value">{session.avgHr} bpm</span></div>}
+              {session.maxHr != null && <div className="run-metric-item"><span className="run-metric-label">Max HR</span><span className="run-metric-value">{session.maxHr} bpm</span></div>}
+              {session.avgCadence != null && <div className="run-metric-item"><span className="run-metric-label">Cadence</span><span className="run-metric-value">{session.avgCadence} spm</span></div>}
+              {session.avgGctMs != null && <div className="run-metric-item"><span className="run-metric-label">GCT</span><span className="run-metric-value">{session.avgGctMs} ms</span></div>}
+              {session.avgVoCm != null && <div className="run-metric-item"><span className="run-metric-label">Vert. osc.</span><span className="run-metric-value">{session.avgVoCm} cm</span></div>}
+              {session.ascentM != null && <div className="run-metric-item"><span className="run-metric-label">Ascent</span><span className="run-metric-value">{session.ascentM} m</span></div>}
+              {session.rpe != null && <div className="run-metric-item"><span className="run-metric-label">RPE</span><span className="run-metric-value">{session.rpe}/10</span></div>}
             </div>
-          </td>
-        </tr>
+            {session.notes && <div className="run-metrics-notes">{session.notes}</div>}
+          </div>
+        </div>
       )}
       {isOpen && !isPlanned && session.sessionType !== 'run' && (
         <SessionDetail
@@ -637,7 +630,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
           onCancel={() => setConfirmOpen(false)}
         />
       )}
-    </Fragment>
+    </div>
   );
 }
 
@@ -708,7 +701,9 @@ function FilterBar({ filters, onChange, exercises, sessionTypes = SESSION_TYPES_
           >
             <option value="">All</option>
             {exercises.map(ex => (
-              <option key={ex.exerciseId} value={ex.exerciseId}>{ex.exerciseName}</option>
+              <option key={ex.exerciseId} value={ex.exerciseId}>
+                {ex.exerciseName.length > 32 ? ex.exerciseName.slice(0, 32) + '…' : ex.exerciseName}
+              </option>
             ))}
           </select>
         </div>
@@ -750,7 +745,6 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
   // Exercises that appear in at least one session matching the active type filter
   const allTypesSelected = filters.types.length === sessionTypes.length;
   const availableExercises = useMemo(() => {
-    if (allTypesSelected) return exercises;
     const matchingSessionIds = new Set(
       sessions.filter(s => filters.types.includes(s.sessionType)).map(s => s.sessionId)
     );
@@ -761,7 +755,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
       });
     });
     return exercises.filter(e => exerciseIds.has(e.exerciseId));
-  }, [sessions, filters.types, exerciseVolumes, exercises, allTypesSelected]);
+  }, [sessions, filters.types, exerciseVolumes, exercises]);
 
   function handleFiltersChange(next) {
     const typesChanged = next.types.join(',') !== filters.types.join(',');
@@ -890,20 +884,20 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
           {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}
         </div>
       ) : (
-        <div className="sessions-table-wrap" ref={tableRef}>
-          <table className="sessions-table">
-            <thead>
-              <tr>
-                <th></th>
-                <th>Date</th>
-                <th>Type</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleSessions.map(s => (
+        <div className="sessions-list-wrap" ref={tableRef}>
+          <div className="sessions-list-header">
+            <div className="sessions-lh-caret" />
+            <div className="sessions-lh-date">Date</div>
+            <div className="sessions-lh-type">Type</div>
+            <div className="sessions-lh-actions" />
+          </div>
+          {visibleSessions.map((s, i) => (
+            <Fragment key={s.sessionId}>
+              {filters.exerciseId && i > 0 && (
+                <div className="session-group-divider" />
+              )}
+              <div className={filters.exerciseId ? `session-group session-group--${i % 2 === 0 ? 'even' : 'odd'}` : ''}>
                 <SessionRow
-                  key={s.sessionId}
                   session={s}
                   e1rm={e1rmMap[s.sessionId]}
                   vol={volumeMap[s.sessionId]}
@@ -917,9 +911,9 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
                   rowRef={el => { rowRefs.current[s.sessionId] = el; }}
                   onBackToCalendar={phase ? () => wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) : undefined}
                 />
-              ))}
-            </tbody>
-          </table>
+              </div>
+            </Fragment>
+          ))}
           {!forceShowAll && hiddenCount > 0 && (
             <button className="sessions-show-more-btn" onClick={() => setShowAll(true)}>
               Show {hiddenCount} more

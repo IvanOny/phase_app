@@ -663,10 +663,129 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Sessions Table */
-.sessions-table-wrap {
-  overflow-x: auto;
+/* Sessions List (flex layout) */
+.sessions-list-wrap {
   margin-top: var(--space-4);
+}
+
+.sessions-list-header {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.sessions-lh-caret {
+  flex: 0 0 24px;
+}
+
+.sessions-lh-date {
+  flex: 1;
+}
+
+.sessions-lh-type {
+  flex: 0 0 80px;
+}
+
+.sessions-lh-actions {
+  flex: 0 0 40px;
+}
+
+/* Session item */
+.session-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.session-item--planned {
+  opacity: 0.65;
+}
+
+.session-header {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.session-header:hover {
+  background: var(--bg-elevated);
+}
+
+.session-header-row1 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.session-header-row2 {
+  padding-top: var(--space-1);
+  width: 100%;
+}
+
+.session-caret-cell {
+  flex: 0 0 24px;
+  display: flex;
+  align-items: center;
+}
+
+.session-date-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.session-type-cell {
+  flex: 0 0 80px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-size: 13px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.session-actions-cell {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.session-actions-cell .icon-btn {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.session-header:hover .session-actions-cell .icon-btn {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .session-actions-cell .icon-btn {
+    opacity: 1;
+  }
+}
+
+/* Back-to-calendar bar */
+.session-back-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--space-1) var(--space-3) 0;
+}
+
+/* Session detail cell (expanded) */
+.session-detail-cell {
+  padding: var(--space-1) 4px var(--space-2);
 }
 
 .sessions-back-to-cal-btn {
@@ -677,7 +796,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: var(--space-1) var(--space-3);
-  margin-bottom: var(--space-3);
+  margin: 0;
   font-size: 11px;
   font-weight: 600;
   font-family: inherit;
@@ -890,38 +1009,6 @@
   .nsc-mobile-carousel { display: block; }
 }
 
-.sessions-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.sessions-table th {
-  text-align: left;
-  padding: var(--space-2) var(--space-3);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-}
-
-.sessions-table td {
-  padding: var(--space-3);
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  vertical-align: middle;
-}
-
-.session-date-cell {
-  max-width: 160px;
-  white-space: normal;
-}
-
 .session-notes-preview {
   font-size: 11px;
   color: var(--text-muted);
@@ -929,27 +1016,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 140px;
 }
 .session-notes-preview--expanded {
   white-space: normal;
   overflow: visible;
   text-overflow: unset;
   max-width: none;
-}
-
-.sessions-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.sessions-table tbody tr:hover td {
-  background: var(--bg-elevated);
-}
-
-.session-type {
-  text-transform: capitalize;
-  color: var(--text-primary) !important;
-  white-space: nowrap;
 }
 
 .type-dot {
@@ -960,16 +1032,6 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-}
-
-.session-row {
-  cursor: pointer;
-}
-
-.expand-icon {
-  width: 28px;
-  padding-left: var(--space-2) !important;
-  padding-right: 0 !important;
 }
 
 .expand-caret {
@@ -988,7 +1050,7 @@
   border-color: transparent transparent transparent var(--accent);
 }
 
-.session-row:hover .expand-caret {
+.session-header:hover .expand-caret {
   border-color: transparent transparent transparent var(--accent);
 }
 
@@ -1003,16 +1065,11 @@
   padding: 1px 4px;
 }
 
-.session-detail-cell {
-  padding: 0 !important;
-  background: var(--bg-app);
-}
-
 .session-detail {
-  padding: var(--space-6);
+  padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 0;
 }
 
 .exercise-block {
@@ -1137,8 +1194,35 @@
   border-color: var(--accent);
 }
 
+/* Session groups with alternating backgrounds (exercise filter active) */
+.session-group--even .session-header {
+  background: var(--bg-card);
+}
+
+.session-group--even .session-detail-cell,
+.session-group--even .session-back-bar {
+  background: var(--bg-card);
+}
+
+.session-group--odd .session-header {
+  background: var(--bg-input);
+}
+
+.session-group--odd .session-detail-cell,
+.session-group--odd .session-back-bar {
+  background: var(--bg-input);
+}
+
+/* Session group divider (shown when exercise filter is active) */
+.session-group-divider {
+  height: 0;
+  border-top: 2px solid var(--accent);
+  margin: 0 var(--space-4);
+}
+
 /* Row actions cell */
 .row-actions {
+  width: 1px;
   white-space: nowrap;
 }
 
@@ -1147,13 +1231,23 @@
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 
-.sessions-table tr:hover .row-actions .icon-btn {
+tr:hover .row-actions .icon-btn {
   opacity: 1;
 }
 
 @media (hover: none) {
   .row-actions .icon-btn {
     opacity: 1;
+  }
+}
+
+/* Edit button shown in expanded row on touch devices (actions column off-screen) */
+.sessions-edit-btn-touch {
+  display: none;
+}
+@media (hover: none) {
+  .sessions-edit-btn-touch {
+    display: inline-flex;
   }
 }
 
@@ -1368,6 +1462,19 @@ button.summary-tile--open {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+
+.sessions-filter-bar .filter-section {
+  width: 100%;
+  min-width: 0;
+}
+
+.sessions-filter-bar .filter-section .inline-input {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1;
 }
 
 .filter-section {
@@ -1422,11 +1529,9 @@ button.summary-tile--open {
   gap: var(--space-2);
 }
 
-/* Session row editing */
-.session-row--editing td {
+/* Session item editing */
+.session-item--editing {
   background: var(--bg-elevated);
-  padding-top: var(--space-2);
-  padding-bottom: var(--space-2);
 }
 
 .set-edit-inner {
@@ -1601,7 +1706,6 @@ button.summary-tile--open {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-2);
 }
 
 /* E1RM dot ripple animation */
@@ -1620,27 +1724,8 @@ button.summary-tile--open {
   animation: dot-ripple 1s ease-out infinite;
 }
 
-/* ---- Mobile: no horizontal scroll in sessions table ---- */
+/* ---- Mobile: sessions list ---- */
 @media (max-width: 600px) {
-  .sessions-table-wrap {
-    overflow-x: visible;
-  }
-
-  /* Hide Readiness (col 4) and Volume (col 6) */
-  .sessions-table th:nth-child(4),
-  .sessions-table td:nth-child(4),
-  .sessions-table th:nth-child(6),
-  .sessions-table td:nth-child(6) {
-    display: none;
-  }
-
-  .sessions-table td {
-    white-space: normal;
-  }
-
-  .session-notes-preview {
-    max-width: 100px;
-  }
 
   /* Editing row: inner flex layout */
   .session-edit-row1 {

@@ -99,7 +99,8 @@ export default function PowerliftingDashboard({
             classification={classification}
             loading={classLoading}
           />
-          <LiftTrendChart sessions={sessions} plMetrics={plMetrics} />
+          <LiftTrendChart sessions={sessions} plMetrics={plMetrics} showTotal={true} />
+          <LiftTrendChart sessions={sessions} plMetrics={plMetrics} showTotal={false} />
         </>
       )}
 

@@ -35,7 +35,7 @@ function buildChartData(sessions, plMetrics) {
   const { e1rm = {}, confirmedMax = {} } = plMetrics;
   const sorted = [...sessions].sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate));
 
-  // Running best per lift (starts with confirmed max if it pre-dates sessions)
+  // Running best per lift — used for the Total line only
   const runningBest = {
     squat:    confirmedMax.squat    || 0,
     bench:    confirmedMax.bench    || 0,
@@ -43,41 +43,47 @@ function buildChartData(sessions, plMetrics) {
   };
 
   const points = [];
+  let anySeen = false;
 
   for (const s of sorted) {
     const sid = String(s.sessionId);
-    let updated = false;
 
-    for (const lift of ['squat', 'bench', 'deadlift']) {
-      const sessionData = e1rm[lift]?.[sid];
-      if (sessionData?.topSetE1rmKg > runningBest[lift]) {
-        runningBest[lift] = sessionData.topSetE1rmKg;
-        updated = true;
-      }
-    }
+    const sessionSquat    = e1rm.squat?.[sid]?.topSetE1rmKg    ?? null;
+    const sessionBench    = e1rm.bench?.[sid]?.topSetE1rmKg    ?? null;
+    const sessionDeadlift = e1rm.deadlift?.[sid]?.topSetE1rmKg ?? null;
+    const anyLiftDone     = sessionSquat != null || sessionBench != null || sessionDeadlift != null;
 
-    // Only emit a point if at least one lift has been seen
-    if (runningBest.squat || runningBest.bench || runningBest.deadlift) {
-      const total = runningBest.squat + runningBest.bench + runningBest.deadlift;
-      points.push({
-        date:     s.sessionDate,
-        squat:    runningBest.squat    || null,
-        bench:    runningBest.bench    || null,
-        deadlift: runningBest.deadlift || null,
-        total:    total || null,
-        // raw session e1RMs for tooltip
-        _squat:    e1rm.squat?.[sid]?.topSetE1rmKg    ?? null,
-        _bench:    e1rm.bench?.[sid]?.topSetE1rmKg    ?? null,
-        _deadlift: e1rm.deadlift?.[sid]?.topSetE1rmKg ?? null,
-        updated,
-      });
-    }
+    // Update running bests for Total
+    if (sessionSquat    != null) runningBest.squat    = Math.max(runningBest.squat,    sessionSquat);
+    if (sessionBench    != null) runningBest.bench    = Math.max(runningBest.bench,    sessionBench);
+    if (sessionDeadlift != null) runningBest.deadlift = Math.max(runningBest.deadlift, sessionDeadlift);
+
+    if (anyLiftDone) anySeen = true;
+
+    // Only emit points once we have at least one lift recorded
+    if (!anySeen) continue;
+
+    const runningTotal = runningBest.squat + runningBest.bench + runningBest.deadlift;
+
+    points.push({
+      date:     s.sessionDate,
+      // Individual lifts: only non-null on sessions where they were actually performed
+      squat:    sessionSquat,
+      bench:    sessionBench,
+      deadlift: sessionDeadlift,
+      // Total: running cumulative S+B+D, only shown on lift days
+      total:    anyLiftDone ? (runningTotal || null) : null,
+      // kept as aliases for tooltip compatibility
+      _squat:    sessionSquat,
+      _bench:    sessionBench,
+      _deadlift: sessionDeadlift,
+    });
   }
 
   return points;
 }
 
-export default function LiftTrendChart({ sessions, plMetrics }) {
+export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }) {
   const colors = useChartColors();
   const isTouch = useIsTouchDevice();
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-pl');
@@ -85,6 +91,15 @@ export default function LiftTrendChart({ sessions, plMetrics }) {
 
   const data = buildChartData(sessions, plMetrics);
   const hasData = data.length > 0;
+
+  // Last index in data where each lift has a non-null value (for inline label placement)
+  const lastIndexByLift = {};
+  const liftsToShow = ['squat', 'bench', 'deadlift', ...(showTotal ? ['total'] : [])];
+  liftsToShow.forEach(lift => {
+    for (let i = data.length - 1; i >= 0; i--) {
+      if (data[i][lift] != null) { lastIndexByLift[lift] = i; break; }
+    }
+  });
 
   function getDotPos(cx, cy) {
     if (!chartRef.current) return null;
@@ -97,19 +112,24 @@ export default function LiftTrendChart({ sessions, plMetrics }) {
   function makeDot(lift) {
     const cfg = LIFT_CONFIG[lift];
     return function Dot(props) {
-      const { cx, cy, payload } = props;
-      if (!payload[lift]) return null;
-      const isActive = tooltip?.data?.date === payload.date;
+      const { cx, cy, payload, index } = props;
+      // Only render a dot on days where this lift was actually performed
+      const hasEntry = lift === 'total'
+        ? (payload._squat != null || payload._bench != null || payload._deadlift != null)
+        : payload[`_${lift}`] != null;
+      if (!hasEntry) return null;
+      const isActive = tooltip?.data?.date === payload.date && tooltip?.lift === lift;
       const isHovered = hoveredDate === payload.date;
       const r = lift === 'total' ? 6 : 5;
       const dotR = isActive ? r + 2 : isHovered ? r + 1 : r;
+      const isLast = index === lastIndexByLift[lift];
 
       const handlers = {
         onMouseEnter() {
           setHoveredDate(payload.date);
           if (!isTouch) {
             const pos = getDotPos(cx, cy);
-            if (pos) openTooltip({ ...pos, data: payload });
+            if (pos) openTooltip({ ...pos, data: payload, lift });
           }
         },
         onMouseLeave() {
@@ -120,7 +140,8 @@ export default function LiftTrendChart({ sessions, plMetrics }) {
           if (!isTouch) return;
           const pos = getDotPos(cx, cy);
           if (!pos) return;
-          openTooltip(tooltip?.data?.date === payload.date ? null : { ...pos, data: payload });
+          const isSame = tooltip?.data?.date === payload.date && tooltip?.lift === lift;
+          openTooltip(isSame ? null : { ...pos, data: payload, lift });
         },
       };
 
@@ -133,6 +154,18 @@ export default function LiftTrendChart({ sessions, plMetrics }) {
             stroke={isActive || isHovered ? cfg.color : colors.bgApp}
             strokeWidth={isActive ? 3 : 1.5}
           />
+          {isLast && (
+            <text
+              x={cx + dotR + 4}
+              y={cy + 4}
+              fill={cfg.color}
+              fontSize={11}
+              fontWeight={600}
+              style={{ pointerEvents: 'none', userSelect: 'none' }}
+            >
+              {cfg.label}
+            </text>
+          )}
         </g>
       );
     };
@@ -151,7 +184,7 @@ export default function LiftTrendChart({ sessions, plMetrics }) {
             onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}
           >
             <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={data} margin={{ top: 8, right: 16, bottom: 24, left: 0 }}
+              <LineChart data={data} margin={{ top: 8, right: 64, bottom: 24, left: 0 }}
                 onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
                 <XAxis dataKey="date" tickFormatter={formatDate}
@@ -160,7 +193,7 @@ export default function LiftTrendChart({ sessions, plMetrics }) {
                 <YAxis domain={['dataMin - 10', 'dataMax + 10']}
                   tick={{ fill: colors.textMuted, fontSize: 12 }}
                   axisLine={false} tickLine={false} width={44} />
-                {['squat', 'bench', 'deadlift', 'total'].map(lift => (
+                {['squat', 'bench', 'deadlift', ...(showTotal ? ['total'] : [])].map(lift => (
                   <Line
                     key={lift}
                     type="monotone"
@@ -190,41 +223,25 @@ export default function LiftTrendChart({ sessions, plMetrics }) {
                 onClick={isTouch ? () => openTooltip(null) : undefined}
               >
                 <div className="tooltip-date">{formatDate(tooltip.data.date)}</div>
-                {['squat', 'bench', 'deadlift'].map(lift => {
-                  const sessionVal = tooltip.data[`_${lift}`];
-                  const bestVal = tooltip.data[lift];
-                  return bestVal != null ? (
-                    <div key={lift} className="tooltip-row">
-                      <span style={{ color: LIFT_CONFIG[lift].color, fontWeight: 600, textTransform: 'capitalize' }}>{lift}</span>
-                      <strong>
-                        {bestVal}
-                        {sessionVal != null && sessionVal !== bestVal && (
-                          <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> ({sessionVal} today)</span>
-                        )}
-                      </strong>
-                    </div>
-                  ) : null;
-                })}
-                {tooltip.data.total != null && (
-                  <div className="tooltip-row" style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+                {tooltip.lift === 'total' ? (
+                  <div className="tooltip-row">
                     <span style={{ color: LIFT_CONFIG.total.color, fontWeight: 600 }}>Total</span>
                     <strong>{tooltip.data.total}</strong>
                   </div>
+                ) : (
+                  (() => {
+                    const val = tooltip.data[tooltip.lift];
+                    const cfg = LIFT_CONFIG[tooltip.lift];
+                    return val != null ? (
+                      <div className="tooltip-row">
+                        <span style={{ color: cfg.color, fontWeight: 600, textTransform: 'capitalize' }}>{cfg.label}</span>
+                        <strong>{val}</strong>
+                      </div>
+                    ) : null;
+                  })()
                 )}
               </div>
             )}
-          </div>
-          <div className="chart-legend">
-            {Object.entries(LIFT_CONFIG).map(([key, cfg]) => (
-              <span key={key} className="chart-legend-item">
-                <svg width={16} height={10} style={{ flexShrink: 0, verticalAlign: 'middle' }}>
-                  <line x1={0} y1={5} x2={16} y2={5}
-                    stroke={cfg.color} strokeWidth={key === 'total' ? 2.5 : 1.8}
-                    strokeDasharray={key === 'total' ? '5 3' : undefined} />
-                </svg>
-                {cfg.label}
-              </span>
-            ))}
           </div>
         </>
       ) : (

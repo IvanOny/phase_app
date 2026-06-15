@@ -171,10 +171,12 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
             <div className="phase-progress-fill" style={{ width: `${pct}%` }} />
             <span className="phase-progress-date-start">{fmtShortDate(phase.startDate)}</span>
             <span className="phase-progress-date-end">{fmtShortDate(phase.endDate)}</span>
-            <span
-              className={`phase-progress-label${pct >= 50 ? ' phase-progress-label--inside' : ''}`}
-              style={{ left: `${pct}%` }}
-            >{pct}%</span>
+            {pct < 100 && (
+              <span
+                className={`phase-progress-label${pct >= 50 ? ' phase-progress-label--inside' : ''}`}
+                style={{ left: `${pct}%` }}
+              >{pct}%</span>
+            )}
           </div>
         </div>
       )}
@@ -231,7 +233,7 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
       {showDays && (
         <div className="e1rm-explanation" style={{ marginTop: 'var(--space-2)' }}>
           <p>{formatDateRange(phase.startDate, phase.endDate)}</p>
-          <p>Day {dayNum} of {totalDays} — <strong>{daysLeft} days</strong> remaining (<strong>{pct}%</strong> complete)</p>
+          <p>Day {dayNum} of {totalDays} — <strong>{daysLeft} days</strong> remaining{pct < 100 && <> (<strong>{pct}%</strong> complete)</>}</p>
         </div>
       )}
       {confirmOpen && (

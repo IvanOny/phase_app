@@ -166,6 +166,7 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
         isBarbellBenchPress: exerciseMeta.isBarbellBenchPress ?? false,
         isSquat: exerciseMeta.isSquat ?? false,
         isDeadlift: exerciseMeta.isDeadlift ?? false,
+        isTimed: exerciseMeta.isTimed ?? false,
       });
       onExerciseCreated?.(created);
       return created.exerciseId;
@@ -221,14 +222,21 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
           exerciseId,
           exerciseOrder: exIdx + 1,
         });
+        const catalogEx = exercises.find(e => e.exerciseName.toLowerCase() === ex.exerciseName.trim().toLowerCase());
+        const isTimed = catalogEx?.isTimed ?? ex.isTimed ?? false;
         for (const set of ex.sets) {
-          await createExerciseSet(sessionExercise.sessionExerciseId, {
+          const setPayload = {
             setNumber: set.setNumber,
-            reps: Number(set.reps),
-            loadKg: Number(set.loadKg),
             isTopSet: Boolean(set.isTopSet),
             isWorkingSet: Boolean(set.isWorkingSet),
-          });
+          };
+          if (isTimed) {
+            setPayload.timeMinutes = set.timeMinutes != null ? Number(set.timeMinutes) : 0;
+          } else {
+            setPayload.reps = Number(set.reps);
+            setPayload.loadKg = Number(set.loadKg);
+          }
+          await createExerciseSet(sessionExercise.sessionExerciseId, setPayload);
         }
       }
 
@@ -529,7 +537,10 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
         </>
       )}
 
-      {editedData.sessionType !== 'run' && editedData.exercises.map((ex, exIdx) => (
+      {editedData.sessionType !== 'run' && editedData.exercises.map((ex, exIdx) => {
+        const catalogEx = exercises.find(e => e.exerciseName.toLowerCase() === ex.exerciseName.trim().toLowerCase());
+        const isTimed = catalogEx?.isTimed ?? false;
+        return (
         <div key={exIdx} className="screenshot-exercise-block">
           <div className="screenshot-exercise-header">
             <div className="exercise-active-label">{ex.exerciseName}</div>
@@ -543,29 +554,43 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
           <div className="sets-list">
             <div className="sets-list-header screenshot-sets-header">
               <span>Set</span>
-              <span>Load (kg)</span>
-              <span>Reps</span>
+              {isTimed ? <span style={{ gridColumn: 'span 2' }}>Time (min)</span> : <><span>Load (kg)</span><span>Reps</span></>}
               <span>Flags</span>
               <span></span>
             </div>
             {ex.sets.map((set, setIdx) => (
               <div key={setIdx} className="set-row screenshot-set-row">
                 <span>{set.setNumber}</span>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  value={set.loadKg}
-                  onChange={e => updateSetField(exIdx, setIdx, 'loadKg', e.target.value)}
-                  className="screenshot-set-input"
-                />
-                <input
-                  type="number"
-                  min="1"
-                  value={set.reps}
-                  onChange={e => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
-                  className="screenshot-set-input"
-                />
+                {isTimed ? (
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={set.timeMinutes ?? ''}
+                    onChange={e => updateSetField(exIdx, setIdx, 'timeMinutes', e.target.value)}
+                    className="screenshot-set-input"
+                    style={{ gridColumn: 'span 2' }}
+                    placeholder="min"
+                  />
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={set.loadKg}
+                      onChange={e => updateSetField(exIdx, setIdx, 'loadKg', e.target.value)}
+                      className="screenshot-set-input"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      value={set.reps}
+                      onChange={e => updateSetField(exIdx, setIdx, 'reps', e.target.value)}
+                      className="screenshot-set-input"
+                    />
+                  </>
+                )}
                 <span className="set-flags">
                   <button
                     type="button"
@@ -594,7 +619,8 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
             ))}
           </div>
         </div>
-      ))}
+        );
+      })}
 
       {error && <div className="form-error">{error}</div>}
 

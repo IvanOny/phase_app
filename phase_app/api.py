@@ -1189,13 +1189,14 @@ class PhaseApi:
             '      "isBarbellBenchPress": false,\n'
             '      "isSquat": false,\n'
             '      "isDeadlift": false,\n'
+            '      "isTimed": false,\n'
             '      "sets": [\n'
             '        { "setNumber": 1, "reps": 5, "loadKg": 100.0, "isTopSet": false, "isWorkingSet": true }\n'
             '      ]\n'
             '    }\n'
             '  ]\n'
             "}\n"
-            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, squat, deadlift, mixed, run, pull, rest, other.\n"
+            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, squat, deadlift, mix, run, pull, rest, other. Use 'mix' for sessions that combine multiple powerlifting lifts or are labelled 'mixed'.\n"
             "Rules:\n"
             "- Convert lbs to kg (multiply by 0.4536). Use 0 for bodyweight exercises.\n"
             "- Garmin Connect tables have columns: Set, Exercise Name, Time, Rest, Reps, Weight, Volume. "
@@ -1205,6 +1206,9 @@ class PhaseApi:
             "  isSquat: true for barbell squat variants (back squat, front squat, low-bar squat, high-bar squat).\n"
             "  isDeadlift: true for barbell deadlift variants (conventional, sumo, Romanian/RDL, trap-bar deadlift).\n"
             "  All three default to false. Only one flag can be true per exercise.\n"
+            "  isTimed: true for exercises measured in time rather than reps (e.g. plank, sled push/pull, farmer carry, L-sit, wall sit, hollow hold). "
+            "For timed exercises, each set must use { \"setNumber\": 1, \"timeMinutes\": 1.5, \"isTopSet\": false, \"isWorkingSet\": true } "
+            "— omit reps and loadKg entirely. timeMinutes is a decimal number of minutes (e.g. 90 seconds = 1.5).\n"
             "- Run sessions (sessionType = 'run'): set exercises to [] and extract structured run metrics as top-level fields:\n"
             "  'runType': string describing run subtype if visible (e.g. 'easy', 'long run', 'tempo', 'intervals', 'race', 'trail'), else null\n"
             "  'distanceKm': number (e.g. 6.01)\n"
@@ -1311,13 +1315,14 @@ class PhaseApi:
             '      "isBarbellBenchPress": false,\n'
             '      "isSquat": false,\n'
             '      "isDeadlift": false,\n'
+            '      "isTimed": false,\n'
             '      "sets": [\n'
             '        { "setNumber": 1, "reps": 5, "loadKg": 100.0, "isTopSet": false, "isWorkingSet": true }\n'
             '      ]\n'
             '    }\n'
             '  ]\n'
             "}\n"
-            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, squat, deadlift, mixed, run, pull, rest, other.\n"
+            "sessionType must be one of: heavy_bench, volume_bench, speed_bench, squat, deadlift, mix, run, pull, rest, other. Use 'mix' for sessions that combine multiple powerlifting lifts or are labelled 'mixed'.\n"
             "Rules:\n"
             "- Combine exercises from all screenshots into one list. Do not duplicate exercises that appear in multiple screenshots.\n"
             "- Convert lbs to kg (multiply by 0.4536). Use 0 for bodyweight exercises.\n"
@@ -1328,6 +1333,9 @@ class PhaseApi:
             "  isSquat: true for barbell squat variants (back squat, front squat, low-bar squat, high-bar squat).\n"
             "  isDeadlift: true for barbell deadlift variants (conventional, sumo, Romanian/RDL, trap-bar deadlift).\n"
             "  All three default to false. Only one flag can be true per exercise.\n"
+            "  isTimed: true for exercises measured in time rather than reps (e.g. plank, sled push/pull, farmer carry, L-sit, wall sit, hollow hold). "
+            "For timed exercises, each set must use { \"setNumber\": 1, \"timeMinutes\": 1.5, \"isTopSet\": false, \"isWorkingSet\": true } "
+            "— omit reps and loadKg entirely. timeMinutes is a decimal number of minutes (e.g. 90 seconds = 1.5).\n"
             "- Run sessions (sessionType = 'run'): set exercises to [] and extract structured run metrics as top-level fields:\n"
             "  'runType': string describing run subtype if visible (e.g. 'easy', 'long run', 'tempo', 'intervals', 'race', 'trail'), else null\n"
             "  'distanceKm': number (e.g. 6.01)\n"

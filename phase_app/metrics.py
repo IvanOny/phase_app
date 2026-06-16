@@ -133,8 +133,9 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
         cur.execute(
             """
             SELECT e.exercise_id, e.exercise_name, e.is_bodyweight, e.is_barbell_bench_press,
+                   e.is_timed,
                    s.session_id, s.session_date,
-                   es.set_number, es.load_kg, es.reps,
+                   es.set_number, es.load_kg, es.reps, es.time_minutes,
                    es.is_working_set, es.is_top_set
             FROM sessions s
             JOIN session_exercises se ON se.session_id = s.session_id
@@ -156,6 +157,7 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
                 "exerciseName": row["exercise_name"],
                 "isBodyweight": bool(row["is_bodyweight"]),
                 "isBarbellBenchPress": bool(row["is_barbell_bench_press"]),
+                "isTimed": bool(row["is_timed"]),
                 "sessions": {},
             }
         sid = row["session_id"]
@@ -165,16 +167,23 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
                 "sessionDate": str(row["session_date"]),
                 "volumeKgReps": 0.0,
                 "topLoadKg": 0.0,
+                "totalTimeMinutes": 0.0,
                 "sets": [],
             }
         sess = exercises[eid]["sessions"][sid]
+        is_timed = bool(row["is_timed"])
         if row["is_working_set"] or row["is_top_set"]:
-            load = float(row["load_kg"])
-            reps = int(row["reps"])
-            sess["volumeKgReps"] = round(sess["volumeKgReps"] + load * reps, 2)
-            if load > sess["topLoadKg"]:
-                sess["topLoadKg"] = load
-            sess["sets"].append({"loadKg": load, "reps": reps})
+            if is_timed:
+                time_min = float(row["time_minutes"]) if row["time_minutes"] else 0.0
+                sess["totalTimeMinutes"] = round(sess["totalTimeMinutes"] + time_min, 2)
+                sess["sets"].append({"timeMinutes": time_min})
+            else:
+                load = float(row["load_kg"]) if row["load_kg"] else 0.0
+                reps = int(row["reps"]) if row["reps"] else 0
+                sess["volumeKgReps"] = round(sess["volumeKgReps"] + load * reps, 2)
+                if load > sess["topLoadKg"]:
+                    sess["topLoadKg"] = load
+                sess["sets"].append({"loadKg": load, "reps": reps})
 
     return [
         {
@@ -182,6 +191,7 @@ def get_phase_exercise_volumes(conn: psycopg2.extensions.connection, phase_id: i
             "exerciseName": ex["exerciseName"],
             "isBodyweight": ex["isBodyweight"],
             "isBarbellBenchPress": ex["isBarbellBenchPress"],
+            "isTimed": ex["isTimed"],
             "sessions": sorted(ex["sessions"].values(), key=lambda s: s["sessionDate"]),
         }
         for ex in exercises.values()

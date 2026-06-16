@@ -1086,6 +1086,8 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
 }
 
 .exercise-color-dot {
@@ -1432,9 +1434,6 @@ button.summary-tile--open {
   display: flex;
   gap: var(--space-5);
   align-items: flex-start;
-  margin-bottom: var(--space-2);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border);
 }
 .sessions-cal-col {
   flex-shrink: 0;

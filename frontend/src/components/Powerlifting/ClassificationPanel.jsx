@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 // GL label ordering for the progress bar
 const GL_LADDER = [
@@ -13,7 +13,69 @@ const GL_LADDER = [
 
 const UPF_LADDER = ['Class 3', 'Class 2', 'Class 1', 'Candidate Master', 'Master of Sport'];
 
-function GapBar({ label, gapKg, currentLabel, nextLabel, pct }) {
+const LABEL_PAD = 28; // px of vertical space reserved above/below the dot row for labels
+
+/** Zigzag dot stepper — full labels alternating above/below, dashed connectors */
+function ClassStepper({ items, currentIdx, nextIdx }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center' }}>
+      {items.flatMap((label, i) => {
+        const achieved  = i <= currentIdx;
+        const isNext    = i === nextIdx;
+        const above     = i % 2 === 0;
+        const isLast    = i === items.length - 1;
+        const color     = achieved ? 'var(--accent)' : isNext ? 'var(--text-secondary)' : 'var(--text-muted)';
+        const lineColor = i < currentIdx ? 'var(--accent)' : 'var(--border)';
+
+        const dotCol = (
+          <div
+            key={`d${i}`}
+            style={{
+              flex: '0 0 auto',
+              position: 'relative',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              paddingTop: LABEL_PAD, paddingBottom: LABEL_PAD,
+            }}
+          >
+            {/* dot */}
+            <div style={{
+              width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+              background: achieved ? 'var(--accent)' : 'transparent',
+              border: `2px solid ${achieved || isNext ? 'var(--accent)' : 'var(--border)'}`,
+            }} />
+            {/* label: centered on dot, single line, allowed to overflow visually */}
+            <span style={{
+              position: 'absolute',
+              ...(above ? { bottom: 'calc(50% + 7px)' } : { top: 'calc(50% + 7px)' }),
+              left: '50%', transform: 'translateX(-50%)',
+              fontSize: 9, fontWeight: 600,
+              whiteSpace: 'nowrap',
+              color,
+            }}>
+              {label}
+            </span>
+          </div>
+        );
+
+        const connector = !isLast ? (
+          <div
+            key={`l${i}`}
+            style={{
+              flex: 1,
+              height: 2,
+              background: lineColor,
+              opacity: 0.4,
+            }}
+          />
+        ) : null;
+
+        return connector ? [dotCol, connector] : [dotCol];
+      })}
+    </div>
+  );
+}
+
+function GapBar({ label, gapKg, targetKg, rightLabel, currentLabel, nextLabel, pct, showGapLabel = true }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -23,12 +85,17 @@ function GapBar({ label, gapKg, currentLabel, nextLabel, pct }) {
             : <>Target: <strong style={{ color: 'var(--text-primary)' }}>{nextLabel}</strong></>
           }
         </span>
-        {gapKg != null && (
-          <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-            −{gapKg} kg
+        {showGapLabel && rightLabel && (
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+            {rightLabel}
           </span>
         )}
-        {gapKg == null && <span style={{ fontSize: 13, color: 'var(--accent)' }}>All classes achieved 🏆</span>}
+        {showGapLabel && !rightLabel && gapKg != null && (
+          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
+            {Math.round(gapKg)} kg to {Math.round(targetKg)} kg
+          </span>
+        )}
+        {showGapLabel && !rightLabel && gapKg == null && <span style={{ fontSize: 13, color: 'var(--accent)' }}>All classes achieved 🏆</span>}
       </div>
       <div style={{ height: 8, background: 'var(--accent-tint-12)', borderRadius: 4, overflow: 'hidden' }}>
         <div style={{
@@ -67,14 +134,11 @@ function GlPoints({ gl }) {
           currentLabel={label}
           nextLabel={nextLabel}
           gapKg={null}
+          rightLabel={`+${gapPoints} pts to ${nextThreshold}`}
           pct={pct}
         />
       )}
-      {nextLabel && (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          +{gapPoints} pts to {nextLabel} ({nextThreshold} pts)
-        </div>
-      )}
+      <ClassStepper items={GL_LADDER.map(l => l.label)} currentIdx={currentIdx} nextIdx={currentIdx + 1} />
     </div>
   );
 }
@@ -85,8 +149,6 @@ function UpfStatus({ upf, totalKg }) {
   const currentIdx = currentClass ? UPF_LADDER.indexOf(currentClass) : -1;
   const nextIdx = nextClass ? UPF_LADDER.indexOf(nextClass) : UPF_LADDER.length;
 
-  // Progress within the gap to next class
-  // Use the previous class threshold (or 0) as the baseline
   const UPF_THRESHOLDS_83 = { 'Class 3': 365, 'Class 2': 422.5, 'Class 1': 480, 'Candidate Master': 540, 'Master of Sport': 602.5 };
   const UPF_THRESHOLDS_74 = { 'Class 3': 340, 'Class 2': 397.5, 'Class 1': 452.5, 'Candidate Master': 510, 'Master of Sport': 570 };
   const thresholds = weightCategory === 74 ? UPF_THRESHOLDS_74 : UPF_THRESHOLDS_83;
@@ -100,7 +162,7 @@ function UpfStatus({ upf, totalKg }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <span style={{ fontSize: 32, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-          {totalKg}
+          {Math.round(totalKg)}
         </span>
         <span style={{ fontSize: 14, color: 'var(--accent)', fontWeight: 600 }}>kg total</span>
         <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>({weightCategory} kg cat.)</span>
@@ -109,35 +171,32 @@ function UpfStatus({ upf, totalKg }) {
         currentLabel={currentClass}
         nextLabel={nextClass ?? '—'}
         gapKg={gapKg}
+        targetKg={nextClassThresholdKg}
         pct={Math.max(0, pct)}
       />
-      {/* Class ladder */}
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
-        {UPF_LADDER.map((cls, i) => {
-          const achieved = i <= currentIdx;
-          const isNext = i === nextIdx;
-          return (
-            <span key={cls} style={{
-              fontSize: 11,
-              fontWeight: 600,
-              padding: '2px 8px',
-              borderRadius: 12,
-              background: achieved ? 'var(--accent-tint-15)' : isNext ? 'var(--accent-tint-08)' : 'transparent',
-              border: `1px solid ${achieved ? 'var(--accent)' : isNext ? 'var(--accent-tint-30)' : 'var(--border)'}`,
-              color: achieved ? 'var(--accent)' : isNext ? 'var(--text-secondary)' : 'var(--text-muted)',
-            }}>
-              {achieved && '✓ '}{cls}
-            </span>
-          );
-        })}
-      </div>
+      <ClassStepper items={UPF_LADDER} currentIdx={currentIdx} nextIdx={nextIdx} />
     </div>
   );
 }
 
+function formatShortDate(dateStr) {
+  if (!dateStr) return '';
+  const [, mm, dd] = (dateStr.split('T')[0] || dateStr).split('-');
+  return `${dd}.${mm}`;
+}
+
 export default function ClassificationPanel({ classification, loading }) {
-  // federation toggle: 'upf' | 'gl'
+  // All hooks must come before any conditional returns
   const [federation, setFederation] = useState('upf');
+  const [liftTooltip, setLiftTooltip] = useState(null); // { lift, x, y }
+  const tilesRef = useRef(null);
+
+  useEffect(() => {
+    if (!liftTooltip) return;
+    function dismiss() { setLiftTooltip(null); }
+    document.addEventListener('pointerdown', dismiss, { capture: true, once: true });
+    return () => document.removeEventListener('pointerdown', dismiss, { capture: true });
+  }, [liftTooltip]);
 
   if (loading) {
     return (
@@ -159,11 +218,34 @@ export default function ClassificationPanel({ classification, loading }) {
 
   const { upf, gl, totalKg, liftMaxes } = classification;
 
+  const LIFT_TILE_CONFIG = {
+    squat:    { label: 'Squat',    color: '#6366f1' },
+    bench:    { label: 'Bench',    color: '#0891b2' },
+    deadlift: { label: 'Deadlift', color: '#10b981' },
+  };
+
+  function handleTileEnter(e, key) {
+    if (!tilesRef.current) return;
+    const rect = tilesRef.current.getBoundingClientRect();
+    const tileRect = e.currentTarget.getBoundingClientRect();
+    setLiftTooltip({ lift: key, x: tileRect.left - rect.left + tileRect.width / 2, y: tileRect.top - rect.top });
+  }
+
+  function handleTileClick(e, key) {
+    if (!tilesRef.current) return;
+    const rect = tilesRef.current.getBoundingClientRect();
+    const tileRect = e.currentTarget.getBoundingClientRect();
+    const isSame = liftTooltip?.lift === key;
+    setLiftTooltip(isSame ? null : { lift: key, x: tileRect.left - rect.left + tileRect.width / 2, y: tileRect.top - rect.top });
+  }
+
+  const isDesktop = typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
   return (
     <div className="chart-wrapper">
       <div className="chart-title-row">
         <span className="card-title">Classification</span>
-        {/* Federation toggle — reuses existing load-mode-toggle pattern */}
+        {/* Federation toggle */}
         <div className="load-mode-toggle" style={{ marginLeft: 'auto' }}>
           <button
             className={`load-mode-btn${federation === 'upf' ? ' active' : ''}`}
@@ -178,24 +260,71 @@ export default function ClassificationPanel({ classification, loading }) {
 
       {/* Lift maxes row */}
       {liftMaxes && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-          {[['Squat', 'squat', '#6366f1'], ['Bench', 'bench', '#0891b2'], ['Deadlift', 'deadlift', '#10b981']].map(([label, key, color]) => (
-            <div key={key} style={{
-              flex: '1 1 80px',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-md)',
-              padding: '8px 12px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}>
-              <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color }}>{label}</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>
-                {liftMaxes[key] ? `${liftMaxes[key]} kg` : '—'}
-              </span>
-            </div>
-          ))}
+        <div ref={tilesRef} style={{ position: 'relative', display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}
+          onMouseLeave={() => isDesktop && setLiftTooltip(null)}>
+          {[['squat', '#6366f1'], ['bench', '#0891b2'], ['deadlift', '#10b981']].map(([key, color]) => {
+            const isActive = liftTooltip?.lift === key;
+            return (
+              <div key={key}
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => !isDesktop && handleTileClick(e, key)}
+                onMouseEnter={e => isDesktop && handleTileEnter(e, key)}
+                style={{
+                  flex: '1 1 80px',
+                  background: 'var(--bg-elevated)',
+                  border: `1px solid ${isActive ? color : 'var(--border)'}`,
+                  borderRadius: 'var(--radius-md)',
+                  padding: '8px 12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  cursor: 'default',
+                }}>
+                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color }}>{LIFT_TILE_CONFIG[key].label}</span>
+                <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                  {liftMaxes[key] ? `${Math.round(liftMaxes[key].value ?? liftMaxes[key])} kg` : '—'}
+                </span>
+              </div>
+            );
+          })}
+          {liftTooltip && (() => {
+            const key = liftTooltip.lift;
+            return (
+              <div className="chart-tooltip" style={{
+                position: 'absolute',
+                left: liftTooltip.x,
+                top: liftTooltip.y,
+                transform: 'translate(-50%, -110%)',
+                zIndex: 10,
+                minWidth: 120,
+                pointerEvents: isDesktop ? 'none' : 'auto',
+              }}
+                onClick={!isDesktop ? () => setLiftTooltip(null) : undefined}>
+                {(() => {
+                  const entry = liftMaxes[key];
+                  const date = entry?.date;
+                  const load = entry?.topSetLoadKg;
+                  const reps = entry?.topSetReps;
+                  return (
+                    <>
+                      {load != null && reps != null && (
+                        <div className="tooltip-row">
+                          <span style={{ whiteSpace: 'nowrap' }}>top set:</span>
+                          <strong>{load}×{reps}</strong>
+                        </div>
+                      )}
+                      {date && (
+                        <div className="tooltip-row">
+                          <span>date:</span>
+                          <strong>{formatShortDate(date)}</strong>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            );
+          })()}
         </div>
       )}
 

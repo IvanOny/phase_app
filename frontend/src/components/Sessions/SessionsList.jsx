@@ -30,9 +30,9 @@ const TYPE_COLORS = {
 };
 
 const EXERCISE_PALETTE = [
-  '#818cf8', '#34d399', '#f97316', '#fbbf24',
+  '#818cf8', '#34d399', '#f97316', '#60a5fa',
   '#a78bfa', '#fb7185', '#38bdf8', '#4ade80',
-  '#fb923c', '#e879f9', '#2dd4bf', '#facc15',
+  '#f472b6', '#e879f9', '#2dd4bf', '#c084fc',
 ];
 
 function exerciseColor(exerciseId) {
@@ -359,7 +359,7 @@ function SessionDetail({ sessionId, exercises: catalog, filterExerciseId, onExer
           return (
           <div key={se.sessionExerciseId} className="exercise-block">
             <div className="exercise-block-header">
-              <div className="exercise-name" style={{ color: exerciseColor(se.exerciseId) }}>
+              <div className="exercise-name" style={{ color: exerciseColor(se.exerciseId), background: exerciseColor(se.exerciseId) + '22' }}>
                 <span className="exercise-color-dot" style={{ background: exerciseColor(se.exerciseId) }} />
                 {se.exerciseName}
               </div>
@@ -871,61 +871,60 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
         )}
         <div className="sessions-filter-col">
           <FilterBar filters={filters} onChange={handleFiltersChange} exercises={availableExercises} sessionTypes={sessionTypes} />
-        </div>
-      </div>
-      <div style={{ marginBottom: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
-        <div className="card-title" style={{ marginBottom: 0 }}>
-          {realCount} done{plannedCount > 0 ? ` · ${plannedCount} planned` : ''}
-        </div>
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="chart-empty">
-          {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}
-        </div>
-      ) : (
-        <div className="sessions-list-wrap" ref={tableRef}>
-          <div className="sessions-list-header">
-            <div className="sessions-lh-caret" />
-            <div className="sessions-lh-date">Date</div>
-            <div className="sessions-lh-type">Type</div>
-            <div className="sessions-lh-actions" />
+          <div style={{ marginBottom: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>
+              {realCount} done{plannedCount > 0 ? ` · ${plannedCount} planned` : ''}
+            </div>
           </div>
-          {visibleSessions.map((s, i) => (
-            <Fragment key={s.sessionId}>
-              {filters.exerciseId && i > 0 && (
-                <div className="session-group-divider" />
-              )}
-              <div className={filters.exerciseId ? `session-group session-group--${i % 2 === 0 ? 'even' : 'odd'}` : ''}>
-                <SessionRow
-                  session={s}
-                  e1rm={e1rmMap[s.sessionId]}
-                  vol={volumeMap[s.sessionId]}
-                  isOpen={expanded.has(s.sessionId)}
-                  onToggle={() => toggleRow(s.sessionId)}
-                  onUpdated={onUpdateSession}
-                  onDeleted={onDeleteSession}
-                  exercises={exercises}
-                  filterExerciseId={filters.exerciseId}
-                  isAuthenticated={isAuthenticated}
-                  rowRef={el => { rowRefs.current[s.sessionId] = el; }}
-                  onBackToCalendar={phase ? () => wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) : undefined}
-                />
+          {filtered.length === 0 ? (
+            <div className="chart-empty">
+              {sessions.length === 0 ? 'No sessions logged for this phase' : 'No sessions match the current filters'}
+            </div>
+          ) : (
+            <div className="sessions-list-wrap" ref={tableRef}>
+              <div className="sessions-list-header">
+                <div className="sessions-lh-caret" />
+                <div className="sessions-lh-date">Date</div>
+                <div className="sessions-lh-type">Type</div>
+                <div className="sessions-lh-actions" />
               </div>
-            </Fragment>
-          ))}
-          {!forceShowAll && hiddenCount > 0 && (
-            <button className="sessions-show-more-btn" onClick={() => setShowAll(true)}>
-              Show {hiddenCount} more
-            </button>
-          )}
-          {!forceShowAll && showAll && (
-            <button className="sessions-show-more-btn" onClick={() => setShowAll(false)}>
-              Show less
-            </button>
+              {visibleSessions.map((s, i) => (
+                <Fragment key={s.sessionId}>
+                  {filters.exerciseId && i > 0 && (
+                    <div className="session-group-divider" />
+                  )}
+                  <div className={filters.exerciseId ? `session-group session-group--${i % 2 === 0 ? 'even' : 'odd'}` : ''}>
+                    <SessionRow
+                      session={s}
+                      e1rm={e1rmMap[s.sessionId]}
+                      vol={volumeMap[s.sessionId]}
+                      isOpen={expanded.has(s.sessionId)}
+                      onToggle={() => toggleRow(s.sessionId)}
+                      onUpdated={onUpdateSession}
+                      onDeleted={onDeleteSession}
+                      exercises={exercises}
+                      filterExerciseId={filters.exerciseId}
+                      isAuthenticated={isAuthenticated}
+                      rowRef={el => { rowRefs.current[s.sessionId] = el; }}
+                      onBackToCalendar={phase ? () => wrapperRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) : undefined}
+                    />
+                  </div>
+                </Fragment>
+              ))}
+              {!forceShowAll && hiddenCount > 0 && (
+                <button className="sessions-show-more-btn" onClick={() => setShowAll(true)}>
+                  Show {hiddenCount} more
+                </button>
+              )}
+              {!forceShowAll && showAll && (
+                <button className="sessions-show-more-btn" onClick={() => setShowAll(false)}>
+                  Show less
+                </button>
+              )}
+            </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -36,7 +36,7 @@ function formatVolume(v) {
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
 }
 
-export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
+export default function VolumeChart({ sessions, exerciseVolumes, exercises, hideBenchFilter = false }) {
   const colors = useChartColors();
   const isTouch = useIsTouchDevice();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
@@ -47,6 +47,14 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
 
   const showVolume = series === 'volume' || series === 'both';
   const showLoad   = series === 'load'   || series === 'both';
+
+  // Global tap-outside dismiss
+  useEffect(() => {
+    if (!tooltip) return;
+    function dismiss() { openTooltip(null); }
+    document.addEventListener('pointerdown', dismiss, { capture: true, once: true });
+    return () => document.removeEventListener('pointerdown', dismiss, { capture: true });
+  }, [tooltip]);
 
   useEffect(() => {
     if (exerciseVolumes.length > 0 && selectedExerciseId === null) {
@@ -82,30 +90,36 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
   }
 
   const isBodyweight = (selectedExercise?.isBodyweight ?? exerciseCatalog?.isBodyweight) === true;
+  const isTimed      = (selectedExercise?.isTimed      ?? exerciseCatalog?.isTimed)      === true;
 
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
     .map(s => {
       const dateKey = normDate(s.sessionDate);
       const sets = s.sets ?? [];
-      const totalReps = sets.reduce((sum, set) => sum + set.reps, 0);
-      const topSetReps = sets.length ? Math.max(...sets.map(set => set.reps)) : null;
-      return {
-        date: s.sessionDate,
-        volume: isBodyweight ? totalReps : s.volumeKgReps,
-        topValue: isBodyweight ? topSetReps : (s.topLoadKg != null ? Math.round(s.topLoadKg * 2) / 2 : null),
-        sets,
-        sessionType: sessionTypeByDate[dateKey] ?? null,
-      };
+      let volume, topValue;
+      if (isTimed) {
+        volume   = s.totalTimeMinutes ?? sets.reduce((sum, set) => sum + (set.timeMinutes ?? 0), 0);
+        topValue = sets.length ? Math.max(...sets.map(set => set.timeMinutes ?? 0)) : null;
+      } else if (isBodyweight) {
+        const totalReps = sets.reduce((sum, set) => sum + (set.reps ?? 0), 0);
+        const topSetReps = sets.length ? Math.max(...sets.map(set => set.reps ?? 0)) : null;
+        volume   = totalReps;
+        topValue = topSetReps;
+      } else {
+        volume   = s.volumeKgReps;
+        topValue = s.topLoadKg != null ? Math.round(s.topLoadKg * 2) / 2 : null;
+      }
+      return { date: s.sessionDate, volume, topValue, sets, sessionType: sessionTypeByDate[dateKey] ?? null };
     })
     .filter(s => {
-      if (!isBenchPress) return true;
+      if (!isBenchPress || hideBenchFilter) return true;
       return benchFilters.some(f => BENCH_TYPE_MAP[f] === s.sessionType);
     });
 
   const hasData = data.length > 0;
-  const unit = isBodyweight ? 'reps' : 'kg·reps';
-  const topLabel = isBodyweight ? 'top set (reps)' : 'top load (kg)';
+  const unit     = isTimed ? 'min' : isBodyweight ? 'reps' : 'kg·reps';
+  const topLabel = isTimed ? 'longest set (min)' : isBodyweight ? 'top set (reps)' : 'top load (kg)';
 
   const volumes   = data.map(d => d.volume).filter(v => v != null);
   const loads     = data.map(d => d.topValue).filter(v => v != null);
@@ -138,6 +152,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
     return {
       onClick(barData, _i, event) {
         if (!isTouch) return;
+        event?.stopPropagation();
         const pos = getTooltipPos(event);
         if (!pos) return;
         openTooltip(isActive(barData) ? null : { ...pos, data: barData, type });
@@ -161,22 +176,22 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
 
   return (
     <div className="chart-wrapper">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div className="card-title" style={{ marginBottom: 0 }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, minWidth: 0 }}>
+        <div className="card-title" style={{ marginBottom: 0, flexShrink: 0 }}>{title}</div>
         {exerciseVolumes.length > 0 && (
           <select
             value={selectedExerciseId ?? ''}
             onChange={e => setSelectedExerciseId(Number(e.target.value))}
             className="inline-input"
-            style={{ fontSize: 12, padding: '2px 6px' }}
+            style={{ fontSize: 12, padding: '2px 6px', flex: 1, minWidth: 0 }}
           >
             {exerciseVolumes.map(ex => (
-              <option key={ex.exerciseId} value={ex.exerciseId}>{ex.exerciseName}</option>
+              <option key={ex.exerciseId} value={ex.exerciseId}>{ex.exerciseName.length > 32 ? ex.exerciseName.slice(0, 32) + '…' : ex.exerciseName}</option>
             ))}
           </select>
         )}
       </div>
-      {isBenchPress && (
+      {isBenchPress && !hideBenchFilter && (
         <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
           {BENCH_TYPES.map(type => (
             <button
@@ -207,8 +222,10 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
           <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
             {[
               { key: 'volume', color: colors.accent,     label: `volume (${unit})` },
-              { key: 'load',   color: colors.readyGreen, label: topLabel },
-              { key: 'both',   color: null,              label: 'both' },
+              ...(!isTimed ? [
+                { key: 'load', color: colors.readyGreen, label: topLabel },
+                { key: 'both', color: null,              label: 'both' },
+              ] : []),
             ].map(({ key, color, label }) => (
               <button
                 key={key}
@@ -316,16 +333,16 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises }) {
             >
               {tooltip.type === 'load' ? (
                 <>
-                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{isBodyweight ? 'top set' : 'top load'}</div>
-                  <strong>{tooltip.data.topValue}{isBodyweight ? ' reps' : ' kg'}</strong>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{topLabel}</div>
+                  <strong>{tooltip.data.topValue}{isTimed ? ' min' : isBodyweight ? ' reps' : ' kg'}</strong>
                 </>
               ) : (
                 <>
                   {tooltip.data.sets.map((s, i) => (
-                    <div key={i}>{isBodyweight ? `${s.reps} reps` : `${s.loadKg}×${s.reps}`}</div>
+                    <div key={i}>{isTimed ? `${s.timeMinutes} min` : isBodyweight ? `${s.reps} reps` : `${s.loadKg}×${s.reps}`}</div>
                   ))}
                   <div style={{ marginTop: 4, borderTop: '1px solid var(--border)', paddingTop: 4 }}>
-                    <strong>{tooltip.data.volume.toLocaleString()}</strong>
+                    <strong>{tooltip.data.volume?.toLocaleString()}</strong>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{unit}</div>
                   </div>
                 </>

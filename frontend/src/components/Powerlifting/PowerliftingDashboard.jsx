@@ -4,6 +4,7 @@ import PhaseNav from '../Dashboard/PhaseNav.jsx';
 import SessionsList from '../Sessions/SessionsList.jsx';
 import LiftTrendChart from './LiftTrendChart.jsx';
 import ClassificationPanel from './ClassificationPanel.jsx';
+import VolumeChart from '../Charts/VolumeChart.jsx';
 import { getSessionPlMetrics, getClassification } from '../../api/client.js';
 
 export default function PowerliftingDashboard({
@@ -86,6 +87,7 @@ export default function PowerliftingDashboard({
         onLogout={onLogout}
         onLoginClick={onLoginClick}
         onFaqClick={onFaqClick}
+        showProgress={false}
       />
 
       {sessions.length === 0 ? (
@@ -99,8 +101,8 @@ export default function PowerliftingDashboard({
             classification={classification}
             loading={classLoading}
           />
-          <LiftTrendChart sessions={sessions} plMetrics={plMetrics} showTotal={true} />
           <LiftTrendChart sessions={sessions} plMetrics={plMetrics} showTotal={false} />
+          <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} exercises={exercises} hideBenchFilter />
         </>
       )}
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTooltip, useIsTouchDevice } from '../../hooks/useExpandable.js';
 import {
   LineChart,
@@ -48,9 +48,13 @@ function buildChartData(sessions, plMetrics) {
   for (const s of sorted) {
     const sid = String(s.sessionId);
 
-    const sessionSquat    = e1rm.squat?.[sid]?.topSetE1rmKg    ?? null;
-    const sessionBench    = e1rm.bench?.[sid]?.topSetE1rmKg    ?? null;
-    const sessionDeadlift = e1rm.deadlift?.[sid]?.topSetE1rmKg ?? null;
+    const squatEntry    = e1rm.squat?.[sid]    ?? null;
+    const benchEntry    = e1rm.bench?.[sid]    ?? null;
+    const deadliftEntry = e1rm.deadlift?.[sid] ?? null;
+
+    const sessionSquat    = squatEntry?.topSetE1rmKg    ?? null;
+    const sessionBench    = benchEntry?.topSetE1rmKg    ?? null;
+    const sessionDeadlift = deadliftEntry?.topSetE1rmKg ?? null;
     const anyLiftDone     = sessionSquat != null || sessionBench != null || sessionDeadlift != null;
 
     // Update running bests for Total
@@ -77,6 +81,10 @@ function buildChartData(sessions, plMetrics) {
       _squat:    sessionSquat,
       _bench:    sessionBench,
       _deadlift: sessionDeadlift,
+      // top set details per lift for tooltip
+      _squatSet:    squatEntry    ? { load: squatEntry.topSetLoadKg,    reps: squatEntry.topSetReps    } : null,
+      _benchSet:    benchEntry    ? { load: benchEntry.topSetLoadKg,    reps: benchEntry.topSetReps    } : null,
+      _deadliftSet: deadliftEntry ? { load: deadliftEntry.topSetLoadKg, reps: deadliftEntry.topSetReps } : null,
     });
   }
 
@@ -87,7 +95,15 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   const colors = useChartColors();
   const isTouch = useIsTouchDevice();
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-pl');
-  const [hoveredDate, setHoveredDate] = useState(null);
+  const [hovered, setHovered] = useState(null); // { date, lift }
+
+  // Global tap-outside dismiss — same pattern as ClassificationPanel tiles
+  useEffect(() => {
+    if (!tooltip) return;
+    function dismiss() { openTooltip(null); }
+    document.addEventListener('pointerdown', dismiss, { capture: true, once: true });
+    return () => document.removeEventListener('pointerdown', dismiss, { capture: true });
+  }, [tooltip]);
 
   const data = buildChartData(sessions, plMetrics);
   const hasData = data.length > 0;
@@ -119,21 +135,21 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
         : payload[`_${lift}`] != null;
       if (!hasEntry) return null;
       const isActive = tooltip?.data?.date === payload.date && tooltip?.lift === lift;
-      const isHovered = hoveredDate === payload.date;
+      const isHovered = hovered?.date === payload.date && hovered?.lift === lift;
       const r = lift === 'total' ? 6 : 5;
       const dotR = isActive ? r + 2 : isHovered ? r + 1 : r;
       const isLast = index === lastIndexByLift[lift];
 
       const handlers = {
         onMouseEnter() {
-          setHoveredDate(payload.date);
+          setHovered({ date: payload.date, lift });
           if (!isTouch) {
             const pos = getDotPos(cx, cy);
             if (pos) openTooltip({ ...pos, data: payload, lift });
           }
         },
         onMouseLeave() {
-          setHoveredDate(null);
+          setHovered(null);
           if (!isTouch) openTooltip(null);
         },
         onClick() {
@@ -146,7 +162,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
       };
 
       return (
-        <g style={{ cursor: 'pointer' }} {...handlers}>
+        <g style={{ cursor: 'pointer' }} onPointerDown={e => e.stopPropagation()} {...handlers}>
           <circle
             cx={cx} cy={cy} r={dotR}
             fill={cfg.color}
@@ -181,11 +197,11 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
           <div
             ref={chartRef}
             style={{ position: 'relative' }}
-            onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}
+            onMouseLeave={() => { if (!isTouch) { setHovered(null); openTooltip(null); } }}
           >
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={data} margin={{ top: 8, right: 64, bottom: 24, left: 0 }}
-                onMouseLeave={() => { if (!isTouch) { setHoveredDate(null); openTooltip(null); } }}>
+                onMouseLeave={() => { if (!isTouch) { setHovered(null); openTooltip(null); } }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
                 <XAxis dataKey="date" tickFormatter={formatDate}
                   tick={{ fill: colors.textMuted, fontSize: 12 }}
@@ -222,22 +238,41 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                 }}
                 onClick={isTouch ? () => openTooltip(null) : undefined}
               >
-                <div className="tooltip-date">{formatDate(tooltip.data.date)}</div>
                 {tooltip.lift === 'total' ? (
-                  <div className="tooltip-row">
-                    <span style={{ color: LIFT_CONFIG.total.color, fontWeight: 600 }}>Total</span>
-                    <strong>{tooltip.data.total}</strong>
-                  </div>
+                  <>
+                    <div className="tooltip-row">
+                      <span style={{ color: LIFT_CONFIG.total.color, fontWeight: 600 }}>Total</span>
+                      <strong>{tooltip.data.total}</strong>
+                    </div>
+                    <div className="tooltip-row" style={{ opacity: 0.6 }}>
+                      <span>date</span>
+                      <span>{formatDate(tooltip.data.date)}</span>
+                    </div>
+                  </>
                 ) : (
                   (() => {
                     const val = tooltip.data[tooltip.lift];
+                    const topSet = tooltip.data[`_${tooltip.lift}Set`];
                     const cfg = LIFT_CONFIG[tooltip.lift];
-                    return val != null ? (
-                      <div className="tooltip-row">
-                        <span style={{ color: cfg.color, fontWeight: 600, textTransform: 'capitalize' }}>{cfg.label}</span>
-                        <strong>{val}</strong>
-                      </div>
-                    ) : null;
+                    if (val == null) return null;
+                    return (
+                      <>
+                        <div className="tooltip-row">
+                          <span style={{ color: cfg.color, fontWeight: 600 }}>e1RM</span>
+                          <strong>{val}</strong>
+                        </div>
+                        {topSet && (
+                          <div className="tooltip-row" style={{ opacity: 0.75 }}>
+                            <span>top set</span>
+                            <span>{topSet.load}×{topSet.reps}</span>
+                          </div>
+                        )}
+                        <div className="tooltip-row" style={{ opacity: 0.6 }}>
+                          <span>date</span>
+                          <span>{formatDate(tooltip.data.date)}</span>
+                        </div>
+                      </>
+                    );
                   })()
                 )}
               </div>

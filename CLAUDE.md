@@ -2,6 +2,11 @@
 
 > **CRITICAL — Phase type bugs:** Whenever a bug is fixed that was caused by introducing a new phase type (missing config entry, missing null guard, DB constraint gap, etc.), **always append it to `docs/adding-a-new-phase-type.md`** so the checklist stays complete for the next phase type.
 
+> **RULE — After every code change, always tell the user what to restart/refresh:**
+> - Changed `api/index.py` or `phase_app/*.py` → **restart backend** (`flask --app api/index run --port 5001`)
+> - Changed any `frontend/src/**` file → **refresh browser** (Vite hot-reloads, but a manual refresh ensures state is clean)
+> - Both changed → restart backend first, then refresh browser
+
 ## What this app is
 
 Phase-based training tracker. A phase is a fixed training block (bench / pull-ups / run) with a start and end date. Each phase contains sessions; each session contains exercises and sets. The app tracks volume, e1RM, and HRV readiness over time.
@@ -46,6 +51,8 @@ frontend/src/
 **Stale DB connection** — `api/index.py` pings with `SELECT 1` before reusing a cached `_conn` on warm Vercel instances. Supabase drops idle connections silently.
 
 **Tooltip behavior** — `useIsTouchDevice` (`hover: hover` + `pointer: fine` media query) switches charts between hover-show (desktop) and tap-show (mobile). Tooltip divs use `pointer-events: none` on desktop.
+
+**Tap-outside dismiss pattern** — used on every chart tooltip. When a tooltip opens, register a one-shot `pointerdown` capture listener on `document` that closes it; clean it up in the effect's return. On the trigger element (dot, bar, tile) add `onPointerDown={e => e.stopPropagation()}` so the tap that opens the tooltip doesn't immediately fire the dismiss listener. Applied in: `ClassificationPanel` (lift tiles), `LiftTrendChart` (dots), `VolumeChart` (bars).
 
 ## Worktrees
 

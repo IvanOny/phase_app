@@ -1024,16 +1024,19 @@ class PhaseApi:
             bw = float(row["weight_kg"])
 
         # Best effective max per lift = MAX(e1RM across sessions, confirmed 1RM)
-        totals: dict[str, float] = {}
+        totals: dict[str, dict] = {}
         for lift, flag in [("squat", "is_squat"), ("bench", "is_barbell_bench_press"), ("deadlift", "is_deadlift")]:
             e1rm_row = self._exec(
                 f"""
-                SELECT MAX(ROUND((es.load_kg * (1 + es.reps / 30.0))::numeric, 2)) AS best_e1rm
+                SELECT ROUND((es.load_kg * (1 + es.reps / 30.0))::numeric, 2) AS best_e1rm,
+                       es.load_kg, es.reps, s.session_date
                 FROM sessions s
                 JOIN session_exercises se ON se.session_id = s.session_id
                 JOIN exercises e ON e.exercise_id = se.exercise_id
                 JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
                 WHERE s.phase_id = %s AND e.{flag} = 1 AND es.is_top_set = 1
+                ORDER BY best_e1rm DESC
+                LIMIT 1
                 """,
                 (phase_id,),
             ).fetchone()
@@ -1044,9 +1047,17 @@ class PhaseApi:
             ).fetchone()
             e1rm_val = float(e1rm_row["best_e1rm"]) if e1rm_row and e1rm_row["best_e1rm"] else 0.0
             conf_val = float(confirmed_row["best_confirmed"]) if confirmed_row and confirmed_row["best_confirmed"] else 0.0
-            totals[lift] = max(e1rm_val, conf_val)
+            if e1rm_val >= conf_val and e1rm_row:
+                totals[lift] = {
+                    "value": e1rm_val,
+                    "date": str(e1rm_row["session_date"]),
+                    "topSetLoadKg": float(e1rm_row["load_kg"]),
+                    "topSetReps": int(e1rm_row["reps"]),
+                }
+            else:
+                totals[lift] = {"value": conf_val, "date": None, "topSetLoadKg": None, "topSetReps": None}
 
-        total_kg = totals["squat"] + totals["bench"] + totals["deadlift"]
+        total_kg = totals["squat"]["value"] + totals["bench"]["value"] + totals["deadlift"]["value"]
         payload = classification_payload(bw, total_kg)
         payload["liftMaxes"] = totals
         return ApiResponse(200, payload)

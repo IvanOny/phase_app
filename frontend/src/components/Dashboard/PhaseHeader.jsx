@@ -65,7 +65,7 @@ function formatDateRange(start, end) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme, isAuthenticated, onLogout, onLoginClick, onFaqClick }) {
+export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme, isAuthenticated, onLogout, onLoginClick, onFaqClick, showProgress = true }) {
   const [editing, setEditing] = useState(false);
   const [showDays, toggleDays, headerRef] = useExpandable('phase-days');
   const [form, setForm] = useState({});
@@ -165,7 +165,7 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
 
   return (
     <div ref={headerRef} className="phase-header">
-      {pct !== null && (
+      {showProgress && pct !== null && (
         <div className="phase-progress">
           <div className="phase-progress-bar">
             <div className="phase-progress-fill" style={{ width: `${pct}%` }} />
@@ -209,26 +209,28 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
           </button>
         </div>
       </div>
-      <div className="phase-header-right">
-        {phaseState === 'future' && (
-          <div className="days-badge days-badge--future">
-            <span className="days-number">{daysToStart}</span>
-            <span className="days-label">days to start</span>
-          </div>
-        )}
-        {phaseState === 'current' && (
-          <button className={`days-badge${showDays ? ' days-badge--open' : ''}`} onClick={toggleDays} style={{ cursor: 'pointer' }}>
-            <span className="days-number">{daysLeft}</span>
-            <span className="days-label">days left</span>
-          </button>
-        )}
-        {phaseState === 'past' && (
-          <div className="days-badge days-badge--past">
-            <span className="days-number">{Math.abs(daysLeft)}</span>
-            <span className="days-label">days ago</span>
-          </div>
-        )}
-      </div>
+      {showProgress && (
+        <div className="phase-header-right">
+          {phaseState === 'future' && (
+            <div className="days-badge days-badge--future">
+              <span className="days-number">{daysToStart}</span>
+              <span className="days-label">days to start</span>
+            </div>
+          )}
+          {phaseState === 'current' && (
+            <button className={`days-badge${showDays ? ' days-badge--open' : ''}`} onClick={toggleDays} style={{ cursor: 'pointer' }}>
+              <span className="days-number">{daysLeft}</span>
+              <span className="days-label">days left</span>
+            </button>
+          )}
+          {phaseState === 'past' && (
+            <div className="days-badge days-badge--past">
+              <span className="days-number">{Math.abs(daysLeft)}</span>
+              <span className="days-label">days ago</span>
+            </div>
+          )}
+        </div>
+      )}
       </div>
       {showDays && (
         <div className="e1rm-explanation" style={{ marginTop: 'var(--space-2)' }}>

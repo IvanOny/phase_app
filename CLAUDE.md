@@ -18,7 +18,7 @@ Phase-based training tracker. A phase is a fixed training block (bench / pull-up
 | Frontend | React + Vite, Recharts for charts |
 | Backend | Python / Flask, deployed as a Vercel serverless function |
 | Database | PostgreSQL on Supabase |
-| Deployment | Frontend → Vercel (`phase-app-ivory.vercel.app`), Backend → Vercel (`/api/index.py`) |
+| Deployment | Frontend → Vercel (`phase-app-yf5x.vercel.app`), Backend → Vercel (`phase-app-ivory.vercel.app` / `/api/index.py`) |
 
 ## Repo layout
 

@@ -70,6 +70,10 @@ class AppHandler(BaseHTTPRequestHandler):
         auth_header = self.headers.get("Authorization")
         return require_auth(method, path, auth_header, secret)
 
+    def _is_burpee_path(self, path: str) -> bool:
+        """Burpee endpoints use token-based auth in query params, not Bearer auth."""
+        return path == "/v1/burpee" or path.startswith("/v1/burpee/")
+
     def _parse_json_body(self) -> dict | None:
         content_len = int(self.headers.get("Content-Length", "0"))
         body_blob = self.rfile.read(content_len) if content_len else b"{}"
@@ -81,29 +85,32 @@ class AppHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if not self._check_auth("POST", parsed.path):
+        query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        if not self._is_burpee_path(parsed.path) and not self._check_auth("POST", parsed.path):
             return self._send_json(401, {"error": "unauthorized"})
         payload = self._parse_json_body()
         if payload is None:
             return
-        response = self._api().handle("POST", parsed.path, payload)
+        response = self._api().handle("POST", parsed.path, payload, query)
         self._send_json(response.status, response.body)
 
     def do_PATCH(self):
         parsed = urlparse(self.path)
-        if not self._check_auth("PATCH", parsed.path):
+        query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        if not self._is_burpee_path(parsed.path) and not self._check_auth("PATCH", parsed.path):
             return self._send_json(401, {"error": "unauthorized"})
         payload = self._parse_json_body()
         if payload is None:
             return
-        response = self._api().handle("PATCH", parsed.path, payload)
+        response = self._api().handle("PATCH", parsed.path, payload, query)
         self._send_json(response.status, response.body)
 
     def do_DELETE(self):
         parsed = urlparse(self.path)
-        if not self._check_auth("DELETE", parsed.path):
+        query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        if not self._is_burpee_path(parsed.path) and not self._check_auth("DELETE", parsed.path):
             return self._send_json(401, {"error": "unauthorized"})
-        response = self._api().handle("DELETE", parsed.path)
+        response = self._api().handle("DELETE", parsed.path, {}, query)
         self._send_json(response.status, response.body)
 
 

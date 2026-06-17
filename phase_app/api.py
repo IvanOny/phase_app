@@ -163,6 +163,14 @@ class PhaseApi:
         if method == "POST" and path == "/v1/auth/login":
             return self.login(body)
 
+        # Burpee challenge (token-gated, no user auth required)
+        if method == "GET" and path == "/v1/burpee":
+            return self.get_burpee_entries(qp)
+        if method == "POST" and path == "/v1/burpee":
+            return self.log_burpee_entry(body, qp)
+        if method == "DELETE" and re.fullmatch(r"/v1/burpee/\d+", path):
+            return self.delete_burpee_entry(int(path.split("/")[3]), qp)
+
         return ApiResponse(status=404, body={"error": "not_found"})
 
     def login(self, payload: dict[str, Any]) -> ApiResponse:
@@ -1412,6 +1420,57 @@ class PhaseApi:
             return ApiResponse(422, {"error": "parse_error", "raw": raw})
 
         return ApiResponse(200, parsed)
+
+    # ------------------------------------------------------------------ #
+    # Burpee challenge                                                      #
+    # ------------------------------------------------------------------ #
+
+    def _check_burpee_token(self, qp: dict) -> "ApiResponse | None":
+        expected = os.environ.get("BURPEE_TOKEN", "")
+        if not expected or qp.get("token", "") != expected:
+            return ApiResponse(401, {"error": "unauthorized"})
+        return None
+
+    def get_burpee_entries(self, qp: dict) -> ApiResponse:
+        err = self._check_burpee_token(qp)
+        if err:
+            return err
+        rows = self._exec(
+            "SELECT id, participant, entry_date, reps FROM burpee_entries ORDER BY entry_date DESC"
+        ).fetchall()
+        return ApiResponse(200, [
+            {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"]}
+            for r in rows
+        ])
+
+    def log_burpee_entry(self, body: dict, qp: dict) -> ApiResponse:
+        err = self._check_burpee_token(qp)
+        if err:
+            return err
+        participant = body.get("participant", "")
+        entry_date  = body.get("entry_date", "")
+        reps        = body.get("reps")
+        if participant not in ("Ivan", "Yurii") or not entry_date or not reps:
+            return ApiResponse(400, {"error": "invalid_input"})
+        r = self._exec(
+            """
+            INSERT INTO burpee_entries (participant, entry_date, reps)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps
+            RETURNING id, participant, entry_date, reps
+            """,
+            (participant, entry_date, int(reps)),
+        ).fetchone()
+        self.conn.commit()
+        return ApiResponse(200, {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"]})
+
+    def delete_burpee_entry(self, entry_id: int, qp: dict) -> ApiResponse:
+        err = self._check_burpee_token(qp)
+        if err:
+            return err
+        self._exec("DELETE FROM burpee_entries WHERE id = %s", (entry_id,))
+        self.conn.commit()
+        return ApiResponse(200, {"deleted": entry_id})
 
 
 def to_http_payload(resp: ApiResponse) -> tuple[int, str]:

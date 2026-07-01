@@ -7,7 +7,6 @@ import {
 
 const PARTICIPANTS = ['Ivan', 'Yurii', 'Benni'];
 const P_COLORS = { Ivan: '#6366f1', Yurii: '#10b981', Benni: '#f59e0b' };
-const LS_KEY = 'burpee-me';
 
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -24,11 +23,11 @@ async function apiBurpee(method, path, body, token) {
 }
 
 function getBurpeeEntries(token) {
-  return apiBurpee('GET', '/v1/burpee', null, token);
+  return apiBurpee('GET', '/v1/burpee', null, token); // returns { entries, me }
 }
 
-function logBurpeeEntry(token, { participant, entryDate, reps }) {
-  return apiBurpee('POST', '/v1/burpee', { participant, entry_date: entryDate, reps }, token);
+function logBurpeeEntry(token, { entryDate, reps }) {
+  return apiBurpee('POST', '/v1/burpee', { entry_date: entryDate, reps }, token);
 }
 
 function deleteBurpeeEntry(token, id) {
@@ -348,7 +347,7 @@ function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, pa
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function BurpeeChallenge({ token }) {
-  const [me, setMe] = useState(() => localStorage.getItem(LS_KEY));
+  const [me, setMe] = useState(null);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -366,7 +365,8 @@ export default function BurpeeChallenge({ token }) {
     setError(null);
     try {
       const data = await getBurpeeEntries(token);
-      setEntries(data);
+      setEntries(data.entries);
+      setMe(data.me);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -391,16 +391,6 @@ export default function BurpeeChallenge({ token }) {
     }
   }, [myDateEntry?.id, logDate]);
 
-  function handlePick(name) {
-    localStorage.setItem(LS_KEY, name);
-    setMe(name);
-  }
-
-  function handleSwitch() {
-    localStorage.removeItem(LS_KEY);
-    setMe(null);
-  }
-
   async function handleLog(e) {
     e.preventDefault();
     const reps = parseInt(repsInput, 10);
@@ -411,7 +401,7 @@ export default function BurpeeChallenge({ token }) {
       if (myDateEntry) {
         await deleteBurpeeEntry(token, myDateEntry.id);
       }
-      await logBurpeeEntry(token, { participant: me, entryDate: logDate, reps });
+      await logBurpeeEntry(token, { entryDate: logDate, reps });
       await load();
     } catch (err) {
       setSaveError(err.message);
@@ -433,11 +423,6 @@ export default function BurpeeChallenge({ token }) {
     } finally {
       setSaving(false);
     }
-  }
-
-  // Identity screen
-  if (!me) {
-    return <IdentityPicker onPick={handlePick} />;
   }
 
   if (loading) {
@@ -490,20 +475,6 @@ export default function BurpeeChallenge({ token }) {
             3 min AMRAP Burpees
           </div>
         </div>
-        <button
-          onClick={handleSwitch}
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--border, #2a2d3a)',
-            borderRadius: 'var(--radius-md, 8px)',
-            color: 'var(--text-secondary, #aaa)',
-            fontSize: 12,
-            padding: '4px 10px',
-            cursor: 'pointer',
-          }}
-        >
-          Switch
-        </button>
       </div>
 
       {/* Participant pills */}

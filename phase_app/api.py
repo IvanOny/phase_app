@@ -1425,32 +1425,37 @@ class PhaseApi:
     # Burpee challenge                                                      #
     # ------------------------------------------------------------------ #
 
-    def _check_burpee_token(self, qp: dict) -> "ApiResponse | None":
-        expected = os.environ.get("BURPEE_TOKEN", "")
-        if not expected or qp.get("token", "") != expected:
-            return ApiResponse(401, {"error": "unauthorized"})
+    def _resolve_burpee_participant(self, qp: dict) -> "str | None":
+        """Map token → participant name. Returns None if token is invalid."""
+        token = qp.get("token", "")
+        if not token:
+            return None
+        for name in ("Ivan", "Yurii", "Benni"):
+            expected = os.environ.get(f"BURPEE_TOKEN_{name.upper()}", "")
+            if expected and token == expected:
+                return name
         return None
 
     def get_burpee_entries(self, qp: dict) -> ApiResponse:
-        err = self._check_burpee_token(qp)
-        if err:
-            return err
+        me = self._resolve_burpee_participant(qp)
+        if not me:
+            return ApiResponse(401, {"error": "unauthorized"})
         rows = self._exec(
             "SELECT id, participant, entry_date, reps FROM burpee_entries ORDER BY entry_date DESC"
         ).fetchall()
-        return ApiResponse(200, [
+        entries = [
             {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"]}
             for r in rows
-        ])
+        ]
+        return ApiResponse(200, {"entries": entries, "me": me})
 
     def log_burpee_entry(self, body: dict, qp: dict) -> ApiResponse:
-        err = self._check_burpee_token(qp)
-        if err:
-            return err
-        participant = body.get("participant", "")
-        entry_date  = body.get("entry_date", "")
-        reps        = body.get("reps")
-        if participant not in ("Ivan", "Yurii") or not entry_date or not reps:
+        me = self._resolve_burpee_participant(qp)
+        if not me:
+            return ApiResponse(401, {"error": "unauthorized"})
+        entry_date = body.get("entry_date", "")
+        reps       = body.get("reps")
+        if not entry_date or not reps:
             return ApiResponse(400, {"error": "invalid_input"})
         r = self._exec(
             """
@@ -1459,16 +1464,16 @@ class PhaseApi:
             ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps
             RETURNING id, participant, entry_date, reps
             """,
-            (participant, entry_date, int(reps)),
+            (me, entry_date, int(reps)),
         ).fetchone()
         self.conn.commit()
         return ApiResponse(200, {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"]})
 
     def delete_burpee_entry(self, entry_id: int, qp: dict) -> ApiResponse:
-        err = self._check_burpee_token(qp)
-        if err:
-            return err
-        self._exec("DELETE FROM burpee_entries WHERE id = %s", (entry_id,))
+        me = self._resolve_burpee_participant(qp)
+        if not me:
+            return ApiResponse(401, {"error": "unauthorized"})
+        self._exec("DELETE FROM burpee_entries WHERE id = %s AND participant = %s", (entry_id, me))
         self.conn.commit()
         return ApiResponse(200, {"deleted": entry_id})
 

@@ -314,6 +314,10 @@ def handle_webhook(body: dict, conn) -> None:
             "DO UPDATE SET participant_name = EXCLUDED.participant_name, chat_id = EXCLUDED.chat_id",
             (tg_id, name, chat_id),
         )
+        cur.execute(
+            "INSERT INTO burpee_participants (name) VALUES (%s) ON CONFLICT DO NOTHING",
+            (name,),
+        )
         _clear_state(cur, tg_id)
         conn.commit()
         _send(chat_id, f"Welcome, {name}! 👋\n\nUse /notify to choose who receives your videos.\nUse /receive to choose whose videos you receive.\n\nThen send your first burpee video 💪")

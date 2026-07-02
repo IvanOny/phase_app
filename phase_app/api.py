@@ -1440,6 +1440,8 @@ class PhaseApi:
 
     def get_burpee_participants(self) -> ApiResponse:
         rows = self._exec(
+            "SELECT name FROM burpee_participants "
+            "UNION "
             "SELECT participant_name AS name FROM telegram_bot_users "
             "UNION "
             "SELECT DISTINCT participant AS name FROM burpee_entries "

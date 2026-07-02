@@ -10,9 +10,11 @@ const KNOWN_COLORS = { Ivan: '#6366f1', Yurii: '#10b981', Benni: '#f59e0b' };
 
 function buildColorMap(participants) {
   const map = {};
+  const usedColors = new Set(Object.values(KNOWN_COLORS));
+  const freePalette = COLOR_PALETTE.filter(c => !usedColors.has(c));
   let idx = 0;
   for (const p of participants) {
-    map[p] = KNOWN_COLORS[p] ?? COLOR_PALETTE[idx++ % COLOR_PALETTE.length];
+    map[p] = KNOWN_COLORS[p] ?? freePalette[idx++ % freePalette.length];
   }
   return map;
 }

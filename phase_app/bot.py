@@ -270,6 +270,21 @@ def handle_webhook(body: dict, conn) -> None:
     chat_id: int = msg["chat"]["id"]
     text: str = msg.get("text", "").strip()
 
+    # ── /help ────────────────────────────────────────────────────────────────
+    if text.startswith("/help"):
+        _send(chat_id,
+            "Available commands:\n\n"
+            "/start — register your name\n"
+            "/notify — choose who receives your videos\n"
+            "/receive — choose whose videos you receive\n"
+            "/help — show this list\n\n"
+            "To log a workout:\n"
+            "• Send a round video bubble → bot asks for reps\n"
+            "• Send a video/photo with rep count as caption\n"
+            "• Send just a number (e.g. 43) — logs without video"
+        )
+        return
+
     # ── /start ───────────────────────────────────────────────────────────────
     if text.startswith("/start"):
         _set_state(cur, tg_id, "awaiting_name")

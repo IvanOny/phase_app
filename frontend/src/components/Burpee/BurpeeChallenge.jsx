@@ -5,8 +5,17 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PARTICIPANTS = ['Ivan', 'Yurii', 'Benni'];
-const P_COLORS = { Ivan: '#6366f1', Yurii: '#10b981', Benni: '#f59e0b' };
+const COLOR_PALETTE = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'];
+const KNOWN_COLORS = { Ivan: '#6366f1', Yurii: '#10b981', Benni: '#f59e0b' };
+
+function buildColorMap(participants) {
+  const map = {};
+  let idx = 0;
+  for (const p of participants) {
+    map[p] = KNOWN_COLORS[p] ?? COLOR_PALETTE[idx++ % COLOR_PALETTE.length];
+  }
+  return map;
+}
 
 
 // ─── API ──────────────────────────────────────────────────────────────────────
@@ -58,9 +67,9 @@ function fmtMonthShort(ym) {
 }
 // ─── Derived stats ────────────────────────────────────────────────────────────
 
-function computeStats(entries, currentMonth) {
+function computeStats(entries, currentMonth, participants) {
   const stats = {};
-  for (const p of PARTICIPANTS) {
+  for (const p of participants) {
     const thisMonthEntries = entries.filter(
       (e) => e.participant === p && monthOf(e.entryDate) === currentMonth,
     );
@@ -77,8 +86,7 @@ function computeStats(entries, currentMonth) {
   return stats;
 }
 
-function computeMonthlyWins(entries) {
-  // Group all completed months (not current)
+function computeMonthlyWins(entries, participants) {
   const curMonth = monthOf(today());
   const months = [...new Set(entries.map((e) => monthOf(e.entryDate)))].filter(
     (m) => m < curMonth,
@@ -86,15 +94,14 @@ function computeMonthlyWins(entries) {
 
   return months.map((ym) => {
     const totals = {};
-    for (const p of PARTICIPANTS) {
+    for (const p of participants) {
       totals[p] = entries
         .filter((e) => e.participant === p && monthOf(e.entryDate) === ym)
         .reduce((s, e) => s + e.reps, 0);
     }
-    const [a, b] = PARTICIPANTS;
-    let winner = null;
-    if (totals[a] > totals[b]) winner = a;
-    else if (totals[b] > totals[a]) winner = b;
+    const maxTotal = Math.max(0, ...Object.values(totals));
+    const leaders = participants.filter((p) => totals[p] === maxTotal && maxTotal > 0);
+    const winner = leaders.length === 1 ? leaders[0] : null;
     return { ym, winner };
   });
 }
@@ -112,54 +119,8 @@ function buildChartData(entries, currentMonth) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function IdentityPicker({ onPick }) {
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 24,
-        padding: 24,
-        background: 'var(--bg-elevated, #1a1d27)',
-      }}
-    >
-      <div style={{ fontSize: 36, fontWeight: 800, color: 'var(--text-primary, #fff)', textAlign: 'center' }}>
-        🔥 БУРЧИК CHALLENGE
-      </div>
-      <div style={{ fontSize: 16, color: 'var(--text-secondary, #aaa)' }}>Who are you?</div>
-      <div style={{ display: 'flex', gap: 16 }}>
-        {PARTICIPANTS.map((p) => (
-          <button
-            key={p}
-            onClick={() => onPick(p)}
-            style={{
-              background: P_COLORS[p],
-              color: '#fff',
-              border: 'none',
-              borderRadius: 'var(--radius-md, 10px)',
-              padding: '20px 36px',
-              fontSize: 22,
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: `0 4px 20px ${P_COLORS[p]}55`,
-              transition: 'transform 0.1s',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-function ScoreCard({ participant, stats, isLeader, isMe, compact }) {
-  const color = P_COLORS[participant];
+function ScoreCard({ participant, color, stats, isLeader, isMe, compact }) {
 
   return (
     <div
@@ -196,7 +157,7 @@ function ScoreCard({ participant, stats, isLeader, isMe, compact }) {
   );
 }
 
-function LeadIndicator({ stats, participants }) {
+function LeadIndicator({ stats, participants, pColors }) {
   if (participants.length < 2) return null;
   const sorted = [...participants].sort((a, b) => stats[b].total - stats[a].total);
   const top = sorted[0];
@@ -210,13 +171,13 @@ function LeadIndicator({ stats, participants }) {
     );
   }
   return (
-    <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: P_COLORS[top], padding: '4px 0' }}>
+    <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: pColors[top] ?? '#888', padding: '4px 0' }}>
       ⚡ {top} leads by {margin} reps
     </div>
   );
 }
 
-function MonthlyWinsRow({ wins, viewMonth, onSelect, currentMonth }) {
+function MonthlyWinsRow({ wins, viewMonth, onSelect, currentMonth, pColors }) {
   const allPills = [...wins, { ym: currentMonth, winner: null, isCurrent: true }];
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, overflowX: 'auto', paddingBottom: 4 }}>
@@ -225,6 +186,7 @@ function MonthlyWinsRow({ wins, viewMonth, onSelect, currentMonth }) {
       </span>
       {allPills.map(({ ym, winner, isCurrent }) => {
         const isActive = ym === viewMonth;
+        const wColor = winner ? (pColors[winner] ?? '#888') : null;
         return (
           <span
             key={ym}
@@ -234,10 +196,10 @@ function MonthlyWinsRow({ wins, viewMonth, onSelect, currentMonth }) {
               alignItems: 'center',
               gap: 3,
               background: isActive
-                ? (winner ? P_COLORS[winner] : 'var(--text-muted, #888)')
-                : winner ? `${P_COLORS[winner]}22` : 'var(--bg-elevated, #1a1d27)',
-              border: `1px solid ${winner ? P_COLORS[winner] : 'var(--border, #2a2d3a)'}`,
-              color: isActive ? '#fff' : winner ? P_COLORS[winner] : 'var(--text-muted, #888)',
+                ? (wColor ?? 'var(--text-muted, #888)')
+                : wColor ? `${wColor}22` : 'var(--bg-elevated, #1a1d27)',
+              border: `1px solid ${wColor ?? 'var(--border, #2a2d3a)'}`,
+              color: isActive ? '#fff' : wColor ?? 'var(--text-muted, #888)',
               borderRadius: 20,
               padding: '2px 9px',
               fontSize: 12,
@@ -265,7 +227,7 @@ const navBtnStyle = {
   padding: '0 6px',
 };
 
-function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, participants }) {
+function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, participants, pColors }) {
   const rowHeight = 28;
   const height = Math.max(chartData.length * rowHeight + 24, 60);
   const axisMax = (p) => {
@@ -294,7 +256,7 @@ function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, pa
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         {participants.map((p, i) => {
-          const color = P_COLORS[p];
+          const color = pColors[p] ?? '#888';
           const showYAxis = i === 0;
           return (
             <div key={p} style={{ flex: 1, minWidth: 0 }}>
@@ -349,6 +311,8 @@ function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, pa
 export default function BurpeeChallenge({ token }) {
   const [me, setMe] = useState(null);
   const [entries, setEntries] = useState([]);
+  const [participants, setParticipants] = useState([]);
+  const [pColors, setPColors] = useState(KNOWN_COLORS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [repsInput, setRepsInput] = useState('');
@@ -359,13 +323,9 @@ export default function BurpeeChallenge({ token }) {
   const [selectedParticipants, setSelectedParticipants] = useState(() => {
     try {
       const saved = localStorage.getItem('burpee_selected_participants');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const valid = parsed.filter(p => PARTICIPANTS.includes(p));
-        if (valid.length > 0) return valid;
-      }
+      if (saved) return JSON.parse(saved);
     } catch {}
-    return PARTICIPANTS;
+    return [];
   });
 
   const currentMonth = monthOf(today());
@@ -387,6 +347,25 @@ export default function BurpeeChallenge({ token }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    async function fetchParticipants() {
+      try {
+        const data = await apiBurpee('GET', '/v1/burpee/participants', null, token);
+        const list = data.participants || [];
+        setParticipants(list);
+        setPColors(buildColorMap(list));
+        setSelectedParticipants((prev) => {
+          const valid = prev.filter((p) => list.includes(p));
+          if (valid.length > 0) return valid;
+          return list;
+        });
+      } catch {
+        // fallback: participants will stay empty, derived from entries on next render
+      }
+    }
+    fetchParticipants();
+  }, [token]);
 
   // Pre-fill input with existing entry for the selected date
   const myDateEntry = me
@@ -451,22 +430,22 @@ export default function BurpeeChallenge({ token }) {
     );
   }
 
-  const myView = [me, ...PARTICIPANTS.filter(p => p !== me && selectedParticipants.includes(p))]
+  const myView = [me, ...participants.filter(p => p !== me && selectedParticipants.includes(p))]
     .filter(p => selectedParticipants.includes(p));
 
   function toggleParticipant(p) {
-    if (p === me) return; // can't remove yourself
+    if (p === me) return;
     setSelectedParticipants(prev => {
       const next = prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p];
       localStorage.setItem('burpee_selected_participants', JSON.stringify(next));
       return next;
     });
   }
-  const stats = computeStats(entries, viewMonth);
-  const wins = computeMonthlyWins(entries);
+  const stats = computeStats(entries, viewMonth, participants);
+  const wins = computeMonthlyWins(entries, participants);
   const chartData = buildChartData(entries, viewMonth);
 
-  const meColor = P_COLORS[me];
+  const meColor = pColors[me] ?? '#6366f1';
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '16px 16px 40px' }}>
@@ -491,9 +470,9 @@ export default function BurpeeChallenge({ token }) {
 
       {/* Participant pills */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        {[me, ...PARTICIPANTS.filter(p => p !== me)].map(p => {
+        {[me, ...participants.filter(p => p !== me)].map(p => {
           const active = selectedParticipants.includes(p);
-          const color = P_COLORS[p];
+          const color = pColors[p] ?? '#888';
           const isMe = p === me;
           return (
             <button
@@ -520,21 +499,22 @@ export default function BurpeeChallenge({ token }) {
 
       {/* Scoreboard */}
       <div style={{ display: 'flex', gap: myView.length > 2 ? 6 : 10, marginBottom: 8 }}>
-        {myView.map((p) => (
+        {myView.filter(p => stats[p]).map((p) => (
           <ScoreCard
             key={p}
             participant={p}
+            color={pColors[p] ?? '#888'}
             stats={stats[p]}
-            isLeader={stats[p].total > 0 && myView.every(o => o === p || stats[p].total >= stats[o].total)}
+            isLeader={stats[p].total > 0 && myView.every(o => !stats[o] || o === p || stats[p].total >= stats[o].total)}
             isMe={p === me}
             compact={myView.length > 2}
           />
         ))}
       </div>
-      <LeadIndicator stats={stats} participants={myView} />
+      <LeadIndicator stats={stats} participants={myView} pColors={pColors} />
 
       {/* Monthly wins */}
-      <MonthlyWinsRow wins={wins} viewMonth={viewMonth} onSelect={setViewMonth} currentMonth={currentMonth} />
+      <MonthlyWinsRow wins={wins} viewMonth={viewMonth} onSelect={setViewMonth} currentMonth={currentMonth} pColors={pColors} />
 
       {/* Horizontal chart */}
       <BurpeeHorizontalChart
@@ -544,6 +524,7 @@ export default function BurpeeChallenge({ token }) {
         onNext={() => setViewMonth(nextMonthStr(viewMonth))}
         canGoNext={viewMonth < currentMonth}
         participants={myView}
+        pColors={pColors}
       />
 
       {/* Log form */}

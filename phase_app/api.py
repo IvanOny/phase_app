@@ -164,6 +164,8 @@ class PhaseApi:
             return self.login(body)
 
         # Burpee challenge (token-gated, no user auth required)
+        if method == "GET" and path == "/v1/burpee/participants":
+            return self.get_burpee_participants()
         if method == "GET" and path == "/v1/burpee":
             return self.get_burpee_entries(qp)
         if method == "POST" and path == "/v1/burpee":
@@ -1435,6 +1437,15 @@ class PhaseApi:
             if expected and token == expected:
                 return name
         return None
+
+    def get_burpee_participants(self) -> ApiResponse:
+        rows = self._exec(
+            "SELECT participant_name AS name FROM telegram_bot_users "
+            "UNION "
+            "SELECT DISTINCT participant AS name FROM burpee_entries "
+            "ORDER BY name"
+        ).fetchall()
+        return ApiResponse(200, {"participants": [r["name"] for r in rows]})
 
     def get_burpee_entries(self, qp: dict) -> ApiResponse:
         me = self._resolve_burpee_participant(qp)

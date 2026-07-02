@@ -1428,17 +1428,15 @@ class PhaseApi:
     # ------------------------------------------------------------------ #
 
     def _resolve_burpee_participant(self, qp: dict) -> "str | None":
-        """Map token → participant name. Returns None if token is invalid."""
+        """Map token → participant name. Token is stored in telegram_bot_users."""
         token = qp.get("token", "")
         if not token:
             return None
-        rows = self._exec("SELECT name FROM burpee_participants").fetchall()
-        for row in rows:
-            name = row["name"]
-            expected = os.environ.get(f"BURPEE_TOKEN_{name.upper()}", "")
-            if expected and token == expected:
-                return name
-        return None
+        row = self._exec(
+            "SELECT participant_name FROM telegram_bot_users WHERE token = %s",
+            (token,),
+        ).fetchone()
+        return row["participant_name"] if row else None
 
     def get_burpee_participants(self) -> ApiResponse:
         rows = self._exec(

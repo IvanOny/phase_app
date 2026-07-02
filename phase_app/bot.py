@@ -308,11 +308,12 @@ def handle_webhook(body: dict, conn) -> None:
         if cur.fetchone():
             _send(chat_id, f'"{name}" is already taken. Please choose a different name.')
             return
+        token = f"бурчик-{name.lower()}"
         cur.execute(
-            "INSERT INTO telegram_bot_users (telegram_user_id, participant_name, chat_id) "
-            "VALUES (%s, %s, %s) ON CONFLICT (telegram_user_id) "
-            "DO UPDATE SET participant_name = EXCLUDED.participant_name, chat_id = EXCLUDED.chat_id",
-            (tg_id, name, chat_id),
+            "INSERT INTO telegram_bot_users (telegram_user_id, participant_name, chat_id, token) "
+            "VALUES (%s, %s, %s, %s) ON CONFLICT (telegram_user_id) "
+            "DO UPDATE SET participant_name = EXCLUDED.participant_name, chat_id = EXCLUDED.chat_id, token = EXCLUDED.token",
+            (tg_id, name, chat_id, token),
         )
         cur.execute(
             "INSERT INTO burpee_participants (name) VALUES (%s) ON CONFLICT DO NOTHING",
@@ -320,7 +321,8 @@ def handle_webhook(body: dict, conn) -> None:
         )
         _clear_state(cur, tg_id)
         conn.commit()
-        _send(chat_id, f"Welcome, {name}! 👋\n\nUse /notify to choose who receives your videos.\nUse /receive to choose whose videos you receive.\n\nThen send your first burpee video 💪")
+        app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
+        _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /notify to choose who receives your videos.\nUse /receive to choose whose videos you receive.\n\nThen send your first burpee video 💪")
         return
 
     # ── /notify ──────────────────────────────────────────────────────────────

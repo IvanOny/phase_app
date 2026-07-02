@@ -221,41 +221,49 @@ def handle_webhook(body: dict, conn) -> None:
         _send(chat_id, f"{participant}, who should receive your videos? Tap to toggle, then Done.", reply_markup=keyboard)
         return
 
-    # ── Plain number reply → reps for a pending video_note ──────────────────
+    # ── Plain number → reps for pending video_note, or log without media ──────
     if text.isdigit() and participant:
+        reps = int(text)
         cur.execute(
             "SELECT message_id FROM telegram_bot_pending WHERE telegram_user_id = %s",
             (tg_id,),
         )
         pending = cur.fetchone()
         if pending:
-            reps = int(text)
             _log_entry(cur, participant, reps)
             cur.execute("DELETE FROM telegram_bot_pending WHERE telegram_user_id = %s", (tg_id,))
             _do_forward(cur, conn, tg_id, participant, chat_id, pending["message_id"], reps)
+        else:
+            # No pending media — log reps without forwarding any video
+            _log_entry(cur, participant, reps)
+            conn.commit()
+            _send(chat_id, f"✓ {participant}, logged {reps} reps")
         return
 
     has_video = "video" in msg
     has_video_note = "video_note" in msg
-    if not (has_video or has_video_note):
+    has_photo = "photo" in msg
+    has_media = has_video or has_video_note or has_photo
+
+    if not has_media:
         return
 
     if not participant:
         _send(chat_id, "Please register first — send /start")
         return
 
-    # ── Regular video (supports caption) ────────────────────────────────────
-    if has_video:
+    # ── Video or photo with caption ──────────────────────────────────────────
+    if has_video or has_photo:
         caption = msg.get("caption", "").strip()
         if not caption.isdigit():
-            _send(chat_id, f"{participant}, add the number of reps as the video caption (e.g. 43)")
+            _send(chat_id, f"{participant}, add the number of reps as the caption (e.g. 43)")
             return
         reps = int(caption)
         _log_entry(cur, participant, reps)
         _do_forward(cur, conn, tg_id, participant, chat_id, msg["message_id"], reps)
         return
 
-    # ── Round video bubble → ask for reps ───────────────────────────────────
+    # ── Round video bubble / no-caption media → ask for reps ────────────────
     if has_video_note:
         cur.execute(
             "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id) "

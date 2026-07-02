@@ -1430,7 +1430,7 @@ class PhaseApi:
         token = qp.get("token", "")
         if not token:
             return None
-        for name in ("Ivan", "Yurii", "Benni"):
+        for name in ("Ivan", "Yurii", "Benni", "Anton", "Anatoliy"):
             expected = os.environ.get(f"BURPEE_TOKEN_{name.upper()}", "")
             if expected and token == expected:
                 return name

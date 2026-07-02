@@ -356,7 +356,17 @@ export default function BurpeeChallenge({ token }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [viewMonth, setViewMonth] = useState(() => monthOf(today()));
-  const [selectedParticipants, setSelectedParticipants] = useState(PARTICIPANTS);
+  const [selectedParticipants, setSelectedParticipants] = useState(() => {
+    try {
+      const saved = localStorage.getItem('burpee_selected_participants');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const valid = parsed.filter(p => PARTICIPANTS.includes(p));
+        if (valid.length > 0) return valid;
+      }
+    } catch {}
+    return PARTICIPANTS;
+  });
 
   const currentMonth = monthOf(today());
 
@@ -446,9 +456,11 @@ export default function BurpeeChallenge({ token }) {
 
   function toggleParticipant(p) {
     if (p === me) return; // can't remove yourself
-    setSelectedParticipants(prev =>
-      prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
-    );
+    setSelectedParticipants(prev => {
+      const next = prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p];
+      localStorage.setItem('burpee_selected_participants', JSON.stringify(next));
+      return next;
+    });
   }
   const stats = computeStats(entries, viewMonth);
   const wins = computeMonthlyWins(entries);

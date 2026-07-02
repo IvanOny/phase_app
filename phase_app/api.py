@@ -1432,7 +1432,9 @@ class PhaseApi:
         token = qp.get("token", "")
         if not token:
             return None
-        for name in ("Ivan", "Yurii", "Benni", "Anton", "Anatoliy"):
+        rows = self._exec("SELECT name FROM burpee_participants").fetchall()
+        for row in rows:
+            name = row["name"]
             expected = os.environ.get(f"BURPEE_TOKEN_{name.upper()}", "")
             if expected and token == expected:
                 return name

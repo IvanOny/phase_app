@@ -19,8 +19,10 @@ def _tg(method: str, payload: dict) -> None:
     )
     try:
         urllib.request.urlopen(req, timeout=8)
-    except urllib.error.HTTPError:
-        pass
+    except urllib.error.HTTPError as e:
+        print(f"Telegram API error [{method}]: {e.code} {e.read().decode()}")
+    except Exception as e:
+        print(f"Telegram API error [{method}]: {e}")
 
 
 def _send(chat_id: int, text: str, reply_markup: dict | None = None) -> None:

@@ -65,10 +65,11 @@ def telegram_bot():
     if secret and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
         return jsonify({"error": "unauthorized"}), 403
     from phase_app.bot import handle_webhook
+    import traceback
     try:
         handle_webhook(request.get_json(force=True) or {}, _get_api().conn)
     except Exception:
-        pass  # always return 200 so Telegram doesn't retry
+        traceback.print_exc()
     return jsonify({"ok": True}), 200
 
 

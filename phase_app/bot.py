@@ -166,6 +166,16 @@ def _get_follow_set(cur, tg_id: int) -> set[str]:
     return {r["receive_participant"] for r in cur.fetchall()}
 
 
+_MAIN_KB = {
+    "keyboard": [
+        [{"text": "📤 Share"}, {"text": "📥 Follow"}],
+        [{"text": "✏️ Rename"}, {"text": "❓ Help"}],
+    ],
+    "resize_keyboard": True,
+    "is_persistent": True,
+}
+
+
 def _follow_keyboard(cur, tg_id: int) -> dict:
     selected = _get_follow_set(cur, tg_id)
     others = _all_other_names(cur, tg_id)
@@ -199,9 +209,9 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         _send(to_chat_id, f"{participant}: {reps} reps")
     if targets:
         forwarded_to = ", ".join(n for _, n in targets)
-        _send(from_chat_id, f"✓ {reps} reps → forwarded to {forwarded_to}")
+        _send(from_chat_id, f"✓ {reps} reps → forwarded to {forwarded_to}", reply_markup=_MAIN_KB)
     else:
-        _send(from_chat_id, f"✓ {reps} reps logged")
+        _send(from_chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
 
 
 # ── Webhook handler ──────────────────────────────────────────────────────────
@@ -225,7 +235,7 @@ def handle_webhook(body: dict, conn) -> None:
             if target == "done":
                 selected = _get_share_set(cur, tg_id)
                 _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-                _send(chat_id, f"{_greet(cur, tg_id, participant)}sharing to: {', '.join(sorted(selected)) or 'nobody'}\n\nNow send your burpee video 💪")
+                _send(chat_id, f"{_greet(cur, tg_id, participant)}sharing to: {', '.join(sorted(selected)) or 'nobody'}\n\nNow send your burpee video 💪", reply_markup=_MAIN_KB)
                 return
             others = _all_other_names(cur, tg_id)
             if target == "__all__":
@@ -254,7 +264,7 @@ def handle_webhook(body: dict, conn) -> None:
             if target == "done":
                 selected = _get_follow_set(cur, tg_id)
                 _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-                _send(chat_id, f"{_greet(cur, tg_id, participant)}following: {', '.join(sorted(selected)) or 'nobody'}")
+                _send(chat_id, f"{_greet(cur, tg_id, participant)}following: {', '.join(sorted(selected)) or 'nobody'}", reply_markup=_MAIN_KB)
                 return
             others = _all_other_names(cur, tg_id)
             if target == "__all__":
@@ -288,7 +298,7 @@ def handle_webhook(body: dict, conn) -> None:
     text: str = msg.get("text", "").strip()
 
     # ── /help ────────────────────────────────────────────────────────────────
-    if text.startswith("/help"):
+    if text.startswith("/help") or text == "❓ Help":
         _send(chat_id,
             "Available commands:\n\n"
             "/start — register your name\n"
@@ -299,7 +309,8 @@ def handle_webhook(body: dict, conn) -> None:
             "To log a workout:\n"
             "• Send a round video bubble\n"
             "  bot asks for reps\n"
-            "• Send a number"
+            "• Send a number",
+            reply_markup=_MAIN_KB,
         )
         return
 
@@ -314,7 +325,7 @@ def handle_webhook(body: dict, conn) -> None:
     state = _get_state(cur, tg_id)
 
     # ── /rename ──────────────────────────────────────────────────────────────
-    if text.startswith("/rename"):
+    if text.startswith("/rename") or text == "✏️ Rename":
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
@@ -357,13 +368,13 @@ def handle_webhook(body: dict, conn) -> None:
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
         if state == "awaiting_rename":
-            _send(chat_id, f"Done! Your name is now {name}.\n\nUpdated app link:\n{app_url}")
+            _send(chat_id, f"Done! Your name is now {name}.\n\nUpdated app link:\n{app_url}", reply_markup=_MAIN_KB)
         else:
-            _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /share to choose who receives your videos.\nUse /follow to choose whose videos you receive.\n\nThen send your first burpee video 💪")
+            _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /share to choose who receives your videos.\nUse /follow to choose whose videos you receive.\n\nThen send your first burpee video 💪", reply_markup=_MAIN_KB)
         return
 
     # ── /share ───────────────────────────────────────────────────────────────
-    if text.startswith("/share"):
+    if text.startswith("/share") or text == "📤 Share":
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
@@ -375,7 +386,7 @@ def handle_webhook(body: dict, conn) -> None:
         return
 
     # ── /follow ──────────────────────────────────────────────────────────────
-    if text.startswith("/follow"):
+    if text.startswith("/follow") or text == "📥 Follow":
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
@@ -398,7 +409,7 @@ def handle_webhook(body: dict, conn) -> None:
         else:
             _log_entry(cur, participant, reps)
             conn.commit()
-            _send(chat_id, f"✓ {reps} reps logged")
+            _send(chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
         return
 
     has_video = "video" in msg

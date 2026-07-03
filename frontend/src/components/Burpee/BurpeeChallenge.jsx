@@ -1,20 +1,31 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Color system ─────────────────────────────────────────────────────────────
+// Each entry: { bg: tint for backgrounds, text: dark for text/borders, bar: saturated for charts }
 
-const COLOR_PALETTE = ['#a5b4fc', '#86efac', '#fde68a', '#fca5a5', '#c4b5fd', '#7dd3fc', '#fdba74', '#99f6e4', '#f9a8d4'];
-const KNOWN_COLORS = { Ivan: '#a5b4fc', Yurii: '#86efac', Benni: '#fde68a' };
+const C_PALETTE = [
+  { bg: '#eef2ff', text: '#4338ca', bar: '#6366f1', chart: '#a5b4fc' }, // indigo
+  { bg: '#f0fdf4', text: '#15803d', bar: '#22c55e', chart: '#86efac' }, // green
+  { bg: '#fffbeb', text: '#b45309', bar: '#f59e0b', chart: '#fcd34d' }, // amber
+  { bg: '#fef2f2', text: '#dc2626', bar: '#ef4444', chart: '#fca5a5' }, // red
+  { bg: '#f5f3ff', text: '#7c3aed', bar: '#8b5cf6', chart: '#c4b5fd' }, // violet
+  { bg: '#ecfeff', text: '#0e7490', bar: '#06b6d4', chart: '#67e8f9' }, // cyan
+  { bg: '#fff7ed', text: '#c2410c', bar: '#f97316', chart: '#fdba74' }, // orange
+  { bg: '#f0fdfa', text: '#0f766e', bar: '#14b8a6', chart: '#5eead4' }, // teal
+  { bg: '#fdf4ff', text: '#a21caf', bar: '#d946ef', chart: '#f0abfc' }, // fuchsia
+];
+const C_KNOWN = { Ivan: C_PALETTE[0], Yurii: C_PALETTE[1], Benni: C_PALETTE[2] };
 
 function buildColorMap(participants) {
   const map = {};
-  const usedColors = new Set(Object.values(KNOWN_COLORS));
-  const freePalette = COLOR_PALETTE.filter(c => !usedColors.has(c));
+  const usedIdxs = new Set(Object.values(C_KNOWN).map(c => C_PALETTE.indexOf(c)));
+  const free = C_PALETTE.filter((_, i) => !usedIdxs.has(i));
   let idx = 0;
   for (const p of participants) {
-    map[p] = KNOWN_COLORS[p] ?? freePalette[idx++ % freePalette.length];
+    map[p] = C_KNOWN[p] ?? free[idx++ % free.length];
   }
   return map;
 }
@@ -123,35 +134,31 @@ function buildChartData(entries, currentMonth) {
 
 
 function ScoreCard({ participant, color, stats, isLeader, isMe, compact }) {
-
   return (
     <div
       style={{
-        flex: 1,
-        background: 'var(--bg-elevated, #1a1d27)',
-        border: `1.5px solid ${isLeader ? color : 'var(--border, #2a2d3a)'}`,
+        background: isLeader ? color.bg : 'var(--bg-elevated, #f9f9f9)',
+        border: `1.5px solid ${isLeader ? color.text + '44' : 'var(--border, #e5e7eb)'}`,
         borderRadius: 'var(--radius-md, 10px)',
         padding: compact ? '10px 10px' : '14px 16px',
         display: 'flex',
         flexDirection: 'column',
         gap: 3,
-        boxShadow: isLeader ? `0 0 16px ${color}33` : 'none',
-        transition: 'box-shadow 0.2s',
         minWidth: 0,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ fontWeight: 700, fontSize: compact ? 12 : 15, color }}>{participant}</span>
+        <span style={{ fontWeight: 700, fontSize: compact ? 12 : 15, color: color.text }}>{participant}</span>
         {isMe && (
-          <span style={{ fontSize: 9, background: color, color: '#333', borderRadius: 4, padding: '1px 4px', fontWeight: 600 }}>
+          <span style={{ fontSize: 9, background: color.bg, color: color.text, border: `1px solid ${color.text}44`, borderRadius: 4, padding: '1px 4px', fontWeight: 600 }}>
             you
           </span>
         )}
       </div>
-      <div style={{ fontSize: compact ? 26 : 36, fontWeight: 800, color: 'var(--text-primary, #fff)', lineHeight: 1.1 }}>
+      <div style={{ fontSize: compact ? 26 : 36, fontWeight: 800, color: 'var(--text-primary, #111)', lineHeight: 1.1 }}>
         {stats.total}
       </div>
-      <div style={{ fontSize: 11, color: 'var(--text-secondary, #aaa)', fontWeight: 600 }}>avg {stats.avg} / day</div>
+      <div style={{ fontSize: 11, color: 'var(--text-secondary, #555)', fontWeight: 600 }}>avg {stats.avg} / day</div>
       <div style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>
         {stats.days}d · best {stats.best}
       </div>
@@ -173,7 +180,7 @@ function LeadIndicator({ stats, participants, pColors }) {
     );
   }
   return (
-    <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: pColors[top] ?? '#888', padding: '4px 0' }}>
+    <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: pColors[top]?.text ?? '#888', padding: '4px 0' }}>
       ⚡ {top} leads by {margin} reps
     </div>
   );
@@ -188,7 +195,7 @@ function MonthlyWinsRow({ wins, viewMonth, onSelect, currentMonth, pColors }) {
       </span>
       {allPills.map(({ ym, winner, isCurrent }) => {
         const isActive = ym === viewMonth;
-        const wColor = winner ? (pColors[winner] ?? '#888') : null;
+        const wc = winner ? pColors[winner] : null;
         return (
           <span
             key={ym}
@@ -198,10 +205,11 @@ function MonthlyWinsRow({ wins, viewMonth, onSelect, currentMonth, pColors }) {
               alignItems: 'center',
               gap: 3,
               background: isActive
-                ? (wColor ?? 'var(--text-muted, #888)')
-                : wColor ? `${wColor}22` : 'var(--bg-elevated, #1a1d27)',
-              border: `1px solid ${wColor ?? 'var(--border, #2a2d3a)'}`,
-              color: isActive ? '#333' : wColor ?? 'var(--text-muted, #888)',
+                ? (wc ? wc.bg : 'var(--bg-elevated, #f0f0f0)')
+                : wc ? wc.bg : 'transparent',
+              border: `1px solid ${wc ? wc.text + '55' : 'var(--border, #e5e7eb)'}`,
+              color: wc ? wc.text : 'var(--text-muted, #888)',
+              fontWeight: isActive ? 700 : 500,
               borderRadius: 20,
               padding: '2px 9px',
               fontSize: 12,
@@ -258,7 +266,7 @@ function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, pa
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         {participants.map((p, i) => {
-          const color = pColors[p] ?? '#888';
+          const color = pColors[p] ?? C_PALETTE[0];
           const showYAxis = i === 0;
           return (
             <div key={p} style={{ flex: 1, minWidth: 0 }}>
@@ -297,7 +305,7 @@ function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, pa
                     cursor={{ fill: 'rgba(255,255,255,0.04)' }}
                     formatter={(value) => [value, p]}
                   />
-                  <Bar dataKey={p} fill={color} radius={[0, 3, 3, 0]} />
+                  <Bar dataKey={p} fill={color.chart} radius={[0, 3, 3, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -314,7 +322,7 @@ export default function BurpeeChallenge({ token }) {
   const [me, setMe] = useState(null);
   const [entries, setEntries] = useState([]);
   const [participants, setParticipants] = useState([]);
-  const [pColors, setPColors] = useState(KNOWN_COLORS);
+  const [pColors, setPColors] = useState(C_KNOWN);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [repsInput, setRepsInput] = useState('');
@@ -337,6 +345,7 @@ export default function BurpeeChallenge({ token }) {
     return [];
   });
   const [dragIdx, setDragIdx] = useState(null);
+  const hasCustomOrder = useRef(!!localStorage.getItem('burpee_pill_order'));
 
   const currentMonth = monthOf(today());
 
@@ -453,9 +462,13 @@ export default function BurpeeChallenge({ token }) {
     );
   }
 
-  const orderedAll = pillOrder.length > 0
-    ? pillOrder.filter(p => participants.includes(p) || p === me)
-    : (me ? [me, ...participants.filter(p => p !== me)] : participants);
+  const orderedAll = (() => {
+    const base = pillOrder.length > 0
+      ? pillOrder.filter(p => participants.includes(p) || p === me)
+      : (me ? [me, ...participants.filter(p => p !== me)] : participants);
+    if (!me || hasCustomOrder.current || base[0] === me) return base;
+    return [me, ...base.filter(p => p !== me)];
+  })();
 
   const myView = orderedAll.filter(p => p === me || selectedParticipants.includes(p));
 
@@ -475,6 +488,7 @@ export default function BurpeeChallenge({ token }) {
     const next = [...orderedAll];
     const [moved] = next.splice(dragIdx, 1);
     next.splice(i, 0, moved);
+    hasCustomOrder.current = true;
     setPillOrder(next);
     localStorage.setItem('burpee_pill_order', JSON.stringify(next));
     setDragIdx(null);
@@ -483,7 +497,7 @@ export default function BurpeeChallenge({ token }) {
   const wins = computeMonthlyWins(entries, participants);
   const chartData = buildChartData(entries, viewMonth);
 
-  const meColor = pColors[me] ?? '#6366f1';
+  const meColor = pColors[me] ?? C_PALETTE[0];
 
   return (
     <div style={{ maxWidth: 480, margin: '0 auto', padding: '16px 16px 40px' }}>
@@ -510,7 +524,7 @@ export default function BurpeeChallenge({ token }) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {orderedAll.map((p, i) => {
           const active = p === me || selectedParticipants.includes(p);
-          const color = pColors[p] ?? '#888';
+          const color = pColors[p] ?? C_PALETTE[0];
           const isDragging = dragIdx === i;
           return (
             <button
@@ -522,10 +536,10 @@ export default function BurpeeChallenge({ token }) {
               onDragEnd={() => setDragIdx(null)}
               onClick={() => toggleParticipant(p)}
               style={{
-                background: active ? color : 'transparent',
-                border: `1.5px solid ${active ? color : 'var(--border, #2a2d3a)'}`,
+                background: active ? color.bg : 'transparent',
+                border: `1.5px solid ${active ? color.text + '66' : 'var(--border, #e5e7eb)'}`,
                 borderRadius: 20,
-                color: active ? '#333' : 'var(--text-muted, #888)',
+                color: active ? color.text : 'var(--text-muted, #888)',
                 fontSize: 13,
                 fontWeight: 600,
                 padding: '4px 14px',
@@ -551,7 +565,7 @@ export default function BurpeeChallenge({ token }) {
           <ScoreCard
             key={p}
             participant={p}
-            color={pColors[p] ?? '#888'}
+            color={pColors[p] ?? C_PALETTE[0]}
             stats={stats[p]}
             isLeader={stats[p].total > 0 && myView.every(o => !stats[o] || o === p || stats[p].total >= stats[o].total)}
             isMe={p === me}
@@ -579,13 +593,13 @@ export default function BurpeeChallenge({ token }) {
       <div
         style={{
           background: 'var(--bg-elevated, #1a1d27)',
-          border: `1px solid ${meColor}44`,
+          border: `1px solid ${meColor.text}44`,
           borderRadius: 'var(--radius-md, 10px)',
           padding: '14px 16px',
           marginTop: 12,
         }}
       >
-        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: meColor, marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: meColor.text, marginBottom: 10 }}>
           Log for {me}
         </div>
         <form onSubmit={handleLog} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -618,7 +632,7 @@ export default function BurpeeChallenge({ token }) {
               width: 68,
               padding: '8px 10px',
               borderRadius: 'var(--radius-md, 8px)',
-              border: `1px solid ${repsInput ? meColor + '88' : 'var(--border, #2a2d3a)'}`,
+              border: `1px solid ${repsInput ? meColor.text + '88' : 'var(--border, #2a2d3a)'}`,
               background: 'var(--bg-elevated, #1a1d27)',
               color: 'var(--text-primary, #fff)',
               fontSize: 15,
@@ -631,7 +645,7 @@ export default function BurpeeChallenge({ token }) {
             type="submit"
             disabled={saving || !repsInput}
             style={{
-              background: repsInput ? meColor : 'var(--border, #2a2d3a)',
+              background: repsInput ? meColor.bar : 'var(--border, #e5e7eb)',
               color: '#fff',
               border: 'none',
               borderRadius: 'var(--radius-md, 8px)',

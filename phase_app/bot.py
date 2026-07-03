@@ -10,6 +10,13 @@ _TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 _API = f"https://api.telegram.org/bot{_TOKEN}"
 
 
+def _build_token(name: str, secret: str | None) -> str:
+    slug = name.lower().replace(" ", "-")
+    if secret:
+        slug += "-" + secret.lower().replace(" ", "-")
+    return f"бурчик-{slug}"
+
+
 def _tg(method: str, payload: dict) -> None:
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
@@ -104,20 +111,22 @@ def _get_share_set(cur, tg_id: int) -> set[str]:
 
 def _get_share_chats(cur, tg_id: int) -> list[tuple[int, str]]:
     """Returns (chat_id, name) for users this sender wants to notify AND who accept from sender's name."""
-    cur.execute(
-        "SELECT u.chat_id, u.participant_name "
-        "FROM telegram_bot_notify n "
-        "JOIN telegram_bot_users u ON u.participant_name = n.notify_participant "
-        "WHERE n.telegram_user_id = %s",
-        (tg_id,),
-    )
+    stored = _get_share_set(cur, tg_id)
+    has_all = "__all__" in stored
+    if has_all:
+        cur.execute(
+            "SELECT chat_id, participant_name FROM telegram_bot_users WHERE telegram_user_id != %s",
+            (tg_id,),
+        )
+    else:
+        cur.execute(
+            "SELECT u.chat_id, u.participant_name "
+            "FROM telegram_bot_notify n "
+            "JOIN telegram_bot_users u ON u.participant_name = n.notify_participant "
+            "WHERE n.telegram_user_id = %s",
+            (tg_id,),
+        )
     candidates = [(r["chat_id"], r["participant_name"]) for r in cur.fetchall()]
-    # Filter by receiver's receive list (if they've set one)
-    cur.execute(
-        "SELECT telegram_user_id FROM telegram_bot_users WHERE participant_name = ANY(%s)",
-        ([name for _, name in candidates],),
-    )
-    receiver_ids = {r["telegram_user_id"] for r in cur.fetchall()}
     sender_name = _lookup_user(cur, tg_id)
     result = []
     for chat_id, name in candidates:
@@ -133,7 +142,8 @@ def _get_share_chats(cur, tg_id: int) -> list[tuple[int, str]]:
         has_receive_list = cur.fetchone() is not None
         if has_receive_list:
             cur.execute(
-                "SELECT 1 FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s",
+                "SELECT 1 FROM telegram_bot_receive WHERE telegram_user_id = %s "
+                "AND (receive_participant = %s OR receive_participant = '__all__')",
                 (rid, sender_name),
             )
             if not cur.fetchone():
@@ -143,14 +153,13 @@ def _get_share_chats(cur, tg_id: int) -> list[tuple[int, str]]:
 
 
 def _share_keyboard(cur, tg_id: int) -> dict:
-    selected = _get_share_set(cur, tg_id)
+    stored = _get_share_set(cur, tg_id)
+    has_all = "__all__" in stored
     others = _all_other_names(cur, tg_id)
-    all_selected = set(others) == selected and len(others) > 0
     rows = []
-    anyone_label = "✓ Anyone" if all_selected else "Anyone"
-    rows.append([{"text": anyone_label, "callback_data": "share:__all__"}])
+    rows.append([{"text": "✓ Anyone" if has_all else "Anyone", "callback_data": "share:__all__"}])
     for p in others:
-        label = f"✓ {p}" if p in selected else p
+        label = f"✓ {p}" if (has_all or p in stored) else p
         rows.append([{"text": label, "callback_data": f"share:{p}"}])
     rows.append([{"text": "Done", "callback_data": "share:done"}])
     return {"inline_keyboard": rows}
@@ -169,7 +178,8 @@ def _get_follow_set(cur, tg_id: int) -> set[str]:
 _MAIN_KB = {
     "keyboard": [
         [{"text": "📤 Share"}, {"text": "📥 Follow"}],
-        [{"text": "✏️ Rename"}, {"text": "❓ Help"}],
+        [{"text": "✏️ Rename"}, {"text": "🔑 Secret"}],
+        [{"text": "❓ Help"}],
     ],
     "resize_keyboard": True,
     "is_persistent": True,
@@ -177,14 +187,13 @@ _MAIN_KB = {
 
 
 def _follow_keyboard(cur, tg_id: int) -> dict:
-    selected = _get_follow_set(cur, tg_id)
+    stored = _get_follow_set(cur, tg_id)
+    has_all = "__all__" in stored
     others = _all_other_names(cur, tg_id)
-    all_selected = set(others) == selected and len(others) > 0
     rows = []
-    anyone_label = "✓ Anyone" if all_selected else "Anyone"
-    rows.append([{"text": anyone_label, "callback_data": "follow:__all__"}])
+    rows.append([{"text": "✓ Anyone" if has_all else "Anyone", "callback_data": "follow:__all__"}])
     for p in others:
-        label = f"✓ {p}" if p in selected else p
+        label = f"✓ {p}" if (has_all or p in stored) else p
         rows.append([{"text": label, "callback_data": f"follow:{p}"}])
     rows.append([{"text": "Done", "callback_data": "follow:done"}])
     return {"inline_keyboard": rows}
@@ -233,24 +242,29 @@ def handle_webhook(body: dict, conn) -> None:
         if data.startswith("share:"):
             target = data[len("share:"):]
             if target == "done":
-                selected = _get_share_set(cur, tg_id)
+                stored = _get_share_set(cur, tg_id)
+                has_all = "__all__" in stored
+                summary = "anyone" if has_all else (", ".join(sorted(stored - {"__all__"})) or "nobody")
                 _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-                _send(chat_id, f"{_greet(cur, tg_id, participant)}sharing to: {', '.join(sorted(selected)) or 'nobody'}\n\nNow send your burpee video 💪", reply_markup=_MAIN_KB)
+                _send(chat_id, f"{_greet(cur, tg_id, participant)}sharing to: {summary}\n\nNow send your burpee video 💪", reply_markup=_MAIN_KB)
                 return
-            others = _all_other_names(cur, tg_id)
             if target == "__all__":
-                selected = _get_share_set(cur, tg_id)
-                if set(others) == selected:
+                stored = _get_share_set(cur, tg_id)
+                if "__all__" in stored:
                     cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s", (tg_id,))
                 else:
-                    for p in others:
-                        cur.execute(
-                            "INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                            (tg_id, p),
-                        )
+                    cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s", (tg_id,))
+                    cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, '__all__') ON CONFLICT DO NOTHING", (tg_id,))
             else:
-                selected = _get_share_set(cur, tg_id)
-                if target in selected:
+                stored = _get_share_set(cur, tg_id)
+                if "__all__" in stored:
+                    # Expand __all__ to explicit rows then remove toggled one
+                    others = _all_other_names(cur, tg_id)
+                    cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s", (tg_id,))
+                    for p in others:
+                        if p != target:
+                            cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, p))
+                elif target in stored:
                     cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s", (tg_id, target))
                 else:
                     cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, target))
@@ -262,24 +276,29 @@ def handle_webhook(body: dict, conn) -> None:
         if data.startswith("follow:"):
             target = data[len("follow:"):]
             if target == "done":
-                selected = _get_follow_set(cur, tg_id)
+                stored = _get_follow_set(cur, tg_id)
+                has_all = "__all__" in stored
+                summary = "anyone" if has_all else (", ".join(sorted(stored - {"__all__"})) or "nobody")
                 _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-                _send(chat_id, f"{_greet(cur, tg_id, participant)}following: {', '.join(sorted(selected)) or 'nobody'}", reply_markup=_MAIN_KB)
+                _send(chat_id, f"{_greet(cur, tg_id, participant)}following: {summary}", reply_markup=_MAIN_KB)
                 return
-            others = _all_other_names(cur, tg_id)
             if target == "__all__":
-                selected = _get_follow_set(cur, tg_id)
-                if set(others) == selected:
+                stored = _get_follow_set(cur, tg_id)
+                if "__all__" in stored:
                     cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s", (tg_id,))
                 else:
-                    for p in others:
-                        cur.execute(
-                            "INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-                            (tg_id, p),
-                        )
+                    cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s", (tg_id,))
+                    cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, '__all__') ON CONFLICT DO NOTHING", (tg_id,))
             else:
-                selected = _get_follow_set(cur, tg_id)
-                if target in selected:
+                stored = _get_follow_set(cur, tg_id)
+                if "__all__" in stored:
+                    # Expand __all__ to explicit rows then remove toggled one
+                    others = _all_other_names(cur, tg_id)
+                    cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s", (tg_id,))
+                    for p in others:
+                        if p != target:
+                            cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, p))
+                elif target in stored:
                     cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s", (tg_id, target))
                 else:
                     cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, target))
@@ -303,6 +322,7 @@ def handle_webhook(body: dict, conn) -> None:
             "Available commands:\n\n"
             "/start — register your name\n"
             "/rename — change your name\n"
+            "/secret — update your app link secret\n"
             "/share — choose who receives your videos\n"
             "/follow — choose whose videos you receive\n"
             "/help — show this list\n\n"
@@ -334,6 +354,16 @@ def handle_webhook(body: dict, conn) -> None:
         _send(chat_id, f"{_greet(cur, tg_id, participant)}what would you like to change your name to?")
         return
 
+    # ── /secret ──────────────────────────────────────────────────────────────
+    if text.startswith("/secret") or text == "🔑 Secret":
+        if not participant:
+            _send(chat_id, "Please register first — send /start")
+            return
+        _set_state(cur, tg_id, "awaiting_secret_update")
+        conn.commit()
+        _send(chat_id, "Name a fictional character you love:")
+        return
+
     # ── Awaiting name input (registration or rename) ─────────────────────────
     if state in ("awaiting_name", "awaiting_rename") and text:
         name = text.strip()
@@ -348,29 +378,75 @@ def handle_webhook(body: dict, conn) -> None:
             _send(chat_id, f'"{name}" is already taken. Please choose a different name.')
             return
         old_name = participant
-        token = f"бурчик-{name.lower().replace(' ', '-')}"
+        if state == "awaiting_rename":
+            # Keep existing secret, just update name in token
+            cur.execute("SELECT secret FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+            row = cur.fetchone()
+            secret = row["secret"] if row and row["secret"] else None
+            token = _build_token(name, secret)
+            cur.execute(
+                "INSERT INTO telegram_bot_users (telegram_user_id, participant_name, chat_id, token) "
+                "VALUES (%s, %s, %s, %s) ON CONFLICT (telegram_user_id) "
+                "DO UPDATE SET participant_name = EXCLUDED.participant_name, chat_id = EXCLUDED.chat_id, token = EXCLUDED.token",
+                (tg_id, name, chat_id, token),
+            )
+            cur.execute(
+                "INSERT INTO burpee_participants (name) VALUES (%s) ON CONFLICT DO NOTHING",
+                (name,),
+            )
+            if old_name and old_name != name:
+                cur.execute("UPDATE burpee_entries SET participant = %s WHERE participant = %s", (name, old_name))
+                cur.execute("UPDATE telegram_bot_notify SET notify_participant = %s WHERE notify_participant = %s", (name, old_name))
+                cur.execute("UPDATE telegram_bot_receive SET receive_participant = %s WHERE receive_participant = %s", (name, old_name))
+                cur.execute("DELETE FROM burpee_participants WHERE name = %s", (old_name,))
+            _clear_state(cur, tg_id)
+            conn.commit()
+            app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
+            _send(chat_id, f"Done! Your name is now {name}.\n\nUpdated app link:\n{app_url}", reply_markup=_MAIN_KB)
+        else:
+            # New registration — store name in state, ask for secret next
+            _set_state(cur, tg_id, f"awaiting_secret:{name}")
+            conn.commit()
+            _send(chat_id, "Name a fictional character you love:")
+        return
+
+    # ── Awaiting secret (new registration) ───────────────────────────────────
+    if state and state.startswith("awaiting_secret:") and text:
+        name = state[len("awaiting_secret:"):]
+        secret = text.strip()
+        if len(secret) > 64 or not secret.replace(" ", "").replace("'", "").replace("-", "").isalpha():
+            _send(chat_id, "Letters only please (up to 64 characters).")
+            return
+        token = _build_token(name, secret)
         cur.execute(
-            "INSERT INTO telegram_bot_users (telegram_user_id, participant_name, chat_id, token) "
-            "VALUES (%s, %s, %s, %s) ON CONFLICT (telegram_user_id) "
-            "DO UPDATE SET participant_name = EXCLUDED.participant_name, chat_id = EXCLUDED.chat_id, token = EXCLUDED.token",
-            (tg_id, name, chat_id, token),
+            "INSERT INTO telegram_bot_users (telegram_user_id, participant_name, chat_id, token, secret) "
+            "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (telegram_user_id) "
+            "DO UPDATE SET participant_name = EXCLUDED.participant_name, chat_id = EXCLUDED.chat_id, "
+            "token = EXCLUDED.token, secret = EXCLUDED.secret",
+            (tg_id, name, chat_id, token, secret),
         )
-        cur.execute(
-            "INSERT INTO burpee_participants (name) VALUES (%s) ON CONFLICT DO NOTHING",
-            (name,),
-        )
-        if old_name and old_name != name:
-            cur.execute("UPDATE burpee_entries SET participant = %s WHERE participant = %s", (name, old_name))
-            cur.execute("UPDATE telegram_bot_notify SET notify_participant = %s WHERE notify_participant = %s", (name, old_name))
-            cur.execute("UPDATE telegram_bot_receive SET receive_participant = %s WHERE receive_participant = %s", (name, old_name))
-            cur.execute("DELETE FROM burpee_participants WHERE name = %s", (old_name,))
+        cur.execute("INSERT INTO burpee_participants (name) VALUES (%s) ON CONFLICT DO NOTHING", (name,))
         _clear_state(cur, tg_id)
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
-        if state == "awaiting_rename":
-            _send(chat_id, f"Done! Your name is now {name}.\n\nUpdated app link:\n{app_url}", reply_markup=_MAIN_KB)
-        else:
-            _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /share to choose who receives your videos.\nUse /follow to choose whose videos you receive.\n\nThen send your first burpee video 💪", reply_markup=_MAIN_KB)
+        _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /share to choose who receives your videos.\nUse /follow to choose whose videos you receive.\n\nThen send your first burpee video 💪", reply_markup=_MAIN_KB)
+        return
+
+    # ── Awaiting secret update (existing user via /secret) ───────────────────
+    if state == "awaiting_secret_update" and text:
+        secret = text.strip()
+        if len(secret) > 64 or not secret.replace(" ", "").replace("'", "").replace("-", "").isalpha():
+            _send(chat_id, "Letters only please (up to 64 characters).")
+            return
+        token = _build_token(participant, secret)
+        cur.execute(
+            "UPDATE telegram_bot_users SET token = %s, secret = %s WHERE telegram_user_id = %s",
+            (token, secret, tg_id),
+        )
+        _clear_state(cur, tg_id)
+        conn.commit()
+        app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
+        _send(chat_id, f"Done! Your new app link:\n{app_url}", reply_markup=_MAIN_KB)
         return
 
     # ── /share ───────────────────────────────────────────────────────────────

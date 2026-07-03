@@ -67,6 +67,23 @@ def _clear_state(cur, tg_id: int) -> None:
     cur.execute("DELETE FROM telegram_bot_state WHERE telegram_user_id = %s", (tg_id,))
 
 
+def _greet(cur, tg_id: int, participant: str) -> str:
+    """Returns 'Name, ' on first message of the day, '' afterwards."""
+    cur.execute(
+        "SELECT last_greeted FROM telegram_bot_users WHERE telegram_user_id = %s",
+        (tg_id,),
+    )
+    row = cur.fetchone()
+    today = str(date.today())
+    if row and row["last_greeted"] and str(row["last_greeted"]) == today:
+        return ""
+    cur.execute(
+        "UPDATE telegram_bot_users SET last_greeted = %s WHERE telegram_user_id = %s",
+        (today, tg_id),
+    )
+    return f"{participant}, "
+
+
 def _all_other_names(cur, tg_id: int) -> list[str]:
     cur.execute(
         "SELECT participant_name FROM telegram_bot_users WHERE telegram_user_id != %s ORDER BY participant_name",
@@ -75,9 +92,9 @@ def _all_other_names(cur, tg_id: int) -> list[str]:
     return [r["participant_name"] for r in cur.fetchall()]
 
 
-# ── Notify (send to) ─────────────────────────────────────────────────────────
+# ── Share (send to) ──────────────────────────────────────────────────────────
 
-def _get_notify_set(cur, tg_id: int) -> set[str]:
+def _get_share_set(cur, tg_id: int) -> set[str]:
     cur.execute(
         "SELECT notify_participant FROM telegram_bot_notify WHERE telegram_user_id = %s",
         (tg_id,),
@@ -85,7 +102,7 @@ def _get_notify_set(cur, tg_id: int) -> set[str]:
     return {r["notify_participant"] for r in cur.fetchall()}
 
 
-def _get_notify_chats(cur, tg_id: int) -> list[tuple[int, str]]:
+def _get_share_chats(cur, tg_id: int) -> list[tuple[int, str]]:
     """Returns (chat_id, name) for users this sender wants to notify AND who accept from sender's name."""
     cur.execute(
         "SELECT u.chat_id, u.participant_name "
@@ -125,23 +142,23 @@ def _get_notify_chats(cur, tg_id: int) -> list[tuple[int, str]]:
     return result
 
 
-def _notify_keyboard(cur, tg_id: int) -> dict:
-    selected = _get_notify_set(cur, tg_id)
+def _share_keyboard(cur, tg_id: int) -> dict:
+    selected = _get_share_set(cur, tg_id)
     others = _all_other_names(cur, tg_id)
     all_selected = set(others) == selected and len(others) > 0
     rows = []
     anyone_label = "✓ Anyone" if all_selected else "Anyone"
-    rows.append([{"text": anyone_label, "callback_data": "notify:__all__"}])
+    rows.append([{"text": anyone_label, "callback_data": "share:__all__"}])
     for p in others:
         label = f"✓ {p}" if p in selected else p
-        rows.append([{"text": label, "callback_data": f"notify:{p}"}])
-    rows.append([{"text": "Done", "callback_data": "notify:done"}])
+        rows.append([{"text": label, "callback_data": f"share:{p}"}])
+    rows.append([{"text": "Done", "callback_data": "share:done"}])
     return {"inline_keyboard": rows}
 
 
-# ── Receive (accept from) ────────────────────────────────────────────────────
+# ── Follow (accept from) ─────────────────────────────────────────────────────
 
-def _get_receive_set(cur, tg_id: int) -> set[str]:
+def _get_follow_set(cur, tg_id: int) -> set[str]:
     cur.execute(
         "SELECT receive_participant FROM telegram_bot_receive WHERE telegram_user_id = %s",
         (tg_id,),
@@ -149,17 +166,17 @@ def _get_receive_set(cur, tg_id: int) -> set[str]:
     return {r["receive_participant"] for r in cur.fetchall()}
 
 
-def _receive_keyboard(cur, tg_id: int) -> dict:
-    selected = _get_receive_set(cur, tg_id)
+def _follow_keyboard(cur, tg_id: int) -> dict:
+    selected = _get_follow_set(cur, tg_id)
     others = _all_other_names(cur, tg_id)
     all_selected = set(others) == selected and len(others) > 0
     rows = []
     anyone_label = "✓ Anyone" if all_selected else "Anyone"
-    rows.append([{"text": anyone_label, "callback_data": "receive:__all__"}])
+    rows.append([{"text": anyone_label, "callback_data": "follow:__all__"}])
     for p in others:
         label = f"✓ {p}" if p in selected else p
-        rows.append([{"text": label, "callback_data": f"receive:{p}"}])
-    rows.append([{"text": "Done", "callback_data": "receive:done"}])
+        rows.append([{"text": label, "callback_data": f"follow:{p}"}])
+    rows.append([{"text": "Done", "callback_data": "follow:done"}])
     return {"inline_keyboard": rows}
 
 
@@ -174,7 +191,7 @@ def _log_entry(cur, participant: str, reps: int) -> None:
 
 
 def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, message_id: int | None, reps: int) -> None:
-    targets = _get_notify_chats(cur, tg_id)
+    targets = _get_share_chats(cur, tg_id)
     conn.commit()
     for to_chat_id, name in targets:
         if message_id:
@@ -182,9 +199,9 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         _send(to_chat_id, f"{participant}: {reps} reps")
     if targets:
         forwarded_to = ", ".join(n for _, n in targets)
-        _send(from_chat_id, f"✓ {participant}, logged {reps} reps → forwarded to {forwarded_to}")
+        _send(from_chat_id, f"✓ {reps} reps → forwarded to {forwarded_to}")
     else:
-        _send(from_chat_id, f"✓ {participant}, logged {reps} reps")
+        _send(from_chat_id, f"✓ {reps} reps logged")
 
 
 # ── Webhook handler ──────────────────────────────────────────────────────────
@@ -202,17 +219,17 @@ def handle_webhook(body: dict, conn) -> None:
         if not participant:
             return
 
-        # Notify callbacks
-        if data.startswith("notify:"):
-            target = data[len("notify:"):]
+        # Share callbacks
+        if data.startswith("share:"):
+            target = data[len("share:"):]
             if target == "done":
-                selected = _get_notify_set(cur, tg_id)
+                selected = _get_share_set(cur, tg_id)
                 _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-                _send(chat_id, f"{participant}, sending to: {', '.join(sorted(selected)) or 'nobody'}\n\nNow send your burpee video 💪")
+                _send(chat_id, f"{_greet(cur, tg_id, participant)}sharing to: {', '.join(sorted(selected)) or 'nobody'}\n\nNow send your burpee video 💪")
                 return
             others = _all_other_names(cur, tg_id)
             if target == "__all__":
-                selected = _get_notify_set(cur, tg_id)
+                selected = _get_share_set(cur, tg_id)
                 if set(others) == selected:
                     cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s", (tg_id,))
                 else:
@@ -222,26 +239,26 @@ def handle_webhook(body: dict, conn) -> None:
                             (tg_id, p),
                         )
             else:
-                selected = _get_notify_set(cur, tg_id)
+                selected = _get_share_set(cur, tg_id)
                 if target in selected:
                     cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s", (tg_id, target))
                 else:
                     cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, target))
             conn.commit()
-            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _notify_keyboard(cur, tg_id)})
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _share_keyboard(cur, tg_id)})
             return
 
-        # Receive callbacks
-        if data.startswith("receive:"):
-            target = data[len("receive:"):]
+        # Follow callbacks
+        if data.startswith("follow:"):
+            target = data[len("follow:"):]
             if target == "done":
-                selected = _get_receive_set(cur, tg_id)
+                selected = _get_follow_set(cur, tg_id)
                 _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-                _send(chat_id, f"{participant}, receiving from: {', '.join(sorted(selected)) or 'nobody'}")
+                _send(chat_id, f"{_greet(cur, tg_id, participant)}following: {', '.join(sorted(selected)) or 'nobody'}")
                 return
             others = _all_other_names(cur, tg_id)
             if target == "__all__":
-                selected = _get_receive_set(cur, tg_id)
+                selected = _get_follow_set(cur, tg_id)
                 if set(others) == selected:
                     cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s", (tg_id,))
                 else:
@@ -251,13 +268,13 @@ def handle_webhook(body: dict, conn) -> None:
                             (tg_id, p),
                         )
             else:
-                selected = _get_receive_set(cur, tg_id)
+                selected = _get_follow_set(cur, tg_id)
                 if target in selected:
                     cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s", (tg_id, target))
                 else:
                     cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, target))
             conn.commit()
-            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _receive_keyboard(cur, tg_id)})
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _follow_keyboard(cur, tg_id)})
             return
 
         return
@@ -275,13 +292,14 @@ def handle_webhook(body: dict, conn) -> None:
         _send(chat_id,
             "Available commands:\n\n"
             "/start — register your name\n"
-            "/notify — choose who receives your videos\n"
-            "/receive — choose whose videos you receive\n"
+            "/rename — change your name\n"
+            "/share — choose who receives your videos\n"
+            "/follow — choose whose videos you receive\n"
             "/help — show this list\n\n"
             "To log a workout:\n"
-            "• Send a round video bubble → bot asks for reps\n"
-            "• Send a video/photo with rep count as caption\n"
-            "• Send just a number (e.g. 43) — logs without video"
+            "• Send a round video bubble\n"
+            "  bot asks for reps\n"
+            "• Send a number"
         )
         return
 
@@ -295,8 +313,18 @@ def handle_webhook(body: dict, conn) -> None:
     participant = _lookup_user(cur, tg_id)
     state = _get_state(cur, tg_id)
 
-    # ── Awaiting name input ──────────────────────────────────────────────────
-    if state == "awaiting_name" and text:
+    # ── /rename ──────────────────────────────────────────────────────────────
+    if text.startswith("/rename"):
+        if not participant:
+            _send(chat_id, "Please register first — send /start")
+            return
+        _set_state(cur, tg_id, "awaiting_rename")
+        conn.commit()
+        _send(chat_id, f"{_greet(cur, tg_id, participant)}what would you like to change your name to?")
+        return
+
+    # ── Awaiting name input (registration or rename) ─────────────────────────
+    if state in ("awaiting_name", "awaiting_rename") and text:
         name = text.strip()
         if len(name) > 32 or not name.replace(" ", "").isalpha():
             _send(chat_id, "Please use letters only, up to 32 characters.")
@@ -308,6 +336,7 @@ def handle_webhook(body: dict, conn) -> None:
         if cur.fetchone():
             _send(chat_id, f'"{name}" is already taken. Please choose a different name.')
             return
+        old_name = participant
         token = f"бурчик-{name.lower()}"
         cur.execute(
             "INSERT INTO telegram_bot_users (telegram_user_id, participant_name, chat_id, token) "
@@ -319,34 +348,42 @@ def handle_webhook(body: dict, conn) -> None:
             "INSERT INTO burpee_participants (name) VALUES (%s) ON CONFLICT DO NOTHING",
             (name,),
         )
+        if old_name and old_name != name:
+            cur.execute("UPDATE burpee_entries SET participant = %s WHERE participant = %s", (name, old_name))
+            cur.execute("UPDATE telegram_bot_notify SET notify_participant = %s WHERE notify_participant = %s", (name, old_name))
+            cur.execute("UPDATE telegram_bot_receive SET receive_participant = %s WHERE receive_participant = %s", (name, old_name))
+            cur.execute("DELETE FROM burpee_participants WHERE name = %s", (old_name,))
         _clear_state(cur, tg_id)
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
-        _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /notify to choose who receives your videos.\nUse /receive to choose whose videos you receive.\n\nThen send your first burpee video 💪")
+        if state == "awaiting_rename":
+            _send(chat_id, f"Done! Your name is now {name}.\n\nUpdated app link:\n{app_url}")
+        else:
+            _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /share to choose who receives your videos.\nUse /follow to choose whose videos you receive.\n\nThen send your first burpee video 💪")
         return
 
-    # ── /notify ──────────────────────────────────────────────────────────────
-    if text.startswith("/notify"):
+    # ── /share ───────────────────────────────────────────────────────────────
+    if text.startswith("/share"):
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
         others = _all_other_names(cur, tg_id)
         if not others:
-            _send(chat_id, f"{participant}, no other users are registered yet.")
+            _send(chat_id, f"{_greet(cur, tg_id, participant)}no other users are registered yet.")
             return
-        _send(chat_id, f"{participant}, who should receive your videos? Tap to toggle, then Done.", reply_markup=_notify_keyboard(cur, tg_id))
+        _send(chat_id, f"{_greet(cur, tg_id, participant)}who should receive your videos? Tap to toggle, then Done.", reply_markup=_share_keyboard(cur, tg_id))
         return
 
-    # ── /receive ─────────────────────────────────────────────────────────────
-    if text.startswith("/receive"):
+    # ── /follow ──────────────────────────────────────────────────────────────
+    if text.startswith("/follow"):
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
         others = _all_other_names(cur, tg_id)
         if not others:
-            _send(chat_id, f"{participant}, no other users are registered yet.")
+            _send(chat_id, f"{_greet(cur, tg_id, participant)}no other users are registered yet.")
             return
-        _send(chat_id, f"{participant}, whose videos do you want to receive? Tap to toggle, then Done.", reply_markup=_receive_keyboard(cur, tg_id))
+        _send(chat_id, f"{_greet(cur, tg_id, participant)}whose videos do you want to follow? Tap to toggle, then Done.", reply_markup=_follow_keyboard(cur, tg_id))
         return
 
     # ── Plain number → reps for pending video_note, or log without media ─────
@@ -361,7 +398,7 @@ def handle_webhook(body: dict, conn) -> None:
         else:
             _log_entry(cur, participant, reps)
             conn.commit()
-            _send(chat_id, f"✓ {participant}, logged {reps} reps")
+            _send(chat_id, f"✓ {reps} reps logged")
         return
 
     has_video = "video" in msg
@@ -379,7 +416,7 @@ def handle_webhook(body: dict, conn) -> None:
     if has_video or has_photo:
         caption = msg.get("caption", "").strip()
         if not caption.isdigit():
-            _send(chat_id, f"{participant}, add the number of reps as the caption (e.g. 43)")
+            _send(chat_id, f"{_greet(cur, tg_id, participant)}add the number of reps as the caption (e.g. 43)")
             return
         reps = int(caption)
         _log_entry(cur, participant, reps)
@@ -395,4 +432,4 @@ def handle_webhook(body: dict, conn) -> None:
             (tg_id, chat_id, msg["message_id"]),
         )
         conn.commit()
-        _send(chat_id, f"{participant}, how many reps?")
+        _send(chat_id, f"{_greet(cur, tg_id, participant)}how many reps?")

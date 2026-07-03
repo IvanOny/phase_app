@@ -5,8 +5,8 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const COLOR_PALETTE = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316'];
-const KNOWN_COLORS = { Ivan: '#6366f1', Yurii: '#10b981', Benni: '#f59e0b' };
+const COLOR_PALETTE = ['#a5b4fc', '#86efac', '#fde68a', '#fca5a5', '#c4b5fd', '#7dd3fc', '#fdba74', '#99f6e4', '#f9a8d4'];
+const KNOWN_COLORS = { Ivan: '#a5b4fc', Yurii: '#86efac', Benni: '#fde68a' };
 
 function buildColorMap(participants) {
   const map = {};
@@ -143,7 +143,7 @@ function ScoreCard({ participant, color, stats, isLeader, isMe, compact }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <span style={{ fontWeight: 700, fontSize: compact ? 12 : 15, color }}>{participant}</span>
         {isMe && (
-          <span style={{ fontSize: 9, background: color, color: '#fff', borderRadius: 4, padding: '1px 4px', fontWeight: 600 }}>
+          <span style={{ fontSize: 9, background: color, color: '#333', borderRadius: 4, padding: '1px 4px', fontWeight: 600 }}>
             you
           </span>
         )}
@@ -201,7 +201,7 @@ function MonthlyWinsRow({ wins, viewMonth, onSelect, currentMonth, pColors }) {
                 ? (wColor ?? 'var(--text-muted, #888)')
                 : wColor ? `${wColor}22` : 'var(--bg-elevated, #1a1d27)',
               border: `1px solid ${wColor ?? 'var(--border, #2a2d3a)'}`,
-              color: isActive ? '#fff' : wColor ?? 'var(--text-muted, #888)',
+              color: isActive ? '#333' : wColor ?? 'var(--text-muted, #888)',
               borderRadius: 20,
               padding: '2px 9px',
               fontSize: 12,
@@ -329,6 +329,14 @@ export default function BurpeeChallenge({ token }) {
     } catch {}
     return [];
   });
+  const [pillOrder, setPillOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem('burpee_pill_order');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+  const [dragIdx, setDragIdx] = useState(null);
 
   const currentMonth = monthOf(today());
 
@@ -361,6 +369,11 @@ export default function BurpeeChallenge({ token }) {
           const valid = prev.filter((p) => list.includes(p));
           if (valid.length > 0) return valid;
           return list;
+        });
+        setPillOrder((prev) => {
+          const kept = prev.filter((p) => list.includes(p));
+          const added = list.filter((p) => !kept.includes(p));
+          return [...kept, ...added];
         });
       } catch {
         // fallback: participants will stay empty, derived from entries on next render
@@ -440,9 +453,11 @@ export default function BurpeeChallenge({ token }) {
     );
   }
 
-  const myView = me
-    ? [me, ...participants.filter(p => p !== me && selectedParticipants.includes(p))]
-    : [];
+  const orderedAll = pillOrder.length > 0
+    ? pillOrder.filter(p => participants.includes(p) || p === me)
+    : (me ? [me, ...participants.filter(p => p !== me)] : participants);
+
+  const myView = orderedAll.filter(p => p === me || selectedParticipants.includes(p));
 
   function toggleParticipant(p) {
     if (p === me) return;
@@ -451,6 +466,18 @@ export default function BurpeeChallenge({ token }) {
       localStorage.setItem('burpee_selected_participants', JSON.stringify(next));
       return next;
     });
+  }
+
+  function handleDragStart(i) { setDragIdx(i); }
+  function handleDragOver(e) { e.preventDefault(); }
+  function handleDrop(i) {
+    if (dragIdx === null || dragIdx === i) { setDragIdx(null); return; }
+    const next = [...orderedAll];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(i, 0, moved);
+    setPillOrder(next);
+    localStorage.setItem('burpee_pill_order', JSON.stringify(next));
+    setDragIdx(null);
   }
   const stats = computeStats(entries, viewMonth, participants);
   const wins = computeMonthlyWins(entries, participants);
@@ -481,25 +508,30 @@ export default function BurpeeChallenge({ token }) {
 
       {/* Participant pills */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        {[me, ...participants.filter(p => p !== me)].map(p => {
+        {orderedAll.map((p, i) => {
           const active = p === me || selectedParticipants.includes(p);
           const color = pColors[p] ?? '#888';
-          const isMe = p === me;
+          const isDragging = dragIdx === i;
           return (
             <button
               key={p}
+              draggable
+              onDragStart={() => handleDragStart(i)}
+              onDragOver={handleDragOver}
+              onDrop={() => handleDrop(i)}
+              onDragEnd={() => setDragIdx(null)}
               onClick={() => toggleParticipant(p)}
               style={{
                 background: active ? color : 'transparent',
                 border: `1.5px solid ${active ? color : 'var(--border, #2a2d3a)'}`,
                 borderRadius: 20,
-                color: active ? '#fff' : 'var(--text-muted, #888)',
+                color: active ? '#333' : 'var(--text-muted, #888)',
                 fontSize: 13,
                 fontWeight: 600,
                 padding: '4px 14px',
-                cursor: isMe ? 'default' : 'pointer',
-                opacity: isMe && !active ? 0.5 : 1,
-                transition: 'all 0.15s',
+                cursor: 'grab',
+                opacity: isDragging ? 0.4 : 1,
+                transition: 'opacity 0.15s',
               }}
             >
               {p}

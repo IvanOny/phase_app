@@ -177,13 +177,40 @@ def _get_follow_set(cur, tg_id: int) -> set[str]:
 
 _MAIN_KB = {
     "keyboard": [
-        [{"text": "🤝 Sweat with"}],
+        [{"text": "🤝 Sweat with"}, {"text": "📡 Radar"}],
         [{"text": "✏️ Rename"}, {"text": "🔑 Secret"}],
         [{"text": "ℹ️ Info"}],
     ],
     "resize_keyboard": True,
     "is_persistent": True,
 }
+
+_RADAR_FREQS = ["daily", "weekly", "monthly", "once", "never"]
+_RADAR_LABELS = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "once": "Just once", "never": "Off"}
+
+def _radar_keyboard(current: str) -> dict:
+    rows = []
+    for freq in _RADAR_FREQS:
+        label = ("✓ " if freq == current else "") + _RADAR_LABELS[freq]
+        rows.append([{"text": label, "callback_data": f"radar:{freq}"}])
+    return {"inline_keyboard": rows}
+
+def _radar_due(freq: str, last_received) -> bool:
+    if freq == "never":
+        return False
+    if last_received is None:
+        return True
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    if freq == "daily":
+        return last_received.date() < now.date()
+    if freq == "weekly":
+        return (now - last_received) >= timedelta(weeks=1)
+    if freq == "monthly":
+        return (now - last_received) >= timedelta(days=30)
+    if freq == "once":
+        return False  # already received once, disable handled at send time
+    return False
 
 
 def _follow_keyboard(cur, tg_id: int) -> dict:
@@ -221,6 +248,28 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         _send(from_chat_id, f"✓ {reps} reps → forwarded to {forwarded_to}", reply_markup=_MAIN_KB)
     else:
         _send(from_chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
+
+    # ── Radar: forward to eligible users outside sender's sweat list ──────────
+    sweat_names = {n for _, n in targets} | {participant}
+    cur.execute(
+        "SELECT telegram_user_id, chat_id, participant_name, radar_freq, radar_last_received "
+        "FROM telegram_bot_users "
+        "WHERE radar_freq != 'never' AND telegram_user_id != %s",
+        (tg_id,),
+    )
+    for row in cur.fetchall():
+        if row["participant_name"] in sweat_names:
+            continue
+        if not _radar_due(row["radar_freq"], row["radar_last_received"]):
+            continue
+        if message_id:
+            _forward(from_chat_id, message_id, row["chat_id"])
+        _send(row["chat_id"], f"📡 {participant}: {reps} reps")
+        new_freq = "never" if row["radar_freq"] == "once" else row["radar_freq"]
+        cur.execute(
+            "UPDATE telegram_bot_users SET radar_last_received = NOW(), radar_freq = %s WHERE telegram_user_id = %s",
+            (new_freq, row["telegram_user_id"]),
+        )
 
 
 # ── Webhook handler ──────────────────────────────────────────────────────────
@@ -306,6 +355,24 @@ def handle_webhook(body: dict, conn) -> None:
             _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _follow_keyboard(cur, tg_id)})
             return
 
+        # Radar callbacks
+        if data.startswith("radar:"):
+            freq = data[len("radar:"):]
+            if freq not in _RADAR_FREQS:
+                return
+            cur.execute(
+                "UPDATE telegram_bot_users SET radar_freq = %s WHERE telegram_user_id = %s",
+                (freq, tg_id),
+            )
+            conn.commit()
+            label = _RADAR_LABELS[freq]
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(freq)})
+            if freq == "never":
+                _send(chat_id, "📡 Radar off.", reply_markup=_MAIN_KB)
+            else:
+                _send(chat_id, f"📡 Radar set to {label.lower()} — you'll receive a random burpee from outside your sweat list.", reply_markup=_MAIN_KB)
+            return
+
         return
 
     msg = body.get("message")
@@ -336,6 +403,7 @@ def handle_webhook(body: dict, conn) -> None:
             "/rename — change your name\n"
             "/secret — update your app link secret\n"
             "/sweat — choose who you share and follow\n"
+            "/radar — receive random burpees from outside your sweat list\n"
             "/info — show this list\n\n"
             "To log a workout:\n"
             "• Send a round video bubble to the burchykbot and type the number of reps",
@@ -391,7 +459,7 @@ def handle_webhook(body: dict, conn) -> None:
         return
 
     # Any command or main keyboard button cancels a pending state
-    _KB_BUTTONS = {"🤝 Sweat with", "✏️ Rename", "🔑 Secret", "ℹ️ Info"}
+    _KB_BUTTONS = {"🤝 Sweat with", "📡 Radar", "✏️ Rename", "🔑 Secret", "ℹ️ Info"}
     if (text.startswith("/") or text in _KB_BUTTONS) and state:
         _clear_state(cur, tg_id)
         conn.commit()
@@ -480,6 +548,21 @@ def handle_webhook(body: dict, conn) -> None:
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
         _send(chat_id, f"Done! Your new app link:\n{app_url}", reply_markup=_MAIN_KB)
+        return
+
+    # ── /radar ───────────────────────────────────────────────────────────────
+    if text.startswith("/radar") or text == "📡 Radar":
+        if not participant:
+            _send(chat_id, "Please register first — send /start")
+            return
+        cur.execute("SELECT radar_freq FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+        row = cur.fetchone()
+        current = row["radar_freq"] if row and row["radar_freq"] else "never"
+        _send(chat_id,
+            f"📡 Radar — receive a random burpee video from outside your sweat list.\n\n"
+            f"Current: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
+            reply_markup=_radar_keyboard(current),
+        )
         return
 
     # ── /sweat ───────────────────────────────────────────────────────────────

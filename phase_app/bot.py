@@ -4,10 +4,11 @@ import json
 import os
 import urllib.error
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 
 _TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 _API = f"https://api.telegram.org/bot{_TOKEN}"
+_LOG_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
 
 
 def _build_token(name: str, secret: str | None) -> str:
@@ -30,6 +31,16 @@ def _tg(method: str, payload: dict) -> None:
         print(f"Telegram API error [{method}]: {e.code} {e.read().decode()}")
     except Exception as e:
         print(f"Telegram API error [{method}]: {e}")
+
+
+def _log(text: str) -> None:
+    if not _LOG_CHAT_ID:
+        return
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    try:
+        _tg("sendMessage", {"chat_id": int(_LOG_CHAT_ID), "text": f"[{ts}]\n{text}"})
+    except Exception:
+        pass
 
 
 def _send(chat_id: int, text: str, reply_markup: dict | None = None) -> None:
@@ -200,7 +211,6 @@ def _radar_due(freq: str, last_received) -> bool:
         return False
     if last_received is None:
         return True
-    from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
     if freq == "daily":
         return last_received.date() < now.date()
@@ -246,8 +256,10 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
     if targets:
         forwarded_to = ", ".join(n for _, n in targets)
         _send(from_chat_id, f"✓ {reps} reps → forwarded to {forwarded_to}", reply_markup=_MAIN_KB)
+        _log(f"💪 Video logged\n👤 {participant}: {reps} reps\n📤 → {forwarded_to}")
     else:
         _send(from_chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
+        _log(f"💪 Video logged\n👤 {participant}: {reps} reps\n📤 → nobody")
 
     # ── Radar: forward to eligible users outside sender's sweat list ──────────
     sweat_names = {n for _, n in targets} | {participant}
@@ -265,6 +277,7 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         if message_id:
             _forward(from_chat_id, message_id, row["chat_id"])
         _send(row["chat_id"], f"📡 {participant}: {reps} reps")
+        _log(f"📡 Radar forward\n💪 {participant}: {reps} reps → {row['participant_name']} ({row['radar_freq']})")
         new_freq = "never" if row["radar_freq"] == "once" else row["radar_freq"]
         cur.execute(
             "UPDATE telegram_bot_users SET radar_last_received = NOW(), radar_freq = %s WHERE telegram_user_id = %s",
@@ -371,6 +384,7 @@ def handle_webhook(body: dict, conn) -> None:
                 _send(chat_id, "📡 Radar off.", reply_markup=_MAIN_KB)
             else:
                 _send(chat_id, f"📡 Radar set to {label.lower()} — you'll receive a random burpee from outside your sweat list.", reply_markup=_MAIN_KB)
+            _log(f"📡 Radar set\n👤 {participant} → {label}")
             return
 
         return
@@ -385,10 +399,12 @@ def handle_webhook(body: dict, conn) -> None:
 
     # ── /info ────────────────────────────────────────────────────────────────
     if text.startswith("/info") or text.startswith("/help") or text == "ℹ️ Info":
-        cur.execute("SELECT token FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+        cur.execute("SELECT token, participant_name FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
         row = cur.fetchone()
         token_val = row["token"] if row and row["token"] else None
+        info_name = row["participant_name"] if row and row["participant_name"] else None
         link_line = "\nYour app link:\nhttps://phase-app-yf5x.vercel.app/?token=" + token_val + "\n" if token_val else "\n(register first with /start)\n"
+        _log(f"ℹ️ Info viewed\n👤 {info_name or f'unregistered (tg:{tg_id})'}")
         _send(chat_id,
             "👋 Welcome to Бурчик Challenge!\n\n"
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
@@ -503,6 +519,7 @@ def handle_webhook(body: dict, conn) -> None:
             _clear_state(cur, tg_id)
             conn.commit()
             app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
+            _log(f"✏️ Renamed\n👤 {old_name} → {name}\n🔑 {token}")
             _send(chat_id, f"Done! Your name is now {name}.\n\nUpdated app link:\n{app_url}", reply_markup=_MAIN_KB)
         else:
             # New registration — store name in state, ask for secret next
@@ -530,6 +547,7 @@ def handle_webhook(body: dict, conn) -> None:
         _clear_state(cur, tg_id)
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
+        _log(f"📋 New registration\n👤 {name} (tg:{tg_id})\n🔑 {token}")
         _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /sweat to choose who you share and follow.\n\nThen send your first burpee video 💪", reply_markup=_MAIN_KB)
         return
 
@@ -547,6 +565,7 @@ def handle_webhook(body: dict, conn) -> None:
         _clear_state(cur, tg_id)
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
+        _log(f"🔑 Secret updated\n👤 {participant}\n🔗 {token}")
         _send(chat_id, f"Done! Your new app link:\n{app_url}", reply_markup=_MAIN_KB)
         return
 
@@ -557,7 +576,7 @@ def handle_webhook(body: dict, conn) -> None:
             return
         cur.execute("SELECT radar_freq FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
         row = cur.fetchone()
-        current = row["radar_freq"] if row and row["radar_freq"] else "never"
+        current = row["radar_freq"] if row and row["radar_freq"] else "daily"
         _send(chat_id,
             f"📡 Radar — receive a random burpee video from outside your sweat list.\n\n"
             f"Current: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
@@ -609,10 +628,12 @@ def handle_webhook(body: dict, conn) -> None:
             cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s", (tg_id, matched_name))
             cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s", (tg_id, matched_name))
             msg = f"Removed {matched_name} from your sweat list."
+            _log(f"🤝 Sweat removed\n👤 {participant} ✗ {matched_name}")
         else:
             cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, matched_name))
             cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, matched_name))
             msg = f"Added {matched_name} to your sweat list 🤝"
+            _log(f"🤝 Sweat added\n👤 {participant} → {matched_name}")
         _clear_state(cur, tg_id)
         conn.commit()
         _send(chat_id, msg, reply_markup=_MAIN_KB)
@@ -630,6 +651,7 @@ def handle_webhook(body: dict, conn) -> None:
         else:
             _log_entry(cur, participant, reps)
             conn.commit()
+            _log(f"💪 Reps logged (no video)\n👤 {participant}: {reps} reps")
             _send(chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
         return
 

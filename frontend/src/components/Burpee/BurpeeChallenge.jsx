@@ -369,6 +369,14 @@ export default function BurpeeChallenge({ token }) {
     fetchParticipants();
   }, [token]);
 
+  useEffect(() => {
+    if (me) {
+      setSelectedParticipants(prev =>
+        prev.includes(me) ? prev : [...prev, me]
+      );
+    }
+  }, [me]);
+
   // Pre-fill input with existing entry for the selected date
   const myDateEntry = me
     ? entries.find((e) => e.participant === me && e.entryDate === logDate)
@@ -432,8 +440,9 @@ export default function BurpeeChallenge({ token }) {
     );
   }
 
-  const myView = [me, ...participants.filter(p => p !== me && selectedParticipants.includes(p))]
-    .filter(p => selectedParticipants.includes(p));
+  const myView = me
+    ? [me, ...participants.filter(p => p !== me && selectedParticipants.includes(p))]
+    : [];
 
   function toggleParticipant(p) {
     if (p === me) return;
@@ -471,9 +480,9 @@ export default function BurpeeChallenge({ token }) {
       </div>
 
       {/* Participant pills */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {[me, ...participants.filter(p => p !== me)].map(p => {
-          const active = selectedParticipants.includes(p);
+          const active = p === me || selectedParticipants.includes(p);
           const color = pColors[p] ?? '#888';
           const isMe = p === me;
           return (
@@ -500,7 +509,12 @@ export default function BurpeeChallenge({ token }) {
       </div>
 
       {/* Scoreboard */}
-      <div style={{ display: 'flex', gap: myView.length > 2 ? 6 : 10, marginBottom: 8 }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: myView.length > 3 ? 'repeat(2, 1fr)' : `repeat(${myView.length}, 1fr)`,
+        gap: myView.length > 3 ? 6 : 10,
+        marginBottom: 8,
+      }}>
         {myView.filter(p => stats[p]).map((p) => (
           <ScoreCard
             key={p}
@@ -509,7 +523,7 @@ export default function BurpeeChallenge({ token }) {
             stats={stats[p]}
             isLeader={stats[p].total > 0 && myView.every(o => !stats[o] || o === p || stats[p].total >= stats[o].total)}
             isMe={p === me}
-            compact={myView.length > 2}
+            compact={myView.length > 3}
           />
         ))}
       </div>

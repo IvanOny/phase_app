@@ -320,7 +320,8 @@ def handle_webhook(body: dict, conn) -> None:
     if text.startswith("/info") or text.startswith("/help") or text == "ℹ️ Info":
         cur.execute("SELECT token FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
         row = cur.fetchone()
-        link_line = f"\nYour app link:\n{f'https://phase-app-yf5x.vercel.app/?token={row[\"token\"]}' if row and row['token'] else '(register first with /start)'}\n"
+        token_val = row["token"] if row and row["token"] else None
+        link_line = "\nYour app link:\nhttps://phase-app-yf5x.vercel.app/?token=" + token_val + "\n" if token_val else "\n(register first with /start)\n"
         _send(chat_id,
             "👋 Welcome to Бурчик Challenge!\n\n"
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"

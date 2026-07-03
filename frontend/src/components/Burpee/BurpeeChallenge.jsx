@@ -237,7 +237,22 @@ const navBtnStyle = {
   padding: '0 6px',
 };
 
-function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, participants, pColors }) {
+function BurpeeTooltip({ active, payload, color, viewMonth }) {
+  if (!active || !payload?.length) return null;
+  const { name, value } = payload[0];
+  const day = parseInt(payload[0].payload.day, 10);
+  const [year, month] = viewMonth.split('-').map(Number);
+  const dateLabel = new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+  return (
+    <div style={{ background: color.bg, border: `1px solid ${color.text}44`, borderRadius: 6, padding: '7px 10px', fontSize: 12, color: color.text, lineHeight: 1.6 }}>
+      <div style={{ fontWeight: 700 }}>{dateLabel}</div>
+      <div>{name}</div>
+      <div style={{ fontWeight: 700 }}>{value} reps</div>
+    </div>
+  );
+}
+
+function BurpeeHorizontalChart({ chartData, label, viewMonth, onPrev, onNext, canGoNext, participants, pColors }) {
   const rowHeight = 28;
   const height = Math.max(chartData.length * rowHeight + 24, 60);
   const axisMax = (p) => {
@@ -295,15 +310,8 @@ function BurpeeHorizontalChart({ chartData, label, onPrev, onNext, canGoNext, pa
                     tickFormatter={showYAxis ? undefined : () => ''}
                   />
                   <Tooltip
-                    contentStyle={{
-                      background: 'var(--bg-elevated, #1a1d27)',
-                      border: '1px solid var(--border, #2a2d3a)',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      color: 'var(--text-primary, #fff)',
-                    }}
-                    cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                    formatter={(value) => [value, p]}
+                    content={<BurpeeTooltip color={color} viewMonth={viewMonth} />}
+                    cursor={{ fill: `${color.chart}33` }}
                   />
                   <Bar dataKey={p} fill={color.chart} radius={[0, 3, 3, 0]} />
                 </BarChart>
@@ -582,6 +590,7 @@ export default function BurpeeChallenge({ token }) {
       <BurpeeHorizontalChart
         chartData={chartData}
         label={fmtMonth(viewMonth)}
+        viewMonth={viewMonth}
         onPrev={() => setViewMonth(prevMonthStr(viewMonth))}
         onNext={() => setViewMonth(nextMonthStr(viewMonth))}
         canGoNext={viewMonth < currentMonth}

@@ -177,9 +177,9 @@ def _get_follow_set(cur, tg_id: int) -> set[str]:
 
 _MAIN_KB = {
     "keyboard": [
-        [{"text": "📤 Share"}, {"text": "📥 Follow"}],
+        [{"text": "🤝 Sweat with"}],
         [{"text": "✏️ Rename"}, {"text": "🔑 Secret"}],
-        [{"text": "❓ Help"}],
+        [{"text": "ℹ️ Info"}],
     ],
     "resize_keyboard": True,
     "is_persistent": True,
@@ -316,20 +316,28 @@ def handle_webhook(body: dict, conn) -> None:
     chat_id: int = msg["chat"]["id"]
     text: str = msg.get("text", "").strip()
 
-    # ── /help ────────────────────────────────────────────────────────────────
-    if text.startswith("/help") or text == "❓ Help":
+    # ── /info ────────────────────────────────────────────────────────────────
+    if text.startswith("/info") or text.startswith("/help") or text == "ℹ️ Info":
+        cur.execute("SELECT token FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+        row = cur.fetchone()
+        link_line = f"\nYour app link:\n{f'https://phase-app-yf5x.vercel.app/?token={row[\"token\"]}' if row and row['token'] else '(register first with /start)'}\n"
         _send(chat_id,
+            "👋 Welcome to Бурчик Challenge!\n\n"
+            "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
+            "How it works:\n"
+            "• Do your burpees and send a round video bubble\n"
+            "• Type the number of reps\n"
+            "• Your workout is logged and forwarded to your crew\n\n"
+            "Use /sweat to choose who you share and follow.\n"
+            f"{link_line}\n"
             "Available commands:\n\n"
             "/start — register your name\n"
             "/rename — change your name\n"
             "/secret — update your app link secret\n"
-            "/share — choose who receives your videos\n"
-            "/follow — choose whose videos you receive\n"
-            "/help — show this list\n\n"
+            "/sweat — choose who you share and follow\n"
+            "/info — show this list\n\n"
             "To log a workout:\n"
-            "• Send a round video bubble\n"
-            "  bot asks for reps\n"
-            "• Send a number",
+            "• Send a round video bubble and type the number of reps",
             reply_markup=_MAIN_KB,
         )
         return
@@ -338,7 +346,16 @@ def handle_webhook(body: dict, conn) -> None:
     if text.startswith("/start"):
         _set_state(cur, tg_id, "awaiting_name")
         conn.commit()
-        _send(chat_id, "What would you like to be called?")
+        _send(chat_id,
+            "👋 Welcome to Бурчик Challenge!\n\n"
+            "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
+            "How it works:\n"
+            "• Do your burpees and send a round video bubble\n"
+            "• Type the number of reps\n"
+            "• Your workout is logged and forwarded to your crew\n\n"
+            "Use /sweat to choose who you share and follow.\n\n"
+            "First, what would you like to be called?"
+        )
         return
 
     participant = _lookup_user(cur, tg_id)
@@ -429,7 +446,7 @@ def handle_webhook(body: dict, conn) -> None:
         _clear_state(cur, tg_id)
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
-        _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /share to choose who receives your videos.\nUse /follow to choose whose videos you receive.\n\nThen send your first burpee video 💪", reply_markup=_MAIN_KB)
+        _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /sweat to choose who you share and follow.\n\nThen send your first burpee video 💪", reply_markup=_MAIN_KB)
         return
 
     # ── Awaiting secret update (existing user via /secret) ───────────────────
@@ -449,28 +466,53 @@ def handle_webhook(body: dict, conn) -> None:
         _send(chat_id, f"Done! Your new app link:\n{app_url}", reply_markup=_MAIN_KB)
         return
 
-    # ── /share ───────────────────────────────────────────────────────────────
-    if text.startswith("/share") or text == "📤 Share":
+    # ── /sweat ───────────────────────────────────────────────────────────────
+    if text.startswith("/sweat") or text == "🤝 Sweat with":
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
-        others = _all_other_names(cur, tg_id)
-        if not others:
-            _send(chat_id, f"{_greet(cur, tg_id, participant)}no other users are registered yet.")
-            return
-        _send(chat_id, f"{_greet(cur, tg_id, participant)}who should receive your videos? Tap to toggle, then Done.", reply_markup=_share_keyboard(cur, tg_id))
+        cur.execute(
+            "SELECT notify_participant FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant != '__all__'",
+            (tg_id,),
+        )
+        partners = sorted(r["notify_participant"] for r in cur.fetchall())
+        partner_list = ", ".join(partners) if partners else "nobody yet"
+        _set_state(cur, tg_id, "awaiting_sweat_name")
+        conn.commit()
+        _send(chat_id,
+            f"{_greet(cur, tg_id, participant)}sweating with: {partner_list}\n\n"
+            "Type a name to add or remove:"
+        )
         return
 
-    # ── /follow ──────────────────────────────────────────────────────────────
-    if text.startswith("/follow") or text == "📥 Follow":
-        if not participant:
-            _send(chat_id, "Please register first — send /start")
+    # ── Awaiting sweat partner name ───────────────────────────────────────────
+    if state == "awaiting_sweat_name" and text:
+        name = text.strip()
+        cur.execute(
+            "SELECT participant_name FROM telegram_bot_users WHERE LOWER(participant_name) = LOWER(%s) AND telegram_user_id != %s",
+            (name, tg_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            _send(chat_id, f'No user named "{name}" found. Try again or send /sweat to see current list.')
             return
-        others = _all_other_names(cur, tg_id)
-        if not others:
-            _send(chat_id, f"{_greet(cur, tg_id, participant)}no other users are registered yet.")
-            return
-        _send(chat_id, f"{_greet(cur, tg_id, participant)}whose videos do you want to follow? Tap to toggle, then Done.", reply_markup=_follow_keyboard(cur, tg_id))
+        matched_name = row["participant_name"]
+        cur.execute(
+            "SELECT 1 FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s",
+            (tg_id, matched_name),
+        )
+        already = cur.fetchone()
+        if already:
+            cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s", (tg_id, matched_name))
+            cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s", (tg_id, matched_name))
+            msg = f"Removed {matched_name} from your sweat list."
+        else:
+            cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, matched_name))
+            cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, matched_name))
+            msg = f"Added {matched_name} to your sweat list 🤝"
+        _clear_state(cur, tg_id)
+        conn.commit()
+        _send(chat_id, msg, reply_markup=_MAIN_KB)
         return
 
     # ── Plain number → reps for pending video_note, or log without media ─────

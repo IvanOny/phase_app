@@ -165,7 +165,7 @@ class PhaseApi:
 
         # Burpee challenge (token-gated, no user auth required)
         if method == "GET" and path == "/v1/burpee/participants":
-            return self.get_burpee_participants()
+            return self.get_burpee_participants(qp)
         if method == "GET" and path == "/v1/burpee":
             return self.get_burpee_entries(qp)
         if method == "POST" and path == "/v1/burpee":
@@ -1438,8 +1438,9 @@ class PhaseApi:
         ).fetchone()
         return row["participant_name"] if row else None
 
-    def get_burpee_participants(self) -> ApiResponse:
-        rows = self._exec(
+    def get_burpee_participants(self, qp: dict) -> ApiResponse:
+        me = self._resolve_burpee_participant(qp)
+        all_rows = self._exec(
             "SELECT name FROM burpee_participants "
             "UNION "
             "SELECT participant_name AS name FROM telegram_bot_users "
@@ -1447,7 +1448,24 @@ class PhaseApi:
             "SELECT DISTINCT participant AS name FROM burpee_entries "
             "ORDER BY name"
         ).fetchall()
-        return ApiResponse(200, {"participants": [r["name"] for r in rows]})
+        all_names = [r["name"] for r in all_rows]
+
+        if me:
+            follow_rows = self._exec(
+                "SELECT receive_participant FROM telegram_bot_receive r "
+                "JOIN telegram_bot_users u ON u.telegram_user_id = r.telegram_user_id "
+                "WHERE u.token = %s",
+                (qp.get("token", ""),),
+            ).fetchall()
+            follow_set = {r["receive_participant"] for r in follow_rows}
+            # __all__ or no follow list → return everyone
+            if not follow_set or "__all__" in follow_set:
+                return ApiResponse(200, {"participants": all_names})
+            # specific follow list → return only followed + self
+            filtered = [n for n in all_names if n == me or n in follow_set]
+            return ApiResponse(200, {"participants": filtered})
+
+        return ApiResponse(200, {"participants": all_names})
 
     def get_burpee_entries(self, qp: dict) -> ApiResponse:
         me = self._resolve_burpee_participant(qp)

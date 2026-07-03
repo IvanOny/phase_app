@@ -480,10 +480,12 @@ def handle_webhook(body: dict, conn) -> None:
             _send(chat_id, "Please register first — send /start")
             return
         cur.execute(
-            "SELECT notify_participant FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant != '__all__'",
-            (tg_id,),
+            "SELECT notify_participant AS name FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant != '__all__' "
+            "UNION "
+            "SELECT receive_participant AS name FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant != '__all__'",
+            (tg_id, tg_id),
         )
-        partners = sorted(r["notify_participant"] for r in cur.fetchall())
+        partners = sorted(r["name"] for r in cur.fetchall())
         partner_list = ", ".join(partners) if partners else "nobody yet"
         _set_state(cur, tg_id, "awaiting_sweat_name")
         conn.commit()
@@ -506,8 +508,10 @@ def handle_webhook(body: dict, conn) -> None:
             return
         matched_name = row["participant_name"]
         cur.execute(
-            "SELECT 1 FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s",
-            (tg_id, matched_name),
+            "SELECT 1 FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s "
+            "UNION "
+            "SELECT 1 FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s",
+            (tg_id, matched_name, tg_id, matched_name),
         )
         already = cur.fetchone()
         if already:

@@ -337,7 +337,7 @@ def handle_webhook(body: dict, conn) -> None:
             _send(chat_id, f'"{name}" is already taken. Please choose a different name.')
             return
         old_name = participant
-        token = f"бурчик-{name.lower()}"
+        token = f"бурчик-{name.lower().replace(' ', '-')}"
         cur.execute(
             "INSERT INTO telegram_bot_users (telegram_user_id, participant_name, chat_id, token) "
             "VALUES (%s, %s, %s, %s) ON CONFLICT (telegram_user_id) "

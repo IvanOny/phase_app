@@ -326,7 +326,7 @@ def handle_webhook(body: dict, conn) -> None:
             "👋 Welcome to Бурчик Challenge!\n\n"
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
             "How it works:\n"
-            "• Do your burpees and send a round video bubble\n"
+            "• Do your burpees and send a round video bubble to the burchykbot\n"
             "• Type the number of reps\n"
             "• Your workout is logged and forwarded to your crew\n\n"
             "Use /sweat to choose who you share and follow.\n"
@@ -338,7 +338,7 @@ def handle_webhook(body: dict, conn) -> None:
             "/sweat — choose who you share and follow\n"
             "/info — show this list\n\n"
             "To log a workout:\n"
-            "• Send a round video bubble and type the number of reps",
+            "• Send a round video bubble to the burchykbot and type the number of reps",
             reply_markup=_MAIN_KB,
         )
         return
@@ -351,7 +351,7 @@ def handle_webhook(body: dict, conn) -> None:
             "👋 Welcome to Бурчик Challenge!\n\n"
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
             "How it works:\n"
-            "• Do your burpees and send a round video bubble\n"
+            "• Do your burpees and send a round video bubble to the burchykbot\n"
             "• Type the number of reps\n"
             "• Your workout is logged and forwarded to your crew\n\n"
             "Use /sweat to choose who you share and follow.\n\n"
@@ -381,6 +381,13 @@ def handle_webhook(body: dict, conn) -> None:
         conn.commit()
         _send(chat_id, "Name a fictional character you love:")
         return
+
+    # Any command or main keyboard button cancels a pending state
+    _KB_BUTTONS = {"🤝 Sweat with", "✏️ Rename", "🔑 Secret", "ℹ️ Info"}
+    if (text.startswith("/") or text in _KB_BUTTONS) and state:
+        _clear_state(cur, tg_id)
+        conn.commit()
+        state = None
 
     # ── Awaiting name input (registration or rename) ─────────────────────────
     if state in ("awaiting_name", "awaiting_rename") and text:
@@ -482,7 +489,7 @@ def handle_webhook(body: dict, conn) -> None:
         conn.commit()
         _send(chat_id,
             f"{_greet(cur, tg_id, participant)}sweating with: {partner_list}\n\n"
-            "Type a name to add or remove:"
+            "Type the name of the person you want to sweat with (or remove):"
         )
         return
 

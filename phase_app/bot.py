@@ -345,6 +345,14 @@ def handle_webhook(body: dict, conn) -> None:
 
     # ── /start ───────────────────────────────────────────────────────────────
     if text.startswith("/start"):
+        existing = _lookup_user(cur, tg_id)
+        if existing:
+            cur.execute("SELECT token FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+            row = cur.fetchone()
+            token_val = row["token"] if row and row["token"] else None
+            app_url = f"https://phase-app-yf5x.vercel.app/?token={token_val}" if token_val else "(no link yet)"
+            _send(chat_id, f"You're already registered as {existing}.\n\nYour app link:\n{app_url}", reply_markup=_MAIN_KB)
+            return
         _set_state(cur, tg_id, "awaiting_name")
         conn.commit()
         _send(chat_id,

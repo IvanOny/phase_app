@@ -1458,10 +1458,10 @@ class PhaseApi:
                 (qp.get("token", ""),),
             ).fetchall()
             follow_set = {r["receive_participant"] for r in follow_rows}
-            # __all__ or no follow list → return everyone
-            if not follow_set or "__all__" in follow_set:
+            # __all__ → return everyone
+            if "__all__" in follow_set:
                 return ApiResponse(200, {"participants": all_names})
-            # specific follow list → return only followed + self
+            # specific follow list (or empty) → return only followed + self
             filtered = [n for n in all_names if n == me or n in follow_set]
             return ApiResponse(200, {"participants": filtered})
 

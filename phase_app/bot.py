@@ -809,8 +809,8 @@ def handle_webhook(body: dict, conn) -> None:
         _send(chat_id, "Please register first — send /start")
         return
 
-    # ── Video or photo with caption ──────────────────────────────────────────
-    if has_video or has_photo:
+    # ── Photo with caption ───────────────────────────────────────────────────
+    if has_photo:
         caption = msg.get("caption", "").strip()
         if not caption.isdigit():
             _send(chat_id, f"{_greet(cur, tg_id, participant)}add the number of reps as the caption (e.g. 43)")
@@ -818,6 +818,24 @@ def handle_webhook(body: dict, conn) -> None:
         reps = int(caption)
         _log_entry(cur, participant, reps)
         _do_forward(cur, conn, tg_id, participant, chat_id, msg["message_id"], reps)
+        return
+
+    # ── Regular video: caption if present, otherwise ask for reps ───────────
+    if has_video:
+        caption = msg.get("caption", "").strip()
+        if caption.isdigit():
+            reps = int(caption)
+            _log_entry(cur, participant, reps)
+            _do_forward(cur, conn, tg_id, participant, chat_id, msg["message_id"], reps)
+            return
+        cur.execute(
+            "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id) "
+            "VALUES (%s, %s, %s) ON CONFLICT (telegram_user_id) "
+            "DO UPDATE SET message_id = EXCLUDED.message_id, chat_id = EXCLUDED.chat_id, created_at = NOW()",
+            (tg_id, chat_id, msg["message_id"]),
+        )
+        conn.commit()
+        _send(chat_id, f"{_greet(cur, tg_id, participant)}how many reps?")
         return
 
     # ── Round video bubble → ask for reps ────────────────────────────────────

@@ -525,6 +525,23 @@ def handle_webhook(body: dict, conn) -> None:
     chat_id: int = msg["chat"]["id"]
     text: str = msg.get("text", "").strip()
 
+    # ── /broadcast (admin only) ──────────────────────────────────────────────
+    if text.startswith("/broadcast "):
+        admin_id = int(os.environ.get("ADMIN_TG_ID", "0"))
+        if tg_id != admin_id:
+            return
+        message = text[len("/broadcast "):].strip()
+        if not message:
+            _send(chat_id, "Usage: /broadcast <message>")
+            return
+        cur.execute("SELECT chat_id, participant_name FROM telegram_bot_users")
+        rows = cur.fetchall()
+        for row in rows:
+            _send(row["chat_id"], message)
+        _send(chat_id, f"✓ Sent to {len(rows)} users")
+        _log(f"📢 Broadcast\n👤 admin (tg:{tg_id})\n💬 {message[:80]}")
+        return
+
     # ── /info ────────────────────────────────────────────────────────────────
     if text.startswith("/info") or text.startswith("/help") or text == "ℹ️ Info":
         cur.execute("SELECT token, participant_name FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))

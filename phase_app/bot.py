@@ -411,6 +411,51 @@ def handle_webhook(body: dict, conn) -> None:
             _log(f"📡 Radar set\n👤 {participant} → {label}")
             return
 
+        # Sweat notify callbacks
+        if data.startswith("sweat_notify:"):
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+            parts = data.split(":", 2)
+            if parts[1] == "yes" and len(parts) == 3:
+                target_name = parts[2]
+                cur.execute("SELECT chat_id, telegram_user_id FROM telegram_bot_users WHERE participant_name = %s", (target_name,))
+                target_row = cur.fetchone()
+                if target_row:
+                    cur.execute(
+                        "SELECT 1 FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s "
+                        "UNION "
+                        "SELECT 1 FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s",
+                        (target_row["telegram_user_id"], participant, target_row["telegram_user_id"], participant),
+                    )
+                    already_connected = cur.fetchone() is not None
+                    if already_connected:
+                        _send(target_row["chat_id"], f"🤝 {participant} added you to their sweat list!")
+                    else:
+                        _send(target_row["chat_id"],
+                            f"🤝 {participant} added you to their sweat list!\n\nAdd {participant} to your sweat list?",
+                            reply_markup={"inline_keyboard": [[
+                                {"text": "Yes", "callback_data": f"sweat_add_back:yes:{participant}"},
+                                {"text": "No",  "callback_data": "sweat_add_back:no"},
+                            ]]},
+                        )
+            return
+
+        # Sweat add-back callbacks
+        if data.startswith("sweat_add_back:"):
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+            parts = data.split(":", 2)
+            if parts[1] == "yes" and len(parts) == 3:
+                adder_name = parts[2]
+                cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, adder_name))
+                cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, adder_name))
+                conn.commit()
+                _send(chat_id, f"✓ Added {adder_name} to your sweat list 🤝", reply_markup=_MAIN_KB)
+                cur.execute("SELECT chat_id FROM telegram_bot_users WHERE participant_name = %s", (adder_name,))
+                adder_row = cur.fetchone()
+                if adder_row:
+                    _send(adder_row["chat_id"], f"🤝 {participant} added you to their sweat list too!")
+                _log(f"🤝 Sweat add-back\n👤 {participant} → {adder_name}")
+            return
+
         return
 
     msg = body.get("message")
@@ -656,8 +701,17 @@ def handle_webhook(body: dict, conn) -> None:
         else:
             cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, matched_name))
             cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, matched_name))
-            msg = f"Added {matched_name} to your sweat list 🤝"
             _log(f"🤝 Sweat added\n👤 {participant} → {matched_name}")
+            _clear_state(cur, tg_id)
+            conn.commit()
+            _send(chat_id,
+                f"Added {matched_name} to your sweat list 🤝\n\nNotify {matched_name}?",
+                reply_markup={"inline_keyboard": [
+                    [{"text": "Yes", "callback_data": f"sweat_notify:yes:{matched_name}"},
+                     {"text": "No", "callback_data": "sweat_notify:no"}]
+                ]},
+            )
+            return
         _clear_state(cur, tg_id)
         conn.commit()
         _send(chat_id, msg, reply_markup=_MAIN_KB)

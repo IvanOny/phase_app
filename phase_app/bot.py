@@ -269,16 +269,40 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         "WHERE radar_freq != 'never' AND telegram_user_id != %s",
         (tg_id,),
     )
+    _PERIOD = {"daily": "every day", "weekly": "every week", "monthly": "every month"}
     for row in cur.fetchall():
         if row["participant_name"] in sweat_names:
             continue
         if not _radar_due(row["radar_freq"], row["radar_last_received"]):
             continue
+        freq = row["radar_freq"]
+        is_first = row["radar_last_received"] is None
+        if is_first:
+            if freq == "once":
+                explanation = (
+                    f"📡 {participant}: {reps} reps\n"
+                    "You're getting this because your radar is on — a burpee from outside your crew. "
+                    "According to your radar settings you'll get 1 burpee bubble, just once. "
+                    "Use /radar to adjust frequency."
+                )
+            else:
+                period = _PERIOD.get(freq, freq)
+                explanation = (
+                    f"📡 {participant}: {reps} reps\n"
+                    "You're getting this because your radar is on — a burpee from outside your crew. "
+                    f"According to your radar settings you will get 1 random burpee bubble {period}. "
+                    "Use /radar to adjust frequency."
+                )
+        else:
+            explanation = (
+                f"📡 {participant}: {reps} reps\n"
+                "Your Radar detected some burpee activity from someone outside your crew."
+            )
+        _send(row["chat_id"], explanation)
         if message_id:
             _forward(from_chat_id, message_id, row["chat_id"])
-        _send(row["chat_id"], f"📡 {participant}: {reps} reps")
-        _log(f"📡 Radar forward\n💪 {participant}: {reps} reps → {row['participant_name']} ({row['radar_freq']})")
-        new_freq = "never" if row["radar_freq"] == "once" else row["radar_freq"]
+        _log(f"📡 Radar forward\n💪 {participant}: {reps} reps → {row['participant_name']} ({freq})")
+        new_freq = "never" if freq == "once" else freq
         cur.execute(
             "UPDATE telegram_bot_users SET radar_last_received = NOW(), radar_freq = %s WHERE telegram_user_id = %s",
             (new_freq, row["telegram_user_id"]),

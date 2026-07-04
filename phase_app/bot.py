@@ -491,7 +491,8 @@ def handle_webhook(body: dict, conn) -> None:
             "/radar — receive random burpees from outside your sweat list\n"
             "/info — show this list\n\n"
             "To log a workout:\n"
-            "• Send a round video bubble to the burchykbot and type the number of reps",
+            "• Start recording a video bubble, start your 3-min timer, do your burpees. "
+            "When done, send the recorded snippet (Telegram limits video bubbles to 1 min) and type your total reps.",
             reply_markup=_MAIN_KB,
         )
         return
@@ -617,7 +618,12 @@ def handle_webhook(body: dict, conn) -> None:
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
         _log(f"📋 New registration\n👤 {name} (tg:{tg_id})\n🔑 {token}")
-        _send(chat_id, f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\nUse /sweat to choose who you share and follow.\n\nThen send your first burpee video 💪", reply_markup=_MAIN_KB)
+        _send(chat_id,
+            f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\n"
+            "Use /sweat to choose who you share and follow.\n\n"
+            "💡 How to log: start recording a video bubble, start your 3-min timer, do your burpees. "
+            "When done, send the recorded snippet (Telegram limits video bubbles to 1 min) and type your total reps.",
+            reply_markup=_MAIN_KB)
         return
 
     # ── Awaiting secret update (existing user via /secret) ───────────────────

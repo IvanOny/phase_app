@@ -7,17 +7,18 @@ import {
 // Each entry: { bg: tint for backgrounds, text: dark for text/borders, bar: saturated for charts }
 
 const C_PALETTE = [
-  { bg: '#eef2ff', text: '#4338ca', bar: '#6366f1', chart: '#a5b4fc' }, // indigo
-  { bg: '#f0fdf4', text: '#15803d', bar: '#22c55e', chart: '#86efac' }, // green
-  { bg: '#fffbeb', text: '#b45309', bar: '#f59e0b', chart: '#fcd34d' }, // amber
-  { bg: '#fef2f2', text: '#dc2626', bar: '#ef4444', chart: '#fca5a5' }, // red
-  { bg: '#f5f3ff', text: '#7c3aed', bar: '#8b5cf6', chart: '#c4b5fd' }, // violet
-  { bg: '#ecfeff', text: '#0e7490', bar: '#06b6d4', chart: '#67e8f9' }, // cyan
-  { bg: '#fff7ed', text: '#c2410c', bar: '#f97316', chart: '#fdba74' }, // orange
-  { bg: '#f0fdfa', text: '#0f766e', bar: '#14b8a6', chart: '#5eead4' }, // teal
-  { bg: '#fdf4ff', text: '#a21caf', bar: '#d946ef', chart: '#f0abfc' }, // fuchsia
+  { bg: '#eef2ff', text: '#4338ca', bar: '#6366f1', chart: '#6366f1' }, // 0 indigo
+  { bg: '#f0fdf4', text: '#15803d', bar: '#22c55e', chart: '#22c55e' }, // 1 green
+  { bg: '#fffbeb', text: '#b45309', bar: '#f59e0b', chart: '#f59e0b' }, // 2 amber
+  { bg: '#e0f2fe', text: '#0369a1', bar: '#0ea5e9', chart: '#0ea5e9' }, // 3 sky
+  { bg: '#eef2ff', text: '#3730a3', bar: '#4f46e5', chart: '#818cf8' }, // 4 periwinkle
+  { bg: '#ede9fe', text: '#5b21b6', bar: '#7c3aed', chart: '#6366f1' }, // 5 violet
+  { bg: '#cffafe', text: '#0e7490', bar: '#06b6d4', chart: '#06b6d4' }, // 6 cyan
+  { bg: '#ccfbf1', text: '#0f766e', bar: '#14b8a6', chart: '#14b8a6' }, // 7 teal
+  { bg: '#dbeafe', text: '#1d4ed8', bar: '#3b82f6', chart: '#3b82f6' }, // 8 blue
+  { bg: '#ecfdf5', text: '#065f46', bar: '#059669', chart: '#34d399' }, // 9 mint
 ];
-const C_KNOWN = { Ivan: C_PALETTE[0], Yurii: C_PALETTE[1], Benni: C_PALETTE[2] };
+const C_KNOWN = { Ivan: C_PALETTE[0], Yurii: C_PALETTE[1] };
 
 function buildColorMap(participants) {
   const map = {};
@@ -373,6 +374,7 @@ export default function BurpeeChallenge({ token }) {
 
   useEffect(() => {
     load();
+    apiBurpee('POST', '/v1/burpee/ping', null, token).catch(() => {});
   }, [load]);
 
   useEffect(() => {
@@ -597,6 +599,7 @@ export default function BurpeeChallenge({ token }) {
         participants={myView}
         pColors={pColors}
       />
+
 
       {/* Log form */}
       <div

@@ -198,6 +198,7 @@ _MAIN_KB = {
 
 _RADAR_FREQS = ["daily", "weekly", "monthly", "once", "never"]
 _RADAR_LABELS = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "once": "Just once", "never": "Off"}
+_RADAR_PERIOD = {"daily": "every day", "weekly": "every week", "monthly": "every month"}
 
 def _radar_keyboard(current: str) -> dict:
     rows = []
@@ -244,6 +245,10 @@ def _log_entry(cur, participant: str, reps: int) -> None:
         "ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps",
         (participant, str(date.today()), reps),
     )
+    cur.execute(
+        "UPDATE telegram_bot_users SET radar_score = radar_score + 1 WHERE participant_name = %s",
+        (participant,),
+    )
 
 
 def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, message_id: int | None, reps: int) -> None:
@@ -261,52 +266,106 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         _send(from_chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
         _log(f"💪 Video logged\n👤 {participant}: {reps} reps\n📤 → nobody")
 
-    # ── Radar: forward to eligible users outside sender's sweat list ──────────
-    sweat_names = {n for _, n in targets} | {participant}
+    # ── Radar: queue this video as a candidate for the 19:00 daily selection ──
     cur.execute(
-        "SELECT telegram_user_id, chat_id, participant_name, radar_freq, radar_last_received "
-        "FROM telegram_bot_users "
-        "WHERE radar_freq != 'never' AND telegram_user_id != %s",
-        (tg_id,),
+        "INSERT INTO radar_candidates "
+        "(telegram_user_id, chat_id, message_id, participant_name, reps, candidate_date) "
+        "VALUES (%s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (telegram_user_id, candidate_date) DO UPDATE "
+        "SET message_id = EXCLUDED.message_id, reps = EXCLUDED.reps, "
+        "    chat_id = EXCLUDED.chat_id, processed = FALSE",
+        (tg_id, from_chat_id, message_id, participant, reps, date.today()),
     )
-    _PERIOD = {"daily": "every day", "weekly": "every week", "monthly": "every month"}
-    for row in cur.fetchall():
-        if row["participant_name"] in sweat_names:
-            continue
-        if not _radar_due(row["radar_freq"], row["radar_last_received"]):
-            continue
-        freq = row["radar_freq"]
-        is_first = row["radar_last_received"] is None
-        if is_first:
-            if freq == "once":
-                explanation = (
-                    f"📡 {participant}: {reps} reps\n"
-                    "You're getting this because your radar is on — a burpee from outside your crew. "
-                    "According to your radar settings you'll get 1 burpee bubble, just once. "
-                    "Use /radar to adjust frequency."
-                )
-            else:
-                period = _PERIOD.get(freq, freq)
-                explanation = (
-                    f"📡 {participant}: {reps} reps\n"
-                    "You're getting this because your radar is on — a burpee from outside your crew. "
-                    f"According to your radar settings you will get 1 random burpee bubble {period}. "
-                    "Use /radar to adjust frequency."
-                )
-        else:
-            explanation = (
-                f"📡 {participant}: {reps} reps\n"
-                "Your Radar detected some burpee activity from someone outside your crew."
-            )
-        _send(row["chat_id"], explanation)
-        if message_id:
-            _forward(from_chat_id, message_id, row["chat_id"])
-        _log(f"📡 Radar forward\n💪 {participant}: {reps} reps → {row['participant_name']} ({freq})")
-        new_freq = "never" if freq == "once" else freq
+
+
+def process_radar_candidates(conn) -> None:
+    """Called by the 19:00 UTC cron. Picks the best candidate per recipient and forwards."""
+    cur = conn.cursor()
+    today = date.today()
+
+    cur.execute(
+        "SELECT rc.id, rc.telegram_user_id, rc.chat_id, rc.message_id, "
+        "       rc.participant_name, rc.reps, u.radar_score "
+        "FROM radar_candidates rc "
+        "JOIN telegram_bot_users u ON u.telegram_user_id = rc.telegram_user_id "
+        "WHERE rc.candidate_date = %s AND rc.processed = FALSE "
+        "ORDER BY u.radar_score DESC",
+        (today,),
+    )
+    candidates = cur.fetchall()
+
+    if candidates:
         cur.execute(
-            "UPDATE telegram_bot_users SET radar_last_received = NOW(), radar_freq = %s WHERE telegram_user_id = %s",
-            (new_freq, row["telegram_user_id"]),
+            "SELECT telegram_user_id, chat_id, participant_name, radar_freq, radar_last_received "
+            "FROM telegram_bot_users WHERE radar_freq != 'never'",
         )
+        recipients = cur.fetchall()
+
+        for recipient in recipients:
+            freq = recipient["radar_freq"]
+            if not _radar_due(freq, recipient["radar_last_received"]):
+                continue
+
+            cur.execute(
+                "SELECT notify_participant AS name FROM telegram_bot_notify "
+                "WHERE telegram_user_id = %s AND notify_participant != '__all__' "
+                "UNION "
+                "SELECT receive_participant AS name FROM telegram_bot_receive "
+                "WHERE telegram_user_id = %s AND receive_participant != '__all__'",
+                (recipient["telegram_user_id"], recipient["telegram_user_id"]),
+            )
+            sweat_names = {r["name"] for r in cur.fetchall()} | {recipient["participant_name"]}
+
+            best = next((c for c in candidates if c["participant_name"] not in sweat_names), None)
+            if not best:
+                continue
+
+            is_first = recipient["radar_last_received"] is None
+            if is_first:
+                if freq == "once":
+                    explanation = (
+                        f"📡 {best['participant_name']}: {best['reps']} reps\n"
+                        "You're getting this because your radar is on — a burpee from outside your crew. "
+                        "According to your radar settings you'll get 1 burpee bubble, just once. "
+                        "Use /radar to adjust frequency."
+                    )
+                else:
+                    period = _RADAR_PERIOD.get(freq, freq)
+                    explanation = (
+                        f"📡 {best['participant_name']}: {best['reps']} reps\n"
+                        "You're getting this because your radar is on — a burpee from outside your crew. "
+                        f"According to your radar settings you will get 1 random burpee bubble {period}. "
+                        "Use /radar to adjust frequency."
+                    )
+            else:
+                explanation = (
+                    f"📡 {best['participant_name']}: {best['reps']} reps\n"
+                    "Your Radar detected some burpee activity from someone outside your crew."
+                )
+
+            _send(recipient["chat_id"], explanation)
+            if best["message_id"]:
+                _forward(best["chat_id"], best["message_id"], recipient["chat_id"])
+
+            new_freq = "never" if freq == "once" else freq
+            cur.execute(
+                "UPDATE telegram_bot_users SET radar_last_received = NOW(), radar_freq = %s "
+                "WHERE telegram_user_id = %s",
+                (new_freq, recipient["telegram_user_id"]),
+            )
+            cur.execute(
+                "UPDATE telegram_bot_users SET radar_score = radar_score - 10 "
+                "WHERE telegram_user_id = %s",
+                (best["telegram_user_id"],),
+            )
+            _log(
+                f"📡 Radar forward (cron)\n"
+                f"💪 {best['participant_name']}: {best['reps']} reps → {recipient['participant_name']} ({freq})\n"
+                f"📊 sender score: {best['radar_score']} → {best['radar_score'] - 10}"
+            )
+
+    cur.execute("UPDATE radar_candidates SET processed = TRUE WHERE candidate_date = %s", (today,))
+    conn.commit()
 
 
 # ── Webhook handler ──────────────────────────────────────────────────────────

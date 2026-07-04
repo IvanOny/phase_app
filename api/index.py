@@ -73,6 +73,18 @@ def telegram_bot():
     return jsonify({"ok": True}), 200
 
 
+@app.route("/api/cron/radar", methods=["GET", "POST"])
+def cron_radar():
+    from phase_app.bot import process_radar_candidates
+    import traceback
+    try:
+        process_radar_candidates(_get_api().conn)
+    except Exception:
+        traceback.print_exc()
+        return jsonify({"ok": False}), 500
+    return jsonify({"ok": True}), 200
+
+
 @app.route("/", defaults={"path": ""}, methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
 @app.route("/<path:path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
 def handle(path: str):

@@ -3,9 +3,30 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import date as _date
+import urllib.request
+import urllib.error
+from datetime import date as _date, datetime, timezone
 from dataclasses import dataclass
 from typing import Any
+
+_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+_LOG_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
+
+
+def _tg_log(text: str) -> None:
+    if not _LOG_CHAT_ID or not _BOT_TOKEN:
+        return
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    payload = json.dumps({"chat_id": int(_LOG_CHAT_ID), "text": f"[{ts}]\n{text}"}).encode()
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{_BOT_TOKEN}/sendMessage",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass
 
 import psycopg2
 import psycopg2.extensions
@@ -172,6 +193,8 @@ class PhaseApi:
             return self.log_burpee_entry(body, qp)
         if method == "DELETE" and re.fullmatch(r"/v1/burpee/\d+", path):
             return self.delete_burpee_entry(int(path.split("/")[3]), qp)
+        if method == "POST" and path == "/v1/burpee/ping":
+            return self.ping_burpee(qp)
 
         return ApiResponse(status=404, body={"error": "not_found"})
 
@@ -1507,6 +1530,12 @@ class PhaseApi:
         self._exec("DELETE FROM burpee_entries WHERE id = %s AND participant = %s", (entry_id, me))
         self.conn.commit()
         return ApiResponse(200, {"deleted": entry_id})
+
+    def ping_burpee(self, qp: dict) -> ApiResponse:
+        me = self._resolve_burpee_participant(qp)
+        if me:
+            _tg_log(f"👆 App opened\n👤 {me}")
+        return ApiResponse(200, {})
 
 
 def to_http_payload(resp: ApiResponse) -> tuple[int, str]:

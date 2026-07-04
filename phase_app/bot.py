@@ -740,7 +740,7 @@ def handle_webhook(body: dict, conn) -> None:
         return
 
     # ── Awaiting sweat partner name ───────────────────────────────────────────
-    if state == "awaiting_sweat_name" and text:
+    if state == "awaiting_sweat_name" and text and not text.isdigit():
         name = text.strip()
         cur.execute(
             "SELECT participant_name FROM telegram_bot_users WHERE LOWER(participant_name) = LOWER(%s) AND telegram_user_id != %s",

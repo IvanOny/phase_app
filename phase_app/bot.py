@@ -558,7 +558,7 @@ def handle_webhook(body: dict, conn) -> None:
             if setup_mode or needs_send_question:
                 # Next: ask about sending
                 _send(chat_id,
-                      "📡 Radar works both ways — you can receive random burpees, and your videos can appear in others' Radar. Is that okay?",
+                      "📡 Radar works both ways — you can not only receive random burpees, but your videos can appear in others' Radar as well. Is that okay?\n\nYou can change this setting later via 📡 Radar.",
                       reply_markup=_RADAR_SEND_KB)
             else:
                 label = _RADAR_LABELS[freq]
@@ -830,14 +830,15 @@ def handle_webhook(body: dict, conn) -> None:
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
         _log(f"📋 New registration\n👤 {name} (tg:{tg_id})\n🔑 {token}")
         _send(chat_id,
-            f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\n"
-            "Use /sweat to find who you share and follow.",
+            f"Welcome, {name}! 👋 Your app link:\n{app_url}\n\n"
+            "Next: add your crew via 🤝 Sweat with.\n"
+            "They'll get every video you log — and you'll get theirs.",
             reply_markup=_MAIN_KB)
         # Kick off radar setup
         _set_state(cur, tg_id, "awaiting_radar_freq_setup")
         conn.commit()
         _send(chat_id,
-            "📡 One more thing — Radar can send you a random burpee from outside your crew. How often?",
+            "📡 Radar works differently — it sends you one random burpee from someone outside your crew. How often?",
             reply_markup=_radar_keyboard("never"),
         )
         return
@@ -898,7 +899,9 @@ def handle_webhook(body: dict, conn) -> None:
         _set_state(cur, tg_id, "awaiting_sweat_name")
         conn.commit()
         _send(chat_id,
-            f"{_greet(cur, tg_id, participant)}sweating with: {partner_list}\n\n"
+            f"🤝 Your sweat crew gets every video you log — and you get theirs.\n"
+            f"Radar is for strangers. Sweat is for your people.\n\n"
+            f"Sweating with: {partner_list}\n\n"
             "Type the name of the person you want to sweat with (or remove):"
         )
         return

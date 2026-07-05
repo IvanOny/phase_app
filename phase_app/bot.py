@@ -286,6 +286,74 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         )
 
 
+_REPORT_CHAT_ID = os.environ.get("REPORT_CHAT_ID", "")
+
+
+def _compute_streak(entries_desc: list) -> tuple:
+    """Returns (streak_days, last_date, last_reps). streak_days=0 means broken."""
+    if not entries_desc:
+        return 0, None, None
+    today = date.today()
+    last_date = entries_desc[0]["entry_date"]
+    last_reps = entries_desc[0]["reps"]
+    if isinstance(last_date, str):
+        from datetime import datetime as _dt
+        last_date = _dt.strptime(last_date, "%Y-%m-%d").date()
+    if (today - last_date).days > 1:
+        return 0, last_date, last_reps
+    streak = 0
+    expected = last_date
+    for row in entries_desc:
+        d = row["entry_date"]
+        if isinstance(d, str):
+            from datetime import datetime as _dt
+            d = _dt.strptime(d, "%Y-%m-%d").date()
+        if d == expected:
+            streak += 1
+            expected = expected - timedelta(days=1)
+        else:
+            break
+    return streak, last_date, last_reps
+
+
+def send_daily_report(conn) -> None:
+    """Called by the 19:00 UTC cron. Sends a streak report to the REPORT_CHAT_ID channel."""
+    if not _REPORT_CHAT_ID:
+        return
+    cur = conn.cursor()
+    today = date.today()
+
+    cur.execute("SELECT participant_name FROM telegram_bot_users ORDER BY participant_name")
+    users = [r["participant_name"] for r in cur.fetchall()]
+    if not users:
+        return
+
+    cur.execute(
+        "SELECT participant, entry_date, reps FROM burpee_entries "
+        "WHERE participant = ANY(%s) ORDER BY participant, entry_date DESC",
+        (users,),
+    )
+    entries_by_user: dict[str, list] = {}
+    for row in cur.fetchall():
+        entries_by_user.setdefault(row["participant"], []).append(row)
+
+    lines = [f"📊 Burpee Report — {today.strftime('%B %d')}\n"]
+    for user in users:
+        entries = entries_by_user.get(user, [])
+        streak, last_date, last_reps = _compute_streak(entries)
+        if streak > 0:
+            lines.append(f"🔥 {user} — {streak}-day streak ({last_reps} reps today)" if (today - last_date).days == 0 else f"🔥 {user} — {streak}-day streak")
+        elif last_date:
+            days_ago = (today - last_date).days
+            day_word = "day" if days_ago == 1 else "days"
+            lines.append(f"❌ {user} — {days_ago} {day_word} without workout (last: {last_reps} reps on {last_date.strftime('%b %d')})")
+        else:
+            lines.append(f"😴 {user} — no workouts yet")
+
+    _tg("sendMessage", {"chat_id": int(_REPORT_CHAT_ID), "text": "\n".join(lines)})
+    _log(f"📊 Daily report sent to channel")
+
+
 def process_radar_candidates(conn) -> None:
     """Called by the 19:00 UTC cron. Picks the best candidate per recipient and forwards."""
     cur = conn.cursor()
@@ -587,21 +655,17 @@ def handle_webhook(body: dict, conn) -> None:
             "👋 Welcome to Бурчик Challenge!\n\n"
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
             "How it works:\n"
-            "• Do your burpees and send a round video bubble to the burchykbot\n"
-            "• Type the number of reps\n"
+            "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
+            "• Then type your total rep count\n"
             "• Your workout is logged and forwarded to your crew\n\n"
-            "Use /sweat to choose who you share and follow.\n"
             f"{link_line}\n"
             "Available commands:\n\n"
             "/start — register your name\n"
             "/rename — change your name\n"
             "/secret — update your app link secret\n"
-            "/sweat — choose who you share and follow\n"
-            "/radar — receive random burpees from outside your sweat list\n"
-            "/info — show this list\n\n"
-            "To log a workout:\n"
-            "• Start recording a video bubble, start your 3-min timer, do your burpees. "
-            "When done, send the recorded snippet (Telegram limits video bubbles to 1 min) and type your total reps.",
+            "/sweat — find who you share and follow\n"
+            "/radar — receive and send random burpees from outside your sweat list\n"
+            "/info — show this list",
             reply_markup=_MAIN_KB,
         )
         return
@@ -622,10 +686,10 @@ def handle_webhook(body: dict, conn) -> None:
             "👋 Welcome to Бурчик Challenge!\n\n"
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
             "How it works:\n"
-            "• Do your burpees and send a round video bubble to the burchykbot\n"
-            "• Type the number of reps\n"
+            "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
+            "• Then type your total rep count\n"
             "• Your workout is logged and forwarded to your crew\n\n"
-            "Use /sweat to choose who you share and follow.\n\n"
+            "Use /sweat to find who you share and follow.\n\n"
             "First, what would you like to be called?"
         )
         return
@@ -729,9 +793,7 @@ def handle_webhook(body: dict, conn) -> None:
         _log(f"📋 New registration\n👤 {name} (tg:{tg_id})\n🔑 {token}")
         _send(chat_id,
             f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\n"
-            "Use /sweat to choose who you share and follow.\n\n"
-            "💡 How to log: start recording a video bubble, start your 3-min timer, do your burpees. "
-            "When done, send the recorded snippet (Telegram limits video bubbles to 1 min) and type your total reps.",
+            "Use /sweat to find who you share and follow.",
             reply_markup=_MAIN_KB)
         # Kick off radar setup
         _set_state(cur, tg_id, "awaiting_radar_freq_setup")

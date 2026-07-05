@@ -206,8 +206,10 @@ def _radar_keyboard(current: str, radar_send: bool | None = None) -> dict:
         label = ("✓ " if freq == current else "") + _RADAR_LABELS[freq]
         rows.append([{"text": label, "callback_data": f"radar:{freq}"}])
     if radar_send is not None:
-        send_label = "📤 My videos: ✅ ON" if radar_send else "📤 My videos: 🚫 OFF"
-        rows.append([{"text": send_label, "callback_data": "radar_send_toggle:"}])
+        rows.append([
+            {"text": ("✓ " if radar_send else "") + "📡 Share my videos: ON ✅", "callback_data": "radar_send_toggle:on"},
+            {"text": ("✓ " if not radar_send else "") + "📡 Share my videos: OFF 🚫", "callback_data": "radar_send_toggle:off"},
+        ])
     return {"inline_keyboard": rows}
 
 _RADAR_SEND_KB = {"inline_keyboard": [
@@ -567,16 +569,19 @@ def handle_webhook(body: dict, conn) -> None:
                 _log(f"📡 Radar set\n👤 {participant} → {label}")
             return
 
-        # Radar send toggle (from the toggle row in the radar keyboard)
-        if data == "radar_send_toggle:":
+        # Radar send toggle (ON/OFF buttons in the radar keyboard)
+        if data.startswith("radar_send_toggle:"):
+            answer = data[len("radar_send_toggle:"):]
+            if answer not in ("on", "off"):
+                return
+            new_send = answer == "on"
             cur.execute(
-                "SELECT radar_freq, radar_send FROM telegram_bot_users WHERE telegram_user_id = %s",
+                "SELECT radar_freq FROM telegram_bot_users WHERE telegram_user_id = %s",
                 (tg_id,),
             )
             row = cur.fetchone()
             if not row:
                 return
-            new_send = not row["radar_send"]
             current_freq = row["radar_freq"] or "never"
             cur.execute(
                 "UPDATE telegram_bot_users SET radar_send = %s WHERE telegram_user_id = %s",
@@ -871,8 +876,8 @@ def handle_webhook(body: dict, conn) -> None:
         # Show send toggle only for users who have already answered the send question
         kb = _radar_keyboard(current, radar_send=radar_send if radar_asked else None)
         _send(chat_id,
-            f"📡 Radar — receive a random burpee video from outside your sweat list.\n\n"
-            f"Current: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
+            f"📡 Radar — receive random burpees & share yours with the world outside your crew.\n\n"
+            f"Receive: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
             reply_markup=kb,
         )
         return

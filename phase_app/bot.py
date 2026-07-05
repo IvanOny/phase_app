@@ -534,6 +534,12 @@ def handle_webhook(body: dict, conn) -> None:
                 return
             setup_mode = _get_state(cur, tg_id) == "awaiting_radar_freq_setup"
             cur.execute(
+                "SELECT radar_asked FROM telegram_bot_users WHERE telegram_user_id = %s",
+                (tg_id,),
+            )
+            row = cur.fetchone()
+            needs_send_question = row and not row["radar_asked"]
+            cur.execute(
                 "UPDATE telegram_bot_users SET radar_freq = %s WHERE telegram_user_id = %s",
                 (freq, tg_id),
             )
@@ -541,7 +547,7 @@ def handle_webhook(body: dict, conn) -> None:
                 _clear_state(cur, tg_id)
             conn.commit()
             _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(freq)})
-            if setup_mode:
+            if setup_mode or needs_send_question:
                 # Next: ask about sending
                 _send(chat_id, "📡 Radar shares your burpee videos with people you don't sweat with. Is that okay?",
                       reply_markup=_RADAR_SEND_KB)

@@ -200,11 +200,14 @@ _RADAR_FREQS = ["daily", "weekly", "monthly", "once", "never"]
 _RADAR_LABELS = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "once": "Just once", "never": "Off"}
 _RADAR_PERIOD = {"daily": "every day", "weekly": "every week", "monthly": "every month"}
 
-def _radar_keyboard(current: str) -> dict:
+def _radar_keyboard(current: str, radar_send: bool | None = None) -> dict:
     rows = []
     for freq in _RADAR_FREQS:
         label = ("✓ " if freq == current else "") + _RADAR_LABELS[freq]
         rows.append([{"text": label, "callback_data": f"radar:{freq}"}])
+    if radar_send is not None:
+        send_label = "📤 My videos: ✅ ON" if radar_send else "📤 My videos: 🚫 OFF"
+        rows.append([{"text": send_label, "callback_data": "radar_send_toggle:"}])
     return {"inline_keyboard": rows}
 
 _RADAR_SEND_KB = {"inline_keyboard": [
@@ -534,11 +537,12 @@ def handle_webhook(body: dict, conn) -> None:
                 return
             setup_mode = _get_state(cur, tg_id) == "awaiting_radar_freq_setup"
             cur.execute(
-                "SELECT radar_asked FROM telegram_bot_users WHERE telegram_user_id = %s",
+                "SELECT radar_asked, radar_send FROM telegram_bot_users WHERE telegram_user_id = %s",
                 (tg_id,),
             )
             row = cur.fetchone()
             needs_send_question = row and not row["radar_asked"]
+            radar_send = row["radar_send"] if row else False
             cur.execute(
                 "UPDATE telegram_bot_users SET radar_freq = %s WHERE telegram_user_id = %s",
                 (freq, tg_id),
@@ -546,10 +550,13 @@ def handle_webhook(body: dict, conn) -> None:
             if setup_mode:
                 _clear_state(cur, tg_id)
             conn.commit()
-            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(freq)})
+            # Show send toggle in keyboard only when the user has already been asked
+            show_toggle = not setup_mode and not needs_send_question
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(freq, radar_send=radar_send if show_toggle else None)})
             if setup_mode or needs_send_question:
                 # Next: ask about sending
-                _send(chat_id, "📡 Radar shares your burpee videos with people you don't sweat with. Is that okay?",
+                _send(chat_id,
+                      "📡 Radar works both ways — you can receive random burpees, and your videos can appear in others' Radar. Is that okay?",
                       reply_markup=_RADAR_SEND_KB)
             else:
                 label = _RADAR_LABELS[freq]
@@ -558,6 +565,26 @@ def handle_webhook(body: dict, conn) -> None:
                 else:
                     _send(chat_id, f"📡 Radar set to {label.lower()} — you'll receive a random burpee from outside your sweat list.", reply_markup=_MAIN_KB)
                 _log(f"📡 Radar set\n👤 {participant} → {label}")
+            return
+
+        # Radar send toggle (from the toggle row in the radar keyboard)
+        if data == "radar_send_toggle:":
+            cur.execute(
+                "SELECT radar_freq, radar_send FROM telegram_bot_users WHERE telegram_user_id = %s",
+                (tg_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return
+            new_send = not row["radar_send"]
+            current_freq = row["radar_freq"] or "never"
+            cur.execute(
+                "UPDATE telegram_bot_users SET radar_send = %s WHERE telegram_user_id = %s",
+                (new_send, tg_id),
+            )
+            conn.commit()
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(current_freq, radar_send=new_send)})
+            _log(f"📡 Radar send toggled\n👤 {participant} → {'ON' if new_send else 'OFF'}")
             return
 
         # Radar send permission callbacks
@@ -833,13 +860,20 @@ def handle_webhook(body: dict, conn) -> None:
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
-        cur.execute("SELECT radar_freq FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+        cur.execute(
+            "SELECT radar_freq, radar_send, radar_asked FROM telegram_bot_users WHERE telegram_user_id = %s",
+            (tg_id,),
+        )
         row = cur.fetchone()
         current = row["radar_freq"] if row and row["radar_freq"] else "daily"
+        radar_send = row["radar_send"] if row else False
+        radar_asked = row["radar_asked"] if row else False
+        # Show send toggle only for users who have already answered the send question
+        kb = _radar_keyboard(current, radar_send=radar_send if radar_asked else None)
         _send(chat_id,
             f"📡 Radar — receive a random burpee video from outside your sweat list.\n\n"
             f"Current: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
-            reply_markup=_radar_keyboard(current),
+            reply_markup=kb,
         )
         return
 

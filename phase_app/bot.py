@@ -286,7 +286,7 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         )
 
 
-_REPORT_CHAT_ID = os.environ.get("REPORT_CHAT_ID", "")
+_REPORT_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
 
 
 def _compute_streak(entries_desc: list) -> tuple:

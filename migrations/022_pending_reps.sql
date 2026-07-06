@@ -1,0 +1,1 @@
+ALTER TABLE telegram_bot_pending ADD COLUMN IF NOT EXISTS reps INTEGER;

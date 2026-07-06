@@ -278,6 +278,31 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
     )
 
 
+def _store_or_bind_video(cur, conn, tg_id: int, participant: str, chat_id: int, message_id: int) -> None:
+    """Store a video as pending (ask for reps), or bind it to reps logged within the last hour."""
+    cur.execute(
+        "SELECT reps FROM telegram_bot_pending "
+        "WHERE telegram_user_id = %s AND message_id IS NULL AND reps IS NOT NULL "
+        "AND created_at > NOW() - INTERVAL '1 hour'",
+        (tg_id,),
+    )
+    pending_reps = cur.fetchone()
+    if pending_reps:
+        reps = pending_reps["reps"]
+        cur.execute("DELETE FROM telegram_bot_pending WHERE telegram_user_id = %s", (tg_id,))
+        _do_forward(cur, conn, tg_id, participant, chat_id, message_id, reps)
+    else:
+        cur.execute(
+            "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps) "
+            "VALUES (%s, %s, %s, NULL) ON CONFLICT (telegram_user_id) "
+            "DO UPDATE SET message_id = EXCLUDED.message_id, chat_id = EXCLUDED.chat_id, "
+            "    reps = NULL, created_at = NOW()",
+            (tg_id, chat_id, message_id),
+        )
+        conn.commit()
+        _send(chat_id, f"{_greet(cur, tg_id, participant)}how many reps?")
+
+
 def process_radar_candidates(conn) -> None:
     """Called by the 19:00 UTC cron. Picks the best candidate per recipient and forwards."""
     cur = conn.cursor()
@@ -782,17 +807,29 @@ def handle_webhook(body: dict, conn) -> None:
         _send(chat_id, msg, reply_markup=_MAIN_KB)
         return
 
-    # ── Plain number → reps for pending video_note, or log without media ─────
+    # ── Plain number → reps for pending video, or log without media ──────────
     if text.isdigit() and participant:
         reps = int(text)
-        cur.execute("SELECT message_id FROM telegram_bot_pending WHERE telegram_user_id = %s", (tg_id,))
+        cur.execute(
+            "SELECT message_id FROM telegram_bot_pending WHERE telegram_user_id = %s",
+            (tg_id,),
+        )
         pending = cur.fetchone()
-        if pending:
+        if pending and pending["message_id"] is not None:
+            # Video was stored first, number just arrived
             _log_entry(cur, participant, reps)
             cur.execute("DELETE FROM telegram_bot_pending WHERE telegram_user_id = %s", (tg_id,))
             _do_forward(cur, conn, tg_id, participant, chat_id, pending["message_id"], reps)
         else:
+            # No pending video — log now; store reps so a late-arriving video can bind within 1h
             _log_entry(cur, participant, reps)
+            cur.execute(
+                "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps) "
+                "VALUES (%s, %s, NULL, %s) ON CONFLICT (telegram_user_id) "
+                "DO UPDATE SET message_id = NULL, reps = EXCLUDED.reps, "
+                "    chat_id = EXCLUDED.chat_id, created_at = NOW()",
+                (tg_id, chat_id, reps),
+            )
             conn.commit()
             _log(f"💪 Reps logged (no video)\n👤 {participant}: {reps} reps")
             _send(chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
@@ -809,24 +846,17 @@ def handle_webhook(body: dict, conn) -> None:
         _send(chat_id, "Please register first — send /start")
         return
 
-    # ── Video or photo with caption ──────────────────────────────────────────
+    # ── Video or photo with optional caption ─────────────────────────────────
     if has_video or has_photo:
         caption = msg.get("caption", "").strip()
-        if not caption.isdigit():
-            _send(chat_id, f"{_greet(cur, tg_id, participant)}add the number of reps as the caption (e.g. 43)")
-            return
-        reps = int(caption)
-        _log_entry(cur, participant, reps)
-        _do_forward(cur, conn, tg_id, participant, chat_id, msg["message_id"], reps)
+        if caption.isdigit():
+            reps = int(caption)
+            _log_entry(cur, participant, reps)
+            _do_forward(cur, conn, tg_id, participant, chat_id, msg["message_id"], reps)
+        else:
+            _store_or_bind_video(cur, conn, tg_id, participant, chat_id, msg["message_id"])
         return
 
     # ── Round video bubble → ask for reps ────────────────────────────────────
     if has_video_note:
-        cur.execute(
-            "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id) "
-            "VALUES (%s, %s, %s) ON CONFLICT (telegram_user_id) "
-            "DO UPDATE SET message_id = EXCLUDED.message_id, chat_id = EXCLUDED.chat_id, created_at = NOW()",
-            (tg_id, chat_id, msg["message_id"]),
-        )
-        conn.commit()
-        _send(chat_id, f"{_greet(cur, tg_id, participant)}how many reps?")
+        _store_or_bind_video(cur, conn, tg_id, participant, chat_id, msg["message_id"])

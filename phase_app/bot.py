@@ -51,7 +51,7 @@ def _send(chat_id: int, text: str, reply_markup: dict | None = None) -> None:
 
 
 def _forward(from_chat_id: int, message_id: int, to_chat_id: int) -> None:
-    _tg("forwardMessage", {
+    _tg("copyMessage", {
         "chat_id": to_chat_id,
         "from_chat_id": from_chat_id,
         "message_id": message_id,

@@ -341,7 +341,19 @@ def process_radar_candidates(conn) -> None:
             )
             sweat_names = {r["name"] for r in cur.fetchall()} | {recipient["participant_name"]}
 
-            best = next((c for c in candidates if c["participant_name"] not in sweat_names), None)
+            cur.execute(
+                "SELECT sender_participant FROM radar_history "
+                "WHERE recipient_telegram_user_id = %s AND sent_at > NOW() - INTERVAL '7 days'",
+                (recipient["telegram_user_id"],),
+            )
+            recent_senders = {r["sender_participant"] for r in cur.fetchall()}
+
+            best = next(
+                (c for c in candidates
+                 if c["participant_name"] not in sweat_names
+                 and c["participant_name"] not in recent_senders),
+                None,
+            )
             if not best:
                 continue
 
@@ -382,6 +394,11 @@ def process_radar_candidates(conn) -> None:
                 "UPDATE telegram_bot_users SET radar_score = radar_score - 10 "
                 "WHERE telegram_user_id = %s",
                 (best["telegram_user_id"],),
+            )
+            cur.execute(
+                "INSERT INTO radar_history (sender_participant, recipient_telegram_user_id) "
+                "VALUES (%s, %s)",
+                (best["participant_name"], recipient["telegram_user_id"]),
             )
             _log(
                 f"📡 Radar forward (cron)\n"

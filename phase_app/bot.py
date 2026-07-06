@@ -200,12 +200,22 @@ _RADAR_FREQS = ["daily", "weekly", "monthly", "once", "never"]
 _RADAR_LABELS = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "once": "Just once", "never": "Off"}
 _RADAR_PERIOD = {"daily": "every day", "weekly": "every week", "monthly": "every month"}
 
-def _radar_keyboard(current: str) -> dict:
+def _radar_keyboard(current: str, radar_send: bool | None = None) -> dict:
     rows = []
     for freq in _RADAR_FREQS:
         label = ("✓ " if freq == current else "") + _RADAR_LABELS[freq]
         rows.append([{"text": label, "callback_data": f"radar:{freq}"}])
+    if radar_send is not None:
+        rows.append([
+            {"text": ("✓ " if radar_send else "") + "📡 Share my videos: ON ✅", "callback_data": "radar_send_toggle:on"},
+            {"text": ("✓ " if not radar_send else "") + "📡 Share my videos: OFF 🚫", "callback_data": "radar_send_toggle:off"},
+        ])
     return {"inline_keyboard": rows}
+
+_RADAR_SEND_KB = {"inline_keyboard": [
+    [{"text": "✅ Yes, that's fine", "callback_data": "radar_send:yes"}],
+    [{"text": "🚫 No, keep my videos in my crew", "callback_data": "radar_send:no"}],
+]}
 
 def _radar_due(freq: str, last_received) -> bool:
     if freq == "never":
@@ -266,16 +276,87 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
         _send(from_chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
         _log(f"💪 Video logged\n👤 {participant}: {reps} reps\n📤 → nobody")
 
-    # ── Radar: queue this video as a candidate for the 19:00 daily selection ──
+    # ── Radar: queue this video as a candidate (only if user opted in to sending) ──
+    cur.execute("SELECT radar_send FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+    row = cur.fetchone()
+    if row and row["radar_send"]:
+        cur.execute(
+            "INSERT INTO radar_candidates "
+            "(telegram_user_id, chat_id, message_id, participant_name, reps, candidate_date) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (telegram_user_id, candidate_date) DO UPDATE "
+            "SET message_id = EXCLUDED.message_id, reps = EXCLUDED.reps, "
+            "    chat_id = EXCLUDED.chat_id, processed = FALSE",
+            (tg_id, from_chat_id, message_id, participant, reps, date.today()),
+        )
+
+
+_REPORT_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
+
+
+def _compute_streak(entries_desc: list) -> tuple:
+    """Returns (streak_days, last_date, last_reps). streak_days=0 means broken."""
+    if not entries_desc:
+        return 0, None, None
+    today = date.today()
+    last_date = entries_desc[0]["entry_date"]
+    last_reps = entries_desc[0]["reps"]
+    if isinstance(last_date, str):
+        from datetime import datetime as _dt
+        last_date = _dt.strptime(last_date, "%Y-%m-%d").date()
+    if (today - last_date).days > 1:
+        return 0, last_date, last_reps
+    streak = 0
+    expected = last_date
+    for row in entries_desc:
+        d = row["entry_date"]
+        if isinstance(d, str):
+            from datetime import datetime as _dt
+            d = _dt.strptime(d, "%Y-%m-%d").date()
+        if d == expected:
+            streak += 1
+            expected = expected - timedelta(days=1)
+        else:
+            break
+    return streak, last_date, last_reps
+
+
+def send_daily_report(conn) -> None:
+    """Called by the 19:00 UTC cron. Sends a streak report to the REPORT_CHAT_ID channel."""
+    if not _REPORT_CHAT_ID:
+        return
+    cur = conn.cursor()
+    today = date.today()
+
+    cur.execute("SELECT participant_name FROM telegram_bot_users ORDER BY participant_name")
+    users = [r["participant_name"] for r in cur.fetchall()]
+    if not users:
+        return
+
     cur.execute(
-        "INSERT INTO radar_candidates "
-        "(telegram_user_id, chat_id, message_id, participant_name, reps, candidate_date) "
-        "VALUES (%s, %s, %s, %s, %s, %s) "
-        "ON CONFLICT (telegram_user_id, candidate_date) DO UPDATE "
-        "SET message_id = EXCLUDED.message_id, reps = EXCLUDED.reps, "
-        "    chat_id = EXCLUDED.chat_id, processed = FALSE",
-        (tg_id, from_chat_id, message_id, participant, reps, date.today()),
+        "SELECT participant, entry_date, reps FROM burpee_entries "
+        "WHERE participant = ANY(%s) ORDER BY participant, entry_date DESC",
+        (users,),
     )
+    entries_by_user: dict[str, list] = {}
+    for row in cur.fetchall():
+        entries_by_user.setdefault(row["participant"], []).append(row)
+
+    lines = [f"📊 Burpee Report — {today.strftime('%B %d')}\n"]
+    for user in users:
+        entries = entries_by_user.get(user, [])
+        streak, last_date, last_reps = _compute_streak(entries)
+        if streak > 0:
+            lines.append(f"🔥 {user} — {streak}-day streak ({last_reps} reps today)" if (today - last_date).days == 0 else f"🔥 {user} — {streak}-day streak")
+        elif last_date:
+            days_ago = (today - last_date).days
+            day_word = "day" if days_ago == 1 else "days"
+            lines.append(f"❌ {user} — {days_ago} {day_word} without workout (last: {last_reps} reps on {last_date.strftime('%b %d')})")
+        else:
+            lines.append(f"😴 {user} — no workouts yet")
+
+    _tg("sendMessage", {"chat_id": int(_REPORT_CHAT_ID), "text": "\n".join(lines)})
+    _log(f"📊 Daily report sent to channel")
 
 
 def _store_or_bind_video(cur, conn, tg_id: int, participant: str, chat_id: int, message_id: int) -> None:
@@ -313,7 +394,7 @@ def process_radar_candidates(conn) -> None:
         "       rc.participant_name, rc.reps, u.radar_score "
         "FROM radar_candidates rc "
         "JOIN telegram_bot_users u ON u.telegram_user_id = rc.telegram_user_id "
-        "WHERE rc.candidate_date = %s AND rc.processed = FALSE "
+        "WHERE rc.candidate_date = %s AND rc.processed = FALSE AND u.radar_send = TRUE "
         "ORDER BY u.radar_score DESC",
         (today,),
     )
@@ -493,23 +574,81 @@ def handle_webhook(body: dict, conn) -> None:
             _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _follow_keyboard(cur, tg_id)})
             return
 
-        # Radar callbacks
+        # Radar frequency callbacks
         if data.startswith("radar:"):
             freq = data[len("radar:"):]
             if freq not in _RADAR_FREQS:
                 return
+            setup_mode = _get_state(cur, tg_id) == "awaiting_radar_freq_setup"
+            cur.execute(
+                "SELECT radar_asked, radar_send FROM telegram_bot_users WHERE telegram_user_id = %s",
+                (tg_id,),
+            )
+            row = cur.fetchone()
+            needs_send_question = row and not row["radar_asked"]
+            radar_send = row["radar_send"] if row else False
             cur.execute(
                 "UPDATE telegram_bot_users SET radar_freq = %s WHERE telegram_user_id = %s",
                 (freq, tg_id),
             )
+            if setup_mode:
+                _clear_state(cur, tg_id)
             conn.commit()
-            label = _RADAR_LABELS[freq]
-            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(freq)})
-            if freq == "never":
-                _send(chat_id, "📡 Radar off.", reply_markup=_MAIN_KB)
+            # Show send toggle in keyboard only when the user has already been asked
+            show_toggle = not setup_mode and not needs_send_question
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(freq, radar_send=radar_send if show_toggle else None)})
+            if setup_mode or needs_send_question:
+                # Next: ask about sending
+                _send(chat_id,
+                      "📡 Radar works both ways — you can not only receive random burpees, but your videos can appear in others' Radar as well. Is that okay?\n\nYou can change this setting later via 📡 Radar.",
+                      reply_markup=_RADAR_SEND_KB)
             else:
-                _send(chat_id, f"📡 Radar set to {label.lower()} — you'll receive a random burpee from outside your sweat list.", reply_markup=_MAIN_KB)
-            _log(f"📡 Radar set\n👤 {participant} → {label}")
+                label = _RADAR_LABELS[freq]
+                if freq == "never":
+                    _send(chat_id, "📡 Radar off.", reply_markup=_MAIN_KB)
+                else:
+                    _send(chat_id, f"📡 Radar set to {label.lower()} — you'll receive a random burpee from outside your sweat list.", reply_markup=_MAIN_KB)
+                _log(f"📡 Radar set\n👤 {participant} → {label}")
+            return
+
+        # Radar send toggle (ON/OFF buttons in the radar keyboard)
+        if data.startswith("radar_send_toggle:"):
+            answer = data[len("radar_send_toggle:"):]
+            if answer not in ("on", "off"):
+                return
+            new_send = answer == "on"
+            cur.execute(
+                "SELECT radar_freq FROM telegram_bot_users WHERE telegram_user_id = %s",
+                (tg_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return
+            current_freq = row["radar_freq"] or "never"
+            cur.execute(
+                "UPDATE telegram_bot_users SET radar_send = %s WHERE telegram_user_id = %s",
+                (new_send, tg_id),
+            )
+            conn.commit()
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(current_freq, radar_send=new_send)})
+            _log(f"📡 Radar send toggled\n👤 {participant} → {'ON' if new_send else 'OFF'}")
+            return
+
+        # Radar send permission callbacks
+        if data.startswith("radar_send:"):
+            answer = data[len("radar_send:"):]
+            radar_send = answer == "yes"
+            cur.execute(
+                "UPDATE telegram_bot_users SET radar_send = %s, radar_asked = TRUE WHERE telegram_user_id = %s",
+                (radar_send, tg_id),
+            )
+            conn.commit()
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+            if radar_send:
+                _send(chat_id, "✅ Got it — your videos can be shared via Radar.", reply_markup=_MAIN_KB)
+            else:
+                _send(chat_id, "🔒 Got it — your videos stay within your crew.", reply_markup=_MAIN_KB)
+            _log(f"📡 Radar send set\n👤 {participant} → {'yes' if radar_send else 'no'}")
             return
 
         # Sweat notify callbacks
@@ -567,6 +706,23 @@ def handle_webhook(body: dict, conn) -> None:
     chat_id: int = msg["chat"]["id"]
     text: str = msg.get("text", "").strip()
 
+    # ── /broadcast (admin only) ──────────────────────────────────────────────
+    if text.startswith("/broadcast "):
+        admin_id = int(os.environ.get("ADMIN_TG_ID", "0"))
+        if tg_id != admin_id:
+            return
+        message = text[len("/broadcast "):].strip()
+        if not message:
+            _send(chat_id, "Usage: /broadcast <message>")
+            return
+        cur.execute("SELECT chat_id, participant_name FROM telegram_bot_users")
+        rows = cur.fetchall()
+        for row in rows:
+            _send(row["chat_id"], message)
+        _send(chat_id, f"✓ Sent to {len(rows)} users")
+        _log(f"📢 Broadcast\n👤 admin (tg:{tg_id})\n💬 {message[:80]}")
+        return
+
     # ── /info ────────────────────────────────────────────────────────────────
     if text.startswith("/info") or text.startswith("/help") or text == "ℹ️ Info":
         cur.execute("SELECT token, participant_name FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
@@ -579,21 +735,17 @@ def handle_webhook(body: dict, conn) -> None:
             "👋 Welcome to Бурчик Challenge!\n\n"
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
             "How it works:\n"
-            "• Do your burpees and send a round video bubble to the burchykbot\n"
-            "• Type the number of reps\n"
+            "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
+            "• Then type your total rep count\n"
             "• Your workout is logged and forwarded to your crew\n\n"
-            "Use /sweat to choose who you share and follow.\n"
             f"{link_line}\n"
             "Available commands:\n\n"
             "/start — register your name\n"
             "/rename — change your name\n"
             "/secret — update your app link secret\n"
-            "/sweat — choose who you share and follow\n"
-            "/radar — receive random burpees from outside your sweat list\n"
-            "/info — show this list\n\n"
-            "To log a workout:\n"
-            "• Start recording a video bubble, start your 3-min timer, do your burpees. "
-            "When done, send the recorded snippet (Telegram limits video bubbles to 1 min) and type your total reps.",
+            "/sweat — find who you share and follow\n"
+            "/radar — receive and send random burpees from outside your sweat list\n"
+            "/info — show this list",
             reply_markup=_MAIN_KB,
         )
         return
@@ -614,10 +766,10 @@ def handle_webhook(body: dict, conn) -> None:
             "👋 Welcome to Бурчик Challenge!\n\n"
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
             "How it works:\n"
-            "• Do your burpees and send a round video bubble to the burchykbot\n"
-            "• Type the number of reps\n"
+            "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
+            "• Then type your total rep count\n"
             "• Your workout is logged and forwarded to your crew\n\n"
-            "Use /sweat to choose who you share and follow.\n\n"
+            "Use /sweat to find who you share and follow.\n\n"
             "First, what would you like to be called?"
         )
         return
@@ -720,11 +872,17 @@ def handle_webhook(body: dict, conn) -> None:
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
         _log(f"📋 New registration\n👤 {name} (tg:{tg_id})\n🔑 {token}")
         _send(chat_id,
-            f"Welcome, {name}! 👋\n\nYour personal app link:\n{app_url}\n\n"
-            "Use /sweat to choose who you share and follow.\n\n"
-            "💡 How to log: start recording a video bubble, start your 3-min timer, do your burpees. "
-            "When done, send the recorded snippet (Telegram limits video bubbles to 1 min) and type your total reps.",
+            f"Welcome, {name}! 👋 Your app link:\n{app_url}\n\n"
+            "Next: add your crew via 🤝 Sweat with.\n"
+            "They'll get every video you log — and you'll get theirs.",
             reply_markup=_MAIN_KB)
+        # Kick off radar setup
+        _set_state(cur, tg_id, "awaiting_radar_freq_setup")
+        conn.commit()
+        _send(chat_id,
+            "📡 Radar works differently — it sends you one random burpee from someone outside your crew. How often?",
+            reply_markup=_radar_keyboard("never"),
+        )
         return
 
     # ── Awaiting secret update (existing user via /secret) ───────────────────
@@ -750,13 +908,20 @@ def handle_webhook(body: dict, conn) -> None:
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
-        cur.execute("SELECT radar_freq FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+        cur.execute(
+            "SELECT radar_freq, radar_send, radar_asked FROM telegram_bot_users WHERE telegram_user_id = %s",
+            (tg_id,),
+        )
         row = cur.fetchone()
         current = row["radar_freq"] if row and row["radar_freq"] else "daily"
+        radar_send = row["radar_send"] if row else False
+        radar_asked = row["radar_asked"] if row else False
+        # Show send toggle only for users who have already answered the send question
+        kb = _radar_keyboard(current, radar_send=radar_send if radar_asked else None)
         _send(chat_id,
-            f"📡 Radar — receive a random burpee video from outside your sweat list.\n\n"
-            f"Current: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
-            reply_markup=_radar_keyboard(current),
+            f"📡 Radar — receive random burpees & share yours with the world outside your crew.\n\n"
+            f"Receive: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
+            reply_markup=kb,
         )
         return
 
@@ -776,13 +941,15 @@ def handle_webhook(body: dict, conn) -> None:
         _set_state(cur, tg_id, "awaiting_sweat_name")
         conn.commit()
         _send(chat_id,
-            f"{_greet(cur, tg_id, participant)}sweating with: {partner_list}\n\n"
+            f"🤝 Your sweat crew gets every video you log — and you get theirs.\n"
+            f"Radar is for strangers. Sweat is for your people.\n\n"
+            f"Sweating with: {partner_list}\n\n"
             "Type the name of the person you want to sweat with (or remove):"
         )
         return
 
     # ── Awaiting sweat partner name ───────────────────────────────────────────
-    if state == "awaiting_sweat_name" and text:
+    if state == "awaiting_sweat_name" and text and not text.isdigit():
         name = text.strip()
         cur.execute(
             "SELECT participant_name FROM telegram_bot_users WHERE LOWER(participant_name) = LOWER(%s) AND telegram_user_id != %s",
@@ -823,6 +990,19 @@ def handle_webhook(body: dict, conn) -> None:
         conn.commit()
         _send(chat_id, msg, reply_markup=_MAIN_KB)
         return
+
+    # ── Radar setup nudge (one-time for existing users) ─────────────────────
+    if participant and not state and text and not text.isdigit():
+        cur.execute("SELECT radar_asked FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+        row = cur.fetchone()
+        if row and not row["radar_asked"]:
+            _set_state(cur, tg_id, "awaiting_radar_freq_setup")
+            conn.commit()
+            _send(chat_id,
+                "📡 Before we continue — Radar can send you a random burpee from outside your crew. How often?",
+                reply_markup=_radar_keyboard("never"),
+            )
+            return
 
     # ── Plain number → reps for pending video, or log without media ──────────
     if text.isdigit() and participant:

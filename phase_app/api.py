@@ -1495,10 +1495,10 @@ class PhaseApi:
         if not me:
             return ApiResponse(401, {"error": "unauthorized"})
         rows = self._exec(
-            "SELECT id, participant, entry_date, reps FROM burpee_entries ORDER BY entry_date DESC"
+            "SELECT id, participant, entry_date, reps, comment FROM burpee_entries ORDER BY entry_date DESC"
         ).fetchall()
         entries = [
-            {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"]}
+            {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"], "comment": r["comment"]}
             for r in rows
         ]
         return ApiResponse(200, {"entries": entries, "me": me})
@@ -1509,19 +1509,20 @@ class PhaseApi:
             return ApiResponse(401, {"error": "unauthorized"})
         entry_date = body.get("entry_date", "")
         reps       = body.get("reps")
+        comment    = body.get("comment") or None
         if not entry_date or not reps:
             return ApiResponse(400, {"error": "invalid_input"})
         r = self._exec(
             """
-            INSERT INTO burpee_entries (participant, entry_date, reps)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps
-            RETURNING id, participant, entry_date, reps
+            INSERT INTO burpee_entries (participant, entry_date, reps, comment)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps, comment = EXCLUDED.comment
+            RETURNING id, participant, entry_date, reps, comment
             """,
-            (me, entry_date, int(reps)),
+            (me, entry_date, int(reps), comment),
         ).fetchone()
         self.conn.commit()
-        return ApiResponse(200, {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"]})
+        return ApiResponse(200, {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"], "comment": r["comment"]})
 
     def delete_burpee_entry(self, entry_id: int, qp: dict) -> ApiResponse:
         me = self._resolve_burpee_participant(qp)

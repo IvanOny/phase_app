@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re as _re
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timezone, timedelta
@@ -249,11 +250,22 @@ def _follow_keyboard(cur, tg_id: int) -> dict:
 
 # ── Entry logging + forwarding ───────────────────────────────────────────────
 
-def _log_entry(cur, participant: str, reps: int) -> None:
+def _parse_reps_comment(text: str) -> tuple[int | None, str | None]:
+    """Parse '[preamble] reps [, comment]'. Returns (reps, comment) or (None, None).
+    Requires a comma to separate the comment; without comma only pure integers match."""
+    if ',' in text:
+        before, after = text.split(',', 1)
+        comment = after.strip() or None
+        m = _re.search(r'\d+', before)
+        return (int(m.group()), comment) if m else (None, None)
+    return (int(text), None) if text.isdigit() else (None, None)
+
+
+def _log_entry(cur, participant: str, reps: int, comment: str | None = None) -> None:
     cur.execute(
-        "INSERT INTO burpee_entries (participant, entry_date, reps) VALUES (%s, %s, %s) "
-        "ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps",
-        (participant, str(date.today()), reps),
+        "INSERT INTO burpee_entries (participant, entry_date, reps, comment) VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps, comment = EXCLUDED.comment",
+        (participant, str(date.today()), reps, comment),
     )
     cur.execute(
         "UPDATE telegram_bot_users SET radar_score = radar_score + 1 WHERE participant_name = %s",
@@ -261,19 +273,23 @@ def _log_entry(cur, participant: str, reps: int) -> None:
     )
 
 
-def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, message_id: int | None, reps: int) -> None:
+def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, message_id: int | None, reps: int, comment: str | None = None) -> None:
     targets = _get_share_chats(cur, tg_id)
     conn.commit()
     for to_chat_id, name in targets:
         if message_id:
             _forward(from_chat_id, message_id, to_chat_id)
-        _send(to_chat_id, f"{participant}: {reps} reps")
+        crew_msg = f"{participant}: {reps} reps"
+        if comment:
+            crew_msg += f"\n{comment}"
+        _send(to_chat_id, crew_msg)
+    confirm = f"✓ {reps} reps" + (f" ({comment})" if comment else "")
     if targets:
         forwarded_to = ", ".join(n for _, n in targets)
-        _send(from_chat_id, f"✓ {reps} reps → forwarded to {forwarded_to}", reply_markup=_MAIN_KB)
+        _send(from_chat_id, f"{confirm} → forwarded to {forwarded_to}", reply_markup=_MAIN_KB)
         _log(f"💪 Video logged\n👤 {participant}: {reps} reps\n📤 → {forwarded_to}")
     else:
-        _send(from_chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
+        _send(from_chat_id, f"{confirm} logged", reply_markup=_MAIN_KB)
         _log(f"💪 Video logged\n👤 {participant}: {reps} reps\n📤 → nobody")
 
     # ── Radar: queue this video as a candidate (only if user opted in to sending) ──
@@ -362,7 +378,7 @@ def send_daily_report(conn) -> None:
 def _store_or_bind_video(cur, conn, tg_id: int, participant: str, chat_id: int, message_id: int) -> None:
     """Store a video as pending (ask for reps), or bind it to reps logged within the last hour."""
     cur.execute(
-        "SELECT reps FROM telegram_bot_pending "
+        "SELECT reps, comment FROM telegram_bot_pending "
         "WHERE telegram_user_id = %s AND message_id IS NULL AND reps IS NOT NULL "
         "AND created_at > NOW() - INTERVAL '1 hour'",
         (tg_id,),
@@ -370,8 +386,9 @@ def _store_or_bind_video(cur, conn, tg_id: int, participant: str, chat_id: int, 
     pending_reps = cur.fetchone()
     if pending_reps:
         reps = pending_reps["reps"]
+        comment = pending_reps["comment"]
         cur.execute("DELETE FROM telegram_bot_pending WHERE telegram_user_id = %s", (tg_id,))
-        _do_forward(cur, conn, tg_id, participant, chat_id, message_id, reps)
+        _do_forward(cur, conn, tg_id, participant, chat_id, message_id, reps, comment)
     else:
         cur.execute(
             "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps) "
@@ -992,7 +1009,8 @@ def handle_webhook(body: dict, conn) -> None:
         return
 
     # ── Radar setup nudge (one-time for existing users) ─────────────────────
-    if participant and not state and text and not text.isdigit():
+    _reps, _comment = _parse_reps_comment(text) if text else (None, None)
+    if participant and not state and text and _reps is None:
         cur.execute("SELECT radar_asked FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
         row = cur.fetchone()
         if row and not row["radar_asked"]:
@@ -1004,9 +1022,9 @@ def handle_webhook(body: dict, conn) -> None:
             )
             return
 
-    # ── Plain number → reps for pending video, or log without media ──────────
-    if text.isdigit() and participant:
-        reps = int(text)
+    # ── Plain number (+ optional comment) → reps for pending video or bare log ─
+    if _reps is not None and participant:
+        reps, comment = _reps, _comment
         cur.execute(
             "SELECT message_id FROM telegram_bot_pending WHERE telegram_user_id = %s",
             (tg_id,),
@@ -1014,18 +1032,18 @@ def handle_webhook(body: dict, conn) -> None:
         pending = cur.fetchone()
         if pending and pending["message_id"] is not None:
             # Video was stored first, number just arrived
-            _log_entry(cur, participant, reps)
+            _log_entry(cur, participant, reps, comment)
             cur.execute("DELETE FROM telegram_bot_pending WHERE telegram_user_id = %s", (tg_id,))
-            _do_forward(cur, conn, tg_id, participant, chat_id, pending["message_id"], reps)
+            _do_forward(cur, conn, tg_id, participant, chat_id, pending["message_id"], reps, comment)
         else:
-            # No pending video — log now; store reps so a late-arriving video can bind within 1h
-            _log_entry(cur, participant, reps)
+            # No pending video — log now; store reps+comment so late video can bind within 1h
+            _log_entry(cur, participant, reps, comment)
             cur.execute(
-                "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps) "
-                "VALUES (%s, %s, NULL, %s) ON CONFLICT (telegram_user_id) "
-                "DO UPDATE SET message_id = NULL, reps = EXCLUDED.reps, "
+                "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps, comment) "
+                "VALUES (%s, %s, NULL, %s, %s) ON CONFLICT (telegram_user_id) "
+                "DO UPDATE SET message_id = NULL, reps = EXCLUDED.reps, comment = EXCLUDED.comment, "
                 "    chat_id = EXCLUDED.chat_id, created_at = NOW()",
-                (tg_id, chat_id, reps),
+                (tg_id, chat_id, reps, comment),
             )
             conn.commit()
             _log(f"💪 Reps logged (no video)\n👤 {participant}: {reps} reps")
@@ -1046,10 +1064,10 @@ def handle_webhook(body: dict, conn) -> None:
     # ── Video or photo with optional caption ─────────────────────────────────
     if has_video or has_photo:
         caption = msg.get("caption", "").strip()
-        if caption.isdigit():
-            reps = int(caption)
-            _log_entry(cur, participant, reps)
-            _do_forward(cur, conn, tg_id, participant, chat_id, msg["message_id"], reps)
+        cap_reps, cap_comment = _parse_reps_comment(caption) if caption else (None, None)
+        if cap_reps is not None:
+            _log_entry(cur, participant, cap_reps, cap_comment)
+            _do_forward(cur, conn, tg_id, participant, chat_id, msg["message_id"], cap_reps, cap_comment)
         else:
             _store_or_bind_video(cur, conn, tg_id, participant, chat_id, msg["message_id"])
         return

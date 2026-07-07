@@ -49,8 +49,8 @@ function getBurpeeEntries(token) {
   return apiBurpee('GET', '/v1/burpee', null, token); // returns { entries, me }
 }
 
-function logBurpeeEntry(token, { entryDate, reps }) {
-  return apiBurpee('POST', '/v1/burpee', { entry_date: entryDate, reps }, token);
+function logBurpeeEntry(token, { entryDate, reps, comment }) {
+  return apiBurpee('POST', '/v1/burpee', { entry_date: entryDate, reps, comment: comment || null }, token);
 }
 
 function deleteBurpeeEntry(token, id) {
@@ -127,6 +127,7 @@ function buildChartData(entries, currentMonth) {
     const day = e.entryDate.slice(8); // DD
     if (!byDay[day]) byDay[day] = { day };
     byDay[day][e.participant] = e.reps;
+    byDay[day][`${e.participant}_comment`] = e.comment || null;
   }
   return Object.values(byDay).sort((a, b) => a.day.localeCompare(b.day));
 }
@@ -208,16 +209,16 @@ function MonthlyWinsRow({ wins, viewMonth, onSelect, currentMonth, pColors }) {
               background: isActive
                 ? (wc ? wc.bg : 'var(--bg-elevated, #f0f0f0)')
                 : wc ? wc.bg : 'transparent',
-              border: `1px solid ${wc ? wc.text + '55' : 'var(--border, #e5e7eb)'}`,
-              color: wc ? wc.text : 'var(--text-muted, #888)',
-              fontWeight: isActive ? 700 : 500,
+              border: `1.5px solid ${wc ? wc.text + '66' : isActive ? 'var(--text-secondary, #888)' : 'var(--border, #e5e7eb)'}`,
+              color: isActive ? (wc ? wc.text : 'var(--text-primary, #111)') : wc ? wc.text : 'var(--text-secondary, #666)',
               borderRadius: 20,
-              padding: '2px 9px',
-              fontSize: 12,
-              fontWeight: 600,
+              padding: '5px 14px',
+              fontSize: 13,
+              fontWeight: 700,
               whiteSpace: 'nowrap',
               flexShrink: 0,
               cursor: 'pointer',
+              transition: 'all 0.15s',
             }}
           >
             {fmtMonthShort(ym)}{!isCurrent && ` · ${winner ? winner[0] : '–'}`}
@@ -241,14 +242,15 @@ const navBtnStyle = {
 function BurpeeTooltip({ active, payload, color, viewMonth }) {
   if (!active || !payload?.length) return null;
   const { name, value } = payload[0];
+  const comment = payload[0].payload[`${name}_comment`];
   const day = parseInt(payload[0].payload.day, 10);
   const [year, month] = viewMonth.split('-').map(Number);
   const dateLabel = new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
   return (
-    <div style={{ background: color.bg, border: `1px solid ${color.text}44`, borderRadius: 6, padding: '7px 10px', fontSize: 12, color: color.text, lineHeight: 1.6 }}>
+    <div style={{ background: color.bg, border: `1px solid ${color.text}44`, borderRadius: 6, padding: '7px 10px', fontSize: 12, color: color.text, lineHeight: 1.6, maxWidth: 200 }}>
       <div style={{ fontWeight: 700 }}>{dateLabel}</div>
-      <div>{name}</div>
       <div style={{ fontWeight: 700 }}>{value} reps</div>
+      {comment && <div style={{ marginTop: 3, opacity: 0.8, lineHeight: 1.4 }}>{comment}</div>}
     </div>
   );
 }
@@ -278,6 +280,18 @@ function BurpeeHorizontalChart({ chartData, label, viewMonth, onPrev, onNext, ca
       {!chartData.length && (
         <div style={{ textAlign: 'center', color: 'var(--text-muted, #888)', fontSize: 13, padding: '16px 0' }}>
           No entries this month
+        </div>
+      )}
+      {chartData.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 2, paddingLeft: 24 }}>
+          {participants.map((p) => {
+            const color = pColors[p] ?? C_PALETTE[0];
+            return (
+              <div key={p} style={{ flex: 1, minWidth: 0, textAlign: 'center', fontSize: 11, fontWeight: 700, color: color.text, letterSpacing: '0.03em' }}>
+                {p}
+              </div>
+            );
+          })}
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
@@ -335,6 +349,7 @@ export default function BurpeeChallenge({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [repsInput, setRepsInput] = useState('');
+  const [commentInput, setCommentInput] = useState('');
   const [logDate, setLogDate] = useState(today);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -417,8 +432,10 @@ export default function BurpeeChallenge({ token }) {
   useEffect(() => {
     if (myDateEntry) {
       setRepsInput(String(myDateEntry.reps));
+      setCommentInput(myDateEntry.comment || '');
     } else {
       setRepsInput('');
+      setCommentInput('');
     }
   }, [myDateEntry?.id, logDate]);
 
@@ -432,7 +449,7 @@ export default function BurpeeChallenge({ token }) {
       if (myDateEntry) {
         await deleteBurpeeEntry(token, myDateEntry.id);
       }
-      await logBurpeeEntry(token, { entryDate: logDate, reps });
+      await logBurpeeEntry(token, { entryDate: logDate, reps, comment: commentInput.trim() || null });
       await load();
     } catch (err) {
       setSaveError(err.message);
@@ -448,6 +465,7 @@ export default function BurpeeChallenge({ token }) {
     try {
       await deleteBurpeeEntry(token, myDateEntry.id);
       setRepsInput('');
+      setCommentInput('');
       await load();
     } catch (err) {
       setSaveError(err.message);
@@ -612,9 +630,9 @@ export default function BurpeeChallenge({ token }) {
         }}
       >
         <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: meColor.text, marginBottom: 10 }}>
-          Log for {me}
+          Log your workout
         </div>
-        <form onSubmit={handleLog} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <form onSubmit={handleLog}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
             type="date"
             value={logDate}
@@ -696,6 +714,25 @@ export default function BurpeeChallenge({ token }) {
               ×
             </button>
           )}
+        </div>
+        <input
+          type="text"
+          placeholder="add a note (optional)"
+          value={commentInput}
+          onChange={(e) => setCommentInput(e.target.value)}
+          style={{
+            width: '100%',
+            marginTop: 8,
+            padding: '7px 10px',
+            borderRadius: 'var(--radius-md, 8px)',
+            border: `1px solid ${commentInput ? meColor.text + '66' : 'var(--border, #e5e7eb)'}`,
+            background: 'var(--bg-elevated, #1a1d27)',
+            color: 'var(--text-primary, #fff)',
+            fontSize: 13,
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
         </form>
         {saving && (
           <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 6 }}>Saving…</div>

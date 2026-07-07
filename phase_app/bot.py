@@ -37,7 +37,7 @@ def _tg(method: str, payload: dict) -> None:
 def _log(text: str) -> None:
     if not _LOG_CHAT_ID:
         return
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    ts = datetime.now(timezone(timedelta(hours=2))).strftime("%Y-%m-%d %H:%M")
     try:
         _tg("sendMessage", {"chat_id": int(_LOG_CHAT_ID), "text": f"[{ts}]\n{text}"})
     except Exception:

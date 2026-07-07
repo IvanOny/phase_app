@@ -283,11 +283,11 @@ function BurpeeHorizontalChart({ chartData, label, viewMonth, onPrev, onNext, ca
         </div>
       )}
       {chartData.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 2, paddingLeft: 24 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 2 }}>
           {participants.map((p) => {
             const color = pColors[p] ?? C_PALETTE[0];
             return (
-              <div key={p} style={{ flex: 1, minWidth: 0, textAlign: 'center', fontSize: 11, fontWeight: 700, color: color.text, letterSpacing: '0.03em' }}>
+              <div key={p} style={{ flex: 1, minWidth: 0, textAlign: 'center', fontSize: 11, fontWeight: 700, color: color.text, letterSpacing: '0.03em', paddingLeft: 16 }}>
                 {p}
               </div>
             );
@@ -318,11 +318,10 @@ function BurpeeHorizontalChart({ chartData, label, viewMonth, onPrev, onNext, ca
                   <YAxis
                     type="category"
                     dataKey="day"
-                    tick={{ fill: 'var(--text-muted, #888)', fontSize: 11 }}
+                    tick={showYAxis ? { fill: 'var(--text-muted, #888)', fontSize: 11 } : false}
                     axisLine={false}
                     tickLine={false}
-                    width={showYAxis ? 24 : 0}
-                    tickFormatter={showYAxis ? undefined : () => ''}
+                    width={24}
                   />
                   <Tooltip
                     content={<BurpeeTooltip color={color} viewMonth={viewMonth} />}

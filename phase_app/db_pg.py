@@ -8,7 +8,7 @@ import psycopg2.extras
 
 def get_connection(database_url: str | None = None) -> psycopg2.extensions.connection:
     url = database_url or os.environ["DATABASE_URL"]
-    return psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+    return psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor, connect_timeout=10)
 
 
 def seed_minimal_bench_data(conn: psycopg2.extensions.connection) -> dict[str, int]:

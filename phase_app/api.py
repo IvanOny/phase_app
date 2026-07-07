@@ -5,7 +5,7 @@ import os
 import re
 import urllib.request
 import urllib.error
-from datetime import date as _date, datetime, timezone
+from datetime import date as _date, datetime, timezone, timedelta
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,7 +16,7 @@ _LOG_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
 def _tg_log(text: str) -> None:
     if not _LOG_CHAT_ID or not _BOT_TOKEN:
         return
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    ts = datetime.now(timezone(timedelta(hours=2))).strftime("%Y-%m-%d %H:%M")
     payload = json.dumps({"chat_id": int(_LOG_CHAT_ID), "text": f"[{ts}]\n{text}"}).encode()
     req = urllib.request.Request(
         f"https://api.telegram.org/bot{_BOT_TOKEN}/sendMessage",

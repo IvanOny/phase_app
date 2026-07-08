@@ -198,7 +198,6 @@ def _get_follow_set(cur, tg_id: int) -> set[str]:
 _MAIN_KB = {
     "keyboard": [
         [{"text": "🤝 Sweat with"}, {"text": "📡 Radar"}],
-        [{"text": "✏️ Rename"}, {"text": "🔑 Secret"}],
         [{"text": "⏸️ Pause"}, {"text": "ℹ️ Info"}],
     ],
     "resize_keyboard": True,
@@ -890,7 +889,7 @@ def handle_webhook(body: dict, conn) -> None:
         return
 
     # Any command or main keyboard button cancels a pending state
-    _KB_BUTTONS = {"🤝 Sweat with", "📡 Radar", "✏️ Rename", "🔑 Secret", "⏸️ Pause", "ℹ️ Info"}
+    _KB_BUTTONS = {"🤝 Sweat with", "📡 Radar", "⏸️ Pause", "ℹ️ Info"}
     if (text.startswith("/") or text in _KB_BUTTONS) and state:
         _clear_state(cur, tg_id)
         conn.commit()

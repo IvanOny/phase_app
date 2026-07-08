@@ -1159,6 +1159,7 @@ def handle_webhook(body: dict, conn) -> None:
         if text:
             name_label = participant or f"unregistered (tg:{tg_id})"
             _log(f"❓ Unhandled message\n👤 {name_label}\n💬 {text[:200]}")
+            _send(chat_id, "Tap ℹ️ Info to see what I can do.", reply_markup=_MAIN_KB)
         return
 
     if not participant:

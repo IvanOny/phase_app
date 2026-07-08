@@ -1022,6 +1022,7 @@ def handle_webhook(body: dict, conn) -> None:
         if not participant:
             _send(chat_id, "Please register first — send /start")
             return
+        _log(f"⏸️ Pause menu opened\n👤 {participant}")
         cur.execute("SELECT paused_until FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
         row = cur.fetchone()
         now = datetime.now(timezone.utc)
@@ -1072,6 +1073,7 @@ def handle_webhook(body: dict, conn) -> None:
         )
         row = cur.fetchone()
         if not row:
+            _log(f"🔍 Sweat name not found\n👤 {participant} searched: {name}")
             _send(chat_id, f'No user named "{name}" found. Try again or send /sweat to see current list.')
             return
         matched_name = row["participant_name"]
@@ -1154,6 +1156,9 @@ def handle_webhook(body: dict, conn) -> None:
     has_photo = "photo" in msg
 
     if not (has_video or has_video_note or has_photo):
+        if text:
+            name_label = participant or f"unregistered (tg:{tg_id})"
+            _log(f"❓ Unhandled message\n👤 {name_label}\n💬 {text[:200]}")
         return
 
     if not participant:

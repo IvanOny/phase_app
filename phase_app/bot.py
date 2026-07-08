@@ -147,6 +147,14 @@ def _get_share_chats(cur, tg_id: int) -> list[tuple[int, str]]:
         if not row:
             continue
         rid = row["telegram_user_id"]
+        # Skip paused recipients
+        cur.execute(
+            "SELECT paused_until FROM telegram_bot_users WHERE telegram_user_id = %s",
+            (rid,),
+        )
+        pause_row = cur.fetchone()
+        if pause_row and pause_row["paused_until"] and pause_row["paused_until"] > datetime.now(timezone.utc):
+            continue
         cur.execute(
             "SELECT 1 FROM telegram_bot_receive WHERE telegram_user_id = %s LIMIT 1",
             (rid,),
@@ -191,11 +199,22 @@ _MAIN_KB = {
     "keyboard": [
         [{"text": "🤝 Sweat with"}, {"text": "📡 Radar"}],
         [{"text": "✏️ Rename"}, {"text": "🔑 Secret"}],
-        [{"text": "ℹ️ Info"}],
+        [{"text": "⏸️ Pause"}, {"text": "ℹ️ Info"}],
     ],
     "resize_keyboard": True,
     "is_persistent": True,
 }
+
+
+def _pause_keyboard(is_paused: bool) -> dict:
+    rows = [
+        [{"text": "1 day",   "callback_data": "pause:1d"}],
+        [{"text": "1 week",  "callback_data": "pause:1w"}],
+        [{"text": "1 month", "callback_data": "pause:1m"}],
+    ]
+    if is_paused:
+        rows.append([{"text": "▶️ Resume now", "callback_data": "pause:resume"}])
+    return {"inline_keyboard": rows}
 
 _REPS_RE = _re.compile(r"^(\d+)\s*(.*)", _re.DOTALL)
 
@@ -429,13 +448,16 @@ def process_radar_candidates(conn) -> None:
 
     if candidates:
         cur.execute(
-            "SELECT telegram_user_id, chat_id, participant_name, radar_freq, radar_last_received "
+            "SELECT telegram_user_id, chat_id, participant_name, radar_freq, radar_last_received, paused_until "
             "FROM telegram_bot_users WHERE radar_freq != 'never'",
         )
         recipients = cur.fetchall()
 
         for recipient in recipients:
             freq = recipient["radar_freq"]
+            paused_until = recipient.get("paused_until")
+            if paused_until and paused_until > datetime.now(timezone.utc):
+                continue
             if not _radar_due(freq, recipient["radar_last_received"]):
                 continue
 
@@ -678,6 +700,35 @@ def handle_webhook(body: dict, conn) -> None:
             _log(f"📡 Radar send set\n👤 {participant} → {'yes' if radar_send else 'no'}")
             return
 
+        # Pause callbacks
+        if data.startswith("pause:"):
+            duration = data[len("pause:"):]
+            now = datetime.now(timezone.utc)
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+            if duration == "resume":
+                cur.execute("UPDATE telegram_bot_users SET paused_until = NULL WHERE telegram_user_id = %s", (tg_id,))
+                conn.commit()
+                _send(chat_id, "▶️ Notifications resumed.", reply_markup=_MAIN_KB)
+                _log(f"▶️ Pause resumed\n👤 {participant}")
+            else:
+                if duration == "1d":
+                    until = now + timedelta(days=1)
+                    label = "1 day"
+                elif duration == "1w":
+                    until = now + timedelta(weeks=1)
+                    label = "1 week"
+                elif duration == "1m":
+                    until = now + timedelta(days=30)
+                    label = "30 days"
+                else:
+                    return
+                cur.execute("UPDATE telegram_bot_users SET paused_until = %s WHERE telegram_user_id = %s", (until, tg_id))
+                conn.commit()
+                until_str = until.strftime("%b %d")
+                _send(chat_id, f"⏸️ Paused until {until_str} — no sweat forwards or radar until then.", reply_markup=_MAIN_KB)
+                _log(f"⏸️ Paused\n👤 {participant} → {label}")
+            return
+
         # Sweat notify callbacks
         if data.startswith("sweat_notify:"):
             _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
@@ -785,6 +836,7 @@ def handle_webhook(body: dict, conn) -> None:
             "/secret — update your app link secret\n"
             "/sweat — find who you share and follow\n"
             "/radar — receive and send random burpees from outside your sweat list\n"
+            "/pause — pause all notifications for 1 day, 1 week, or 1 month\n"
             "/info — show this list",
             reply_markup=_MAIN_KB,
         )
@@ -838,7 +890,7 @@ def handle_webhook(body: dict, conn) -> None:
         return
 
     # Any command or main keyboard button cancels a pending state
-    _KB_BUTTONS = {"🤝 Sweat with", "📡 Radar", "✏️ Rename", "🔑 Secret", "ℹ️ Info"}
+    _KB_BUTTONS = {"🤝 Sweat with", "📡 Radar", "✏️ Rename", "🔑 Secret", "⏸️ Pause", "ℹ️ Info"}
     if (text.startswith("/") or text in _KB_BUTTONS) and state:
         _clear_state(cur, tg_id)
         conn.commit()
@@ -963,6 +1015,29 @@ def handle_webhook(body: dict, conn) -> None:
             f"Receive: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
             reply_markup=kb,
         )
+        return
+
+    # ── /pause ───────────────────────────────────────────────────────────────
+    if text.startswith("/pause") or text == "⏸️ Pause":
+        if not participant:
+            _send(chat_id, "Please register first — send /start")
+            return
+        cur.execute("SELECT paused_until FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+        row = cur.fetchone()
+        now = datetime.now(timezone.utc)
+        paused_until = row["paused_until"] if row else None
+        is_paused = bool(paused_until and paused_until > now)
+        if is_paused:
+            until_str = paused_until.strftime("%b %d, %H:%M")
+            _send(chat_id,
+                f"⏸️ Paused until {until_str} UTC.\n\nExtend or resume:",
+                reply_markup=_pause_keyboard(True),
+            )
+        else:
+            _send(chat_id,
+                "⏸️ Pause notifications — no sweat forwards or radar while paused.\n\nPause for:",
+                reply_markup=_pause_keyboard(False),
+            )
         return
 
     # ── /sweat ───────────────────────────────────────────────────────────────

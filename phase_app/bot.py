@@ -715,13 +715,26 @@ def handle_webhook(body: dict, conn) -> None:
 
         return
 
-    msg = body.get("message")
+    is_edit = "edited_message" in body
+    msg = body.get("message") or body.get("edited_message")
     if not msg:
         return
 
     tg_id: int = msg["from"]["id"]
     chat_id: int = msg["chat"]["id"]
     text: str = msg.get("text", "").strip()
+
+    # ── Edited messages: only handle reps updates, skip everything else ──────
+    if is_edit:
+        _reps_e, _comment_e = _parse_reps_comment(text) if text else (None, None)
+        if _reps_e is not None:
+            participant_e = _lookup_user(cur, tg_id)
+            if participant_e:
+                _log_entry(cur, participant_e, _reps_e, _comment_e)
+                conn.commit()
+                _log(f"✏️ Reps updated (edit)\n👤 {participant_e}: {_reps_e} reps")
+                _send(chat_id, f"✓ updated to {_reps_e} reps", reply_markup=_MAIN_KB)
+        return
 
     # ── /broadcast (admin only) ──────────────────────────────────────────────
     if text.startswith("/broadcast "):
@@ -1025,6 +1038,7 @@ def handle_webhook(body: dict, conn) -> None:
     # ── Plain number (+ optional comment) → reps for pending video or bare log ─
     if _reps is not None and participant:
         reps, comment = _reps, _comment
+
         cur.execute(
             "SELECT message_id FROM telegram_bot_pending WHERE telegram_user_id = %s",
             (tg_id,),

@@ -197,6 +197,16 @@ _MAIN_KB = {
     "is_persistent": True,
 }
 
+_REPS_RE = _re.compile(r"^(\d+)\s*(.*)", _re.DOTALL)
+
+
+def _parse_reps(text: str) -> tuple[int, str] | None:
+    m = _REPS_RE.match(text.strip())
+    if not m:
+        return None
+    return int(m.group(1)), m.group(2).strip()
+
+
 _RADAR_FREQS = ["daily", "weekly", "monthly", "once", "never"]
 _RADAR_LABELS = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "once": "Just once", "never": "Off"}
 _RADAR_PERIOD = {"daily": "every day", "weekly": "every week", "monthly": "every month"}
@@ -766,7 +776,7 @@ def handle_webhook(body: dict, conn) -> None:
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
             "How it works:\n"
             "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
-            "• Then type your total rep count\n"
+            "• Then type your rep count. Optional: add a comment after a comma — it shows up in the app: 25, tough day\n"
             "• Your workout is logged and forwarded to your crew\n\n"
             f"{link_line}\n"
             "Available commands:\n\n"
@@ -797,7 +807,7 @@ def handle_webhook(body: dict, conn) -> None:
             "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
             "How it works:\n"
             "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
-            "• Then type your total rep count\n"
+            "• Then type your rep count. Optional: add a comment after a comma — it shows up in the app: 25, tough day\n"
             "• Your workout is logged and forwarded to your crew\n\n"
             "Use /sweat to find who you share and follow.\n\n"
             "First, what would you like to be called?"

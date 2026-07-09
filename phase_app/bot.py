@@ -155,6 +155,13 @@ def _get_share_chats(cur, tg_id: int) -> list[tuple[int, str]]:
         pause_row = cur.fetchone()
         if pause_row and pause_row["paused_until"] and pause_row["paused_until"] > datetime.now(timezone.utc):
             continue
+        # Skip recipients who have muted this sender
+        cur.execute(
+            "SELECT 1 FROM sweat_mute WHERE telegram_user_id = %s AND muted_participant = %s AND muted_until > NOW()",
+            (rid, sender_name),
+        )
+        if cur.fetchone():
+            continue
         cur.execute(
             "SELECT 1 FROM telegram_bot_receive WHERE telegram_user_id = %s LIMIT 1",
             (rid,),
@@ -261,6 +268,21 @@ def _radar_due(freq: str, last_received) -> bool:
     if freq == "once":
         return False  # already received once, disable handled at send time
     return False
+
+
+def _sweat_manage_keyboard(name: str, muted_until=None) -> dict:
+    rows = []
+    if muted_until:
+        until_str = muted_until.strftime("%b %d")
+        rows.append([{"text": f"▶️ Unmute (muted until {until_str})", "callback_data": f"sweat_manage:unmute:{name}"}])
+    rows.append([
+        {"text": "🔕 Mute 1 day",   "callback_data": f"sweat_manage:mute_1d:{name}"},
+        {"text": "🔕 Mute 1 week",  "callback_data": f"sweat_manage:mute_1w:{name}"},
+        {"text": "🔕 Mute 1 month", "callback_data": f"sweat_manage:mute_1m:{name}"},
+    ])
+    rows.append([{"text": "🗑 Remove from sweat list", "callback_data": f"sweat_manage:remove:{name}"}])
+    rows.append([{"text": "Cancel", "callback_data": "sweat_manage:cancel"}])
+    return {"inline_keyboard": rows}
 
 
 def _follow_keyboard(cur, tg_id: int) -> dict:
@@ -772,6 +794,44 @@ def handle_webhook(body: dict, conn) -> None:
                         )
             return
 
+        # Sweat manage callbacks (mute / unmute / remove)
+        if data.startswith("sweat_manage:"):
+            parts = data.split(":", 2)
+            action = parts[1]
+            name = parts[2] if len(parts) > 2 else ""
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+            if action == "cancel":
+                _send(chat_id, "Cancelled.", reply_markup=_MAIN_KB)
+                return
+            now = datetime.now(timezone.utc)
+            if action == "unmute":
+                cur.execute(
+                    "DELETE FROM sweat_mute WHERE telegram_user_id = %s AND muted_participant = %s",
+                    (tg_id, name),
+                )
+                conn.commit()
+                _send(chat_id, f"▶️ {name} unmuted — you'll receive their updates again.", reply_markup=_MAIN_KB)
+                _log(f"🔔 Sweat unmuted\n👤 {participant} unmuted {name}")
+            elif action in ("mute_1d", "mute_1w", "mute_1m"):
+                delta, label = {"mute_1d": (timedelta(days=1), "1 day"), "mute_1w": (timedelta(weeks=1), "1 week"), "mute_1m": (timedelta(days=30), "1 month")}[action]
+                until = now + delta
+                cur.execute(
+                    "INSERT INTO sweat_mute (telegram_user_id, muted_participant, muted_until) "
+                    "VALUES (%s, %s, %s) ON CONFLICT (telegram_user_id, muted_participant) DO UPDATE SET muted_until = EXCLUDED.muted_until",
+                    (tg_id, name, until),
+                )
+                conn.commit()
+                _send(chat_id, f"🔕 {name} muted until {until.strftime('%b %d')} — still in your sweat list.", reply_markup=_MAIN_KB)
+                _log(f"🔕 Sweat muted\n👤 {participant} muted {name} for {label}")
+            elif action == "remove":
+                cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s", (tg_id, name))
+                cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s", (tg_id, name))
+                cur.execute("DELETE FROM sweat_mute WHERE telegram_user_id = %s AND muted_participant = %s", (tg_id, name))
+                conn.commit()
+                _send(chat_id, f"Removed {name} from your sweat list.", reply_markup=_MAIN_KB)
+                _log(f"🤝 Sweat removed\n👤 {participant} ✗ {name}")
+            return
+
         # Sweat add-back callbacks
         if data.startswith("sweat_add_back:"):
             _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
@@ -1076,14 +1136,22 @@ def handle_webhook(body: dict, conn) -> None:
             (tg_id, tg_id),
         )
         partners = sorted(r["name"] for r in cur.fetchall())
-        partner_list = ", ".join(partners) if partners else "nobody yet"
+        if partners:
+            cur.execute(
+                "SELECT muted_participant FROM sweat_mute WHERE telegram_user_id = %s AND muted_until > NOW()",
+                (tg_id,),
+            )
+            muted_set = {r["muted_participant"] for r in cur.fetchall()}
+            partner_list = ", ".join(f"{p} 🔕" if p in muted_set else p for p in partners)
+        else:
+            partner_list = "nobody yet"
         _set_state(cur, tg_id, "awaiting_sweat_name")
         conn.commit()
         _send(chat_id,
             f"🤝 Your sweat crew gets every video you log — and you get theirs.\n"
             f"Radar is for strangers. Sweat is for your people.\n\n"
             f"Sweating with: {partner_list}\n\n"
-            "Type the name of the person you want to sweat with (or remove):"
+            "Type a name to add, mute, or remove:"
         )
         return
 
@@ -1108,10 +1176,20 @@ def handle_webhook(body: dict, conn) -> None:
         )
         already = cur.fetchone()
         if already:
-            cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s", (tg_id, matched_name))
-            cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s", (tg_id, matched_name))
-            msg = f"Removed {matched_name} from your sweat list."
-            _log(f"🤝 Sweat removed\n👤 {participant} ✗ {matched_name}")
+            cur.execute(
+                "SELECT muted_until FROM sweat_mute WHERE telegram_user_id = %s AND muted_participant = %s AND muted_until > NOW()",
+                (tg_id, matched_name),
+            )
+            mute_row = cur.fetchone()
+            muted_until = mute_row["muted_until"] if mute_row else None
+            _clear_state(cur, tg_id)
+            conn.commit()
+            status = f" (muted until {muted_until.strftime('%b %d')})" if muted_until else ""
+            _send(chat_id,
+                f"{matched_name} is in your sweat list{status}. What would you like to do?",
+                reply_markup=_sweat_manage_keyboard(matched_name, muted_until),
+            )
+            return
         else:
             cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, matched_name))
             cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, matched_name))
@@ -1126,10 +1204,6 @@ def handle_webhook(body: dict, conn) -> None:
                 ]},
             )
             return
-        _clear_state(cur, tg_id)
-        conn.commit()
-        _send(chat_id, msg, reply_markup=_MAIN_KB)
-        return
 
     # ── Radar setup nudge (one-time for existing users) ─────────────────────
     _reps, _comment = _parse_reps_comment(text) if text else (None, None)

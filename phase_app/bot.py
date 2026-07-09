@@ -366,11 +366,21 @@ def _compute_streak(entries_desc: list) -> tuple:
 
 
 def send_daily_report(conn) -> None:
-    """Called by the 19:00 UTC cron. Sends a streak report to the REPORT_CHAT_ID channel."""
+    """Called by the 17:00 UTC (19:00 UTC+2) cron. Sends a streak report to the REPORT_CHAT_ID channel."""
     if not _REPORT_CHAT_ID:
         return
     cur = conn.cursor()
     today = date.today()
+
+    # Dedup guard — Vercel may retry the cron endpoint; only send once per day
+    cur.execute(
+        "INSERT INTO cron_log (job_name, run_date) VALUES ('daily_report', %s) "
+        "ON CONFLICT DO NOTHING RETURNING job_name",
+        (today,),
+    )
+    if not cur.fetchone():
+        return  # already sent today
+    conn.commit()
 
     cur.execute("SELECT participant_name FROM telegram_bot_users ORDER BY participant_name")
     users = [r["participant_name"] for r in cur.fetchall()]
@@ -386,18 +396,24 @@ def send_daily_report(conn) -> None:
     for row in cur.fetchall():
         entries_by_user.setdefault(row["participant"], []).append(row)
 
-    lines = [f"📊 Burpee Report — {today.strftime('%B %d')}\n"]
+    user_stats = []
     for user in users:
         entries = entries_by_user.get(user, [])
         streak, last_date, last_reps = _compute_streak(entries)
         if streak > 0:
-            lines.append(f"🔥 {user} — {streak}-day streak ({last_reps} reps today)" if (today - last_date).days == 0 else f"🔥 {user} — {streak}-day streak")
+            line = (f"🔥 {user} — {streak}-day streak ({last_reps} reps today)"
+                    if (today - last_date).days == 0
+                    else f"🔥 {user} — {streak}-day streak")
         elif last_date:
             days_ago = (today - last_date).days
             day_word = "day" if days_ago == 1 else "days"
-            lines.append(f"❌ {user} — {days_ago} {day_word} without workout (last: {last_reps} reps on {last_date.strftime('%b %d')})")
+            line = f"❌ {user} — {days_ago} {day_word} without workout (last: {last_reps} reps on {last_date.strftime('%b %d')})"
         else:
-            lines.append(f"😴 {user} — no workouts yet")
+            line = f"😴 {user} — no workouts yet"
+        user_stats.append((streak, line))
+
+    user_stats.sort(key=lambda x: x[0], reverse=True)
+    lines = [f"📊 Burpee Report — {today.strftime('%B %d')}\n"] + [line for _, line in user_stats]
 
     _tg("sendMessage", {"chat_id": int(_REPORT_CHAT_ID), "text": "\n".join(lines)})
     _log(f"📊 Daily report sent to channel")
@@ -790,6 +806,14 @@ def handle_webhook(body: dict, conn) -> None:
         if _reps_e is not None:
             participant_e = _lookup_user(cur, tg_id)
             if participant_e:
+                if _comment_e is None:
+                    cur.execute(
+                        "SELECT comment FROM burpee_entries WHERE participant = %s AND entry_date = %s",
+                        (participant_e, str(date.today())),
+                    )
+                    existing = cur.fetchone()
+                    if existing:
+                        _comment_e = existing["comment"]
                 _log_entry(cur, participant_e, _reps_e, _comment_e)
                 conn.commit()
                 _log(f"✏️ Reps updated (edit)\n👤 {participant_e}: {_reps_e} reps")

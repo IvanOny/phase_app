@@ -68,16 +68,27 @@ def _lookup_user(cur, tg_id: int) -> str | None:
     return row["participant_name"] if row else None
 
 
+_STATE_TIMEOUT_MINUTES = 10
+
+
 def _get_state(cur, tg_id: int) -> str | None:
-    cur.execute("SELECT state FROM telegram_bot_state WHERE telegram_user_id = %s", (tg_id,))
+    cur.execute(
+        "SELECT state, created_at FROM telegram_bot_state WHERE telegram_user_id = %s",
+        (tg_id,),
+    )
     row = cur.fetchone()
-    return row["state"] if row else None
+    if not row:
+        return None
+    if row["created_at"] and (datetime.now(timezone.utc) - row["created_at"]).total_seconds() > _STATE_TIMEOUT_MINUTES * 60:
+        cur.execute("DELETE FROM telegram_bot_state WHERE telegram_user_id = %s", (tg_id,))
+        return None
+    return row["state"]
 
 
 def _set_state(cur, tg_id: int, state: str) -> None:
     cur.execute(
-        "INSERT INTO telegram_bot_state (telegram_user_id, state) VALUES (%s, %s) "
-        "ON CONFLICT (telegram_user_id) DO UPDATE SET state = EXCLUDED.state",
+        "INSERT INTO telegram_bot_state (telegram_user_id, state, created_at) VALUES (%s, %s, NOW()) "
+        "ON CONFLICT (telegram_user_id) DO UPDATE SET state = EXCLUDED.state, created_at = NOW()",
         (tg_id, state),
     )
 
@@ -859,6 +870,10 @@ def handle_webhook(body: dict, conn) -> None:
     tg_id: int = msg["from"]["id"]
     chat_id: int = msg["chat"]["id"]
     text: str = msg.get("text", "").strip()
+
+    # ── Replies to messages are social reactions — don't process as bot input ─
+    if msg.get("reply_to_message"):
+        return
 
     # ── Edited messages: only handle reps updates, skip everything else ──────
     if is_edit:

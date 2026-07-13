@@ -1171,7 +1171,14 @@ def handle_webhook(body: dict, conn) -> None:
         return
 
     # ── Awaiting sweat partner name ───────────────────────────────────────────
-    if state == "awaiting_sweat_name" and text and not text.isdigit():
+    # Skip sweat name handling if text looks like reps and there's a pending video
+    _pre_reps, _pre_comment = _parse_reps_comment(text) if text else (None, None)
+    _has_pending_video = False
+    if _pre_reps is not None and state == "awaiting_sweat_name":
+        cur.execute("SELECT message_id FROM telegram_bot_pending WHERE telegram_user_id = %s AND message_id IS NOT NULL", (tg_id,))
+        _has_pending_video = cur.fetchone() is not None
+
+    if state == "awaiting_sweat_name" and text and not text.isdigit() and not _has_pending_video:
         name = text.strip()
         cur.execute(
             "SELECT participant_name FROM telegram_bot_users WHERE LOWER(participant_name) = LOWER(%s) AND telegram_user_id != %s",
@@ -1221,7 +1228,7 @@ def handle_webhook(body: dict, conn) -> None:
             return
 
     # ── Radar setup nudge (one-time for existing users) ─────────────────────
-    _reps, _comment = _parse_reps_comment(text) if text else (None, None)
+    _reps, _comment = _pre_reps, _pre_comment
     if participant and not state and text and _reps is None:
         cur.execute("SELECT radar_asked FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
         row = cur.fetchone()

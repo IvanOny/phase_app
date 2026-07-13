@@ -367,6 +367,9 @@ def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, mess
             (tg_id, from_chat_id, message_id, participant, reps, date.today()),
         )
 
+    # ── Milestones: cheer immediately if a monthly threshold is crossed ──
+    _check_milestone_for_user(cur, conn, tg_id, participant)
+
 
 _REPORT_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
 
@@ -433,6 +436,7 @@ def send_daily_report(conn) -> None:
     for user in users:
         entries = entries_by_user.get(user, [])
         streak, last_date, last_reps = _compute_streak(entries)
+        days_ago = 0
         if streak > 0:
             line = (f"🔥 {user} — {streak}-day streak ({last_reps} reps today)"
                     if (today - last_date).days == 0
@@ -443,13 +447,100 @@ def send_daily_report(conn) -> None:
             line = f"❌ {user} — {days_ago} {day_word} without workout (last: {last_reps} reps on {last_date.strftime('%b %d')})"
         else:
             line = f"😴 {user} — no workouts yet"
-        user_stats.append((streak, line))
+        user_stats.append((streak, -days_ago if streak == 0 else 0, line))
 
-    user_stats.sort(key=lambda x: x[0], reverse=True)
-    lines = [f"📊 Burpee Report — {today.strftime('%B %d')}\n"] + [line for _, line in user_stats]
+    user_stats.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    lines = [f"📊 Burpee Report — {today.strftime('%B %d')}\n"] + [line for _, _, line in user_stats]
 
     _tg("sendMessage", {"chat_id": int(_REPORT_CHAT_ID), "text": "\n".join(lines)})
     _log(f"📊 Daily report sent to channel")
+
+
+def _milestone_step(avg_reps: float) -> int:
+    if avg_reps < 15:
+        return 50
+    if avg_reps < 35:
+        return 100
+    return 200
+
+
+def _check_milestone_for_user(cur, conn, tg_id: int, participant: str) -> None:
+    """Fire a milestone cheer immediately after a workout is logged, if one is due."""
+    import math
+    today = date.today()
+    month_start = today.replace(day=1)
+    ten_days_ago = today - timedelta(days=10)
+
+    cur.execute(
+        "SELECT COUNT(*) AS cnt FROM burpee_entries "
+        "WHERE participant = %s AND entry_date >= %s",
+        (participant, ten_days_ago),
+    )
+    if cur.fetchone()["cnt"] < 3:
+        return
+
+    cur.execute(
+        "SELECT reps FROM burpee_entries WHERE participant = %s AND entry_date >= %s",
+        (participant, month_start),
+    )
+    month_reps = [r["reps"] for r in cur.fetchall()]
+    if not month_reps:
+        return
+
+    total = sum(month_reps)
+    avg = total / len(month_reps)
+    step = _milestone_step(avg)
+    first = math.ceil(avg * 5 / step) * step
+
+    crossed = []
+    m = first
+    while m <= total:
+        crossed.append(m)
+        m += step
+    if not crossed:
+        return
+
+    cur.execute(
+        "SELECT milestone_reps FROM milestone_notifications WHERE participant = %s AND month = %s",
+        (participant, month_start),
+    )
+    already_sent = {r["milestone_reps"] for r in cur.fetchall()}
+
+    new_milestones = [m for m in crossed if m not in already_sent]
+    if not new_milestones:
+        return
+
+    milestone = max(new_milestones)
+    next_m = milestone + step
+    text = (
+        f"🎉 Great job, {participant}! You've already done {milestone} burpees this month!\n"
+        f"Next milestone: {next_m} 💪"
+    )
+    _tg("sendMessage", {"chat_id": tg_id, "text": text})
+    _log(f"🏅 Milestone {milestone} sent to {participant}")
+
+    for m in new_milestones:
+        cur.execute(
+            "INSERT INTO milestone_notifications (participant, month, milestone_reps) "
+            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            (participant, month_start, m),
+        )
+    conn.commit()
+
+
+def check_milestones(conn) -> None:
+    """Cron fallback: sweep all frequent users for unclaimed milestones."""
+    cur = conn.cursor()
+    ten_days_ago = date.today() - timedelta(days=10)
+    cur.execute(
+        "SELECT u.telegram_user_id, u.participant_name "
+        "FROM telegram_bot_users u "
+        "WHERE (SELECT COUNT(*) FROM burpee_entries e "
+        "       WHERE e.participant = u.participant_name AND e.entry_date >= %s) >= 3",
+        (ten_days_ago,),
+    )
+    for user in cur.fetchall():
+        _check_milestone_for_user(cur, conn, user["telegram_user_id"], user["participant_name"])
 
 
 def _store_or_bind_video(cur, conn, tg_id: int, participant: str, chat_id: int, message_id: int) -> None:

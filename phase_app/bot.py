@@ -14,6 +14,250 @@ _LOG_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
 # Plain-text aliases for slash commands — update when adding a new command
 _COMMAND_ALIASES = {"info", "help", "start", "rename", "secret", "radar", "pause", "sweat"}
 
+# ── i18n ──────────────────────────────────────────────────────────────────────
+# Full localization in English / Ukrainian / German. Every user-facing string
+# lives in _STRINGS keyed by a short slug, with one entry per supported language.
+# _t(key, lang, **fmt) looks it up (falling back to English) and .format()s it.
+# When adding a new user-facing string, add a key here with en/uk/de.
+
+_SUPPORTED_LANGS = ("en", "uk", "de")
+
+
+def _norm_lang(raw: str | None) -> str:
+    """Map a Telegram language_code (e.g. 'uk-UA', 'de') to a supported lang."""
+    if not raw:
+        return "en"
+    code = raw.split("-")[0].lower()
+    return code if code in _SUPPORTED_LANGS else "en"
+
+
+def _t(key: str, lang: str = "en", **fmt) -> str:
+    entry = _STRINGS.get(key, {})
+    template = entry.get(lang) or entry.get("en") or key
+    return template.format(**fmt) if fmt else template
+
+
+def _user_lang(cur, tg_id: int) -> str:
+    cur.execute("SELECT language_code FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
+    row = cur.fetchone()
+    return _norm_lang(row["language_code"] if row else None)
+
+
+def _lang_for_name(cur, name: str) -> str | None:
+    cur.execute("SELECT language_code FROM telegram_bot_users WHERE participant_name = %s", (name,))
+    row = cur.fetchone()
+    return row["language_code"] if row else None
+
+
+_STRINGS: dict[str, dict[str, str]] = {
+    # ── Main keyboard buttons ──
+    "btn_sweat": {"en": "🤝 Sweat with", "uk": "🤝 Спільний піт", "de": "🤝 Schwitzen mit"},
+    "btn_radar": {"en": "📡 Radar", "uk": "📡 Радар", "de": "📡 Radar"},
+    "btn_pause": {"en": "⏸️ Pause", "uk": "⏸️ Пауза", "de": "⏸️ Pause"},
+    "btn_info": {"en": "ℹ️ Info", "uk": "ℹ️ Інфо", "de": "ℹ️ Info"},
+    # ── Generic inline buttons ──
+    "kb_anyone": {"en": "Anyone", "uk": "Будь-хто", "de": "Jeder"},
+    "kb_done": {"en": "Done", "uk": "Готово", "de": "Fertig"},
+    "kb_cancel": {"en": "Cancel", "uk": "Скасувати", "de": "Abbrechen"},
+    "kb_yes": {"en": "Yes", "uk": "Так", "de": "Ja"},
+    "kb_no": {"en": "No", "uk": "Ні", "de": "Nein"},
+    # ── Pause keyboard ──
+    "pause_1d": {"en": "1 day", "uk": "1 день", "de": "1 Tag"},
+    "pause_1w": {"en": "1 week", "uk": "1 тиждень", "de": "1 Woche"},
+    "pause_1m": {"en": "1 month", "uk": "1 місяць", "de": "1 Monat"},
+    "pause_resume": {"en": "▶️ Resume now", "uk": "▶️ Відновити зараз", "de": "▶️ Jetzt fortsetzen"},
+    # ── Radar keyboard labels ──
+    "radar_daily": {"en": "Daily", "uk": "Щодня", "de": "Täglich"},
+    "radar_weekly": {"en": "Weekly", "uk": "Щотижня", "de": "Wöchentlich"},
+    "radar_monthly": {"en": "Monthly", "uk": "Щомісяця", "de": "Monatlich"},
+    "radar_once": {"en": "Just once", "uk": "Лише раз", "de": "Nur einmal"},
+    "radar_off": {"en": "Off", "uk": "Вимкнено", "de": "Aus"},
+    "radar_period_daily": {"en": "every day", "uk": "щодня", "de": "jeden Tag"},
+    "radar_period_weekly": {"en": "every week", "uk": "щотижня", "de": "jede Woche"},
+    "radar_period_monthly": {"en": "every month", "uk": "щомісяця", "de": "jeden Monat"},
+    "radar_share_on": {"en": "📡 Share my videos: ON ✅", "uk": "📡 Ділитися моїми відео: УВІМК ✅", "de": "📡 Meine Videos teilen: AN ✅"},
+    "radar_share_off": {"en": "📡 Share my videos: OFF 🚫", "uk": "📡 Ділитися моїми відео: ВИМК 🚫", "de": "📡 Meine Videos teilen: AUS 🚫"},
+    "radar_send_yes": {"en": "✅ Yes, that's fine", "uk": "✅ Так, згоден", "de": "✅ Ja, in Ordnung"},
+    "radar_send_no": {"en": "🚫 No, keep my videos in my crew", "uk": "🚫 Ні, лишити відео в моєму колі", "de": "🚫 Nein, Videos nur in meiner Crew"},
+    # ── Sweat manage keyboard ──
+    "sweat_unmute_btn": {"en": "▶️ Unmute (muted until {until})", "uk": "▶️ Увімкнути звук (без звуку до {until})", "de": "▶️ Ton an (stumm bis {until})"},
+    "sweat_mute_1d_btn": {"en": "🔕 Mute 1 day", "uk": "🔕 Без звуку 1 день", "de": "🔕 1 Tag stumm"},
+    "sweat_mute_1w_btn": {"en": "🔕 Mute 1 week", "uk": "🔕 Без звуку 1 тиждень", "de": "🔕 1 Woche stumm"},
+    "sweat_mute_1m_btn": {"en": "🔕 Mute 1 month", "uk": "🔕 Без звуку 1 місяць", "de": "🔕 1 Monat stumm"},
+    "sweat_remove_btn": {"en": "🗑 Remove from sweat list", "uk": "🗑 Прибрати зі списку", "de": "🗑 Aus Liste entfernen"},
+    # ── Common ──
+    "register_first": {"en": "Please register first — send /start", "uk": "Спершу зареєструйтесь — надішліть /start", "de": "Bitte zuerst registrieren — sende /start"},
+    "letters_32": {"en": "Please use letters only, up to 32 characters.", "uk": "Лише літери, до 32 символів.", "de": "Nur Buchstaben, bis zu 32 Zeichen."},
+    "letters_64": {"en": "Letters only please (up to 64 characters).", "uk": "Лише літери, будь ласка (до 64 символів).", "de": "Bitte nur Buchstaben (bis zu 64 Zeichen)."},
+    "name_taken": {"en": "\"{name}\" is already taken. Please choose a different name.", "uk": "Ім'я «{name}» вже зайняте. Оберіть інше.", "de": "„{name}“ ist bereits vergeben. Bitte wähle einen anderen Namen."},
+    "ask_secret": {"en": "Name a fictional character you love:", "uk": "Назвіть улюбленого вигаданого персонажа:", "de": "Nenne eine erfundene Figur, die du magst:"},
+    "unknown_msg": {"en": "Tap ℹ️ Info to see what I can do.", "uk": "Натисніть ℹ️ Інфо, щоб побачити, що я вмію.", "de": "Tippe auf ℹ️ Info, um zu sehen, was ich kann."},
+    # ── Reps logging ──
+    "how_many_reps": {"en": "{greet}how many reps?", "uk": "{greet}скільки повторень?", "de": "{greet}wie viele Wiederholungen?"},
+    "reps_logged": {"en": "✓ {reps} reps logged", "uk": "✓ {reps} повторень записано", "de": "✓ {reps} Wiederholungen gespeichert"},
+    "reps_updated": {"en": "✓ updated to {reps} reps", "uk": "✓ оновлено до {reps} повторень", "de": "✓ auf {reps} Wiederholungen aktualisiert"},
+    "reps_short": {"en": "{reps} reps", "uk": "{reps} повторень", "de": "{reps} Wdh."},
+    "confirm_reps": {"en": "✓ {reps} reps", "uk": "✓ {reps} повторень", "de": "✓ {reps} Wdh."},
+    "confirm_reps_comment": {"en": "✓ {reps} reps ({comment})", "uk": "✓ {reps} повторень ({comment})", "de": "✓ {reps} Wdh. ({comment})"},
+    "forwarded_to": {"en": "{confirm} → forwarded to {names}", "uk": "{confirm} → надіслано: {names}", "de": "{confirm} → weitergeleitet an {names}"},
+    "confirm_logged": {"en": "{confirm} logged", "uk": "{confirm} записано", "de": "{confirm} gespeichert"},
+    # ── /rename ──
+    "ask_rename": {"en": "{greet}what would you like to change your name to?", "uk": "{greet}на яке ім'я змінити?", "de": "{greet}wie möchtest du dich nennen?"},
+    "renamed_done": {"en": "Done! Your name is now {name}.\n\nUpdated app link:\n{url}", "uk": "Готово! Тепер ваше ім'я {name}.\n\nОновлене посилання:\n{url}", "de": "Fertig! Dein Name ist jetzt {name}.\n\nAktualisierter App-Link:\n{url}"},
+    # ── /secret ──
+    "secret_done": {"en": "Done! Your new app link:\n{url}", "uk": "Готово! Ваше нове посилання:\n{url}", "de": "Fertig! Dein neuer App-Link:\n{url}"},
+    # ── /start ──
+    "already_registered": {"en": "You're already registered as {name}.\n\nYour app link:\n{url}", "uk": "Ви вже зареєстровані як {name}.\n\nВаше посилання:\n{url}", "de": "Du bist bereits als {name} registriert.\n\nDein App-Link:\n{url}"},
+    "ask_name_first": {"en": "First, what would you like to be called?", "uk": "Спершу: як вас називати?", "de": "Zuerst: Wie möchtest du genannt werden?"},
+    "welcome_registered": {"en": "Welcome, {name}! 👋 Your app link:\n{url}\n\nNext: add your crew via 🤝 Sweat with.\nThey'll get every video you log — and you'll get theirs.", "uk": "Вітаємо, {name}! 👋 Ваше посилання:\n{url}\n\nДалі: додайте свій гурт через 🤝 Спільний піт.\nВони отримуватимуть кожне ваше відео — а ви їхні.", "de": "Willkommen, {name}! 👋 Dein App-Link:\n{url}\n\nAls Nächstes: Füge deine Crew über 🤝 Schwitzen mit hinzu.\nSie bekommen jedes deiner Videos — und du ihre."},
+    # ── Info / start body ──
+    "app_link_line": {"en": "\nYour app link:\nhttps://phase-app-yf5x.vercel.app/?token={token}\n", "uk": "\nВаше посилання на застосунок:\nhttps://phase-app-yf5x.vercel.app/?token={token}\n", "de": "\nDein App-Link:\nhttps://phase-app-yf5x.vercel.app/?token={token}\n"},
+    "app_link_none": {"en": "\n(register first with /start)\n", "uk": "\n(спершу зареєструйтесь через /start)\n", "de": "\n(zuerst mit /start registrieren)\n"},
+    "info_body": {
+        "en": "👋 Welcome to Бурчик Challenge!\n\n"
+              "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
+              "How it works:\n"
+              "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
+              "• Then type your rep count. Optional: add a comment after a comma — it shows up in the app: 25, tough day\n"
+              "• Your workout is logged and forwarded to your crew\n\n"
+              "{link_line}\n"
+              "Available commands:\n\n"
+              "/start — register your name\n"
+              "/rename — change your name\n"
+              "/secret — update your app link secret\n"
+              "/sweat — find who you share and follow\n"
+              "/radar — receive and send random burpees from outside your sweat list\n"
+              "/pause — pause all notifications for 1 day, 1 week, or 1 month\n"
+              "/info — show this list",
+        "uk": "👋 Ласкаво просимо до Бурчик Challenge!\n\n"
+              "3 хвилини берпі AMRAP щодня — з обліком, обміном і змаганням.\n\n"
+              "Як це працює:\n"
+              "• Запишіть першу хвилину вашої 3-хвилинної сесії берпі як кругле відео-повідомлення й надішліть сюди\n"
+              "• Потім напишіть кількість повторень. За бажанням: додайте коментар після коми — він з'явиться в застосунку: 25, важкий день\n"
+              "• Ваше тренування зберігається й надсилається вашому гурту\n\n"
+              "{link_line}\n"
+              "Доступні команди:\n\n"
+              "/start — зареєструвати ім'я\n"
+              "/rename — змінити ім'я\n"
+              "/secret — оновити секрет посилання\n"
+              "/sweat — керувати тим, з ким ви ділитесь і за ким стежите\n"
+              "/radar — отримувати й надсилати випадкові берпі за межами вашого списку\n"
+              "/pause — призупинити всі сповіщення на 1 день, 1 тиждень чи 1 місяць\n"
+              "/info — показати цей список",
+        "de": "👋 Willkommen bei Бурчик Challenge!\n\n"
+              "3 Minuten AMRAP-Burpees jeden Tag — erfasst, geteilt und im Wettkampf.\n\n"
+              "So funktioniert's:\n"
+              "• Nimm die erste Minute deiner 3-minütigen Burpee-Session als rundes Video-Bubble auf und schick es hierher\n"
+              "• Dann tippe deine Wiederholungszahl. Optional: ein Kommentar nach einem Komma — er erscheint in der App: 25, harter Tag\n"
+              "• Dein Workout wird gespeichert und an deine Crew weitergeleitet\n\n"
+              "{link_line}\n"
+              "Verfügbare Befehle:\n\n"
+              "/start — Namen registrieren\n"
+              "/rename — Namen ändern\n"
+              "/secret — App-Link-Geheimnis aktualisieren\n"
+              "/sweat — verwalten, mit wem du teilst und wem du folgst\n"
+              "/radar — zufällige Burpees von außerhalb deiner Liste empfangen und senden\n"
+              "/pause — alle Benachrichtigungen für 1 Tag, 1 Woche oder 1 Monat pausieren\n"
+              "/info — diese Liste anzeigen",
+    },
+    "start_body": {
+        "en": "👋 Welcome to Бурчик Challenge!\n\n"
+              "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
+              "How it works:\n"
+              "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
+              "• Then type your rep count. Optional: add a comment after a comma — it shows up in the app: 25, tough day\n"
+              "• Your workout is logged and forwarded to your crew\n\n"
+              "Use /sweat to find who you share and follow.\n\n"
+              "First, what would you like to be called?",
+        "uk": "👋 Ласкаво просимо до Бурчик Challenge!\n\n"
+              "3 хвилини берпі AMRAP щодня — з обліком, обміном і змаганням.\n\n"
+              "Як це працює:\n"
+              "• Запишіть першу хвилину вашої 3-хвилинної сесії берпі як кругле відео-повідомлення й надішліть сюди\n"
+              "• Потім напишіть кількість повторень. За бажанням: додайте коментар після коми — він з'явиться в застосунку: 25, важкий день\n"
+              "• Ваше тренування зберігається й надсилається вашому гурту\n\n"
+              "Скористайтесь /sweat, щоб керувати тим, з ким ви ділитесь і за ким стежите.\n\n"
+              "Спершу: як вас називати?",
+        "de": "👋 Willkommen bei Бурчик Challenge!\n\n"
+              "3 Minuten AMRAP-Burpees jeden Tag — erfasst, geteilt und im Wettkampf.\n\n"
+              "So funktioniert's:\n"
+              "• Nimm die erste Minute deiner 3-minütigen Burpee-Session als rundes Video-Bubble auf und schick es hierher\n"
+              "• Dann tippe deine Wiederholungszahl. Optional: ein Kommentar nach einem Komma — er erscheint in der App: 25, harter Tag\n"
+              "• Dein Workout wird gespeichert und an deine Crew weitergeleitet\n\n"
+              "Nutze /sweat, um zu verwalten, mit wem du teilst und wem du folgst.\n\n"
+              "Zuerst: Wie möchtest du genannt werden?",
+    },
+    # ── Radar ──
+    "radar_setup_freq": {"en": "📡 Radar works differently — it sends you one random burpee from someone outside your crew. How often?", "uk": "📡 Радар працює інакше — він надсилає вам одне випадкове берпі від когось поза вашим гуртом. Як часто?", "de": "📡 Radar funktioniert anders — es schickt dir einen zufälligen Burpee von jemandem außerhalb deiner Crew. Wie oft?"},
+    "radar_nudge_freq": {"en": "📡 Before we continue — Radar can send you a random burpee from outside your crew. How often?", "uk": "📡 Перш ніж продовжити — Радар може надсилати вам випадкове берпі за межами вашого гурту. Як часто?", "de": "📡 Bevor wir fortfahren — Radar kann dir einen zufälligen Burpee von außerhalb deiner Crew schicken. Wie oft?"},
+    "radar_menu": {"en": "📡 Radar — receive random burpees & share yours with the world outside your crew.\n\nReceive: {current}\n\nHow often?", "uk": "📡 Радар — отримуйте випадкові берпі й діліться своїми зі світом поза вашим гуртом.\n\nОтримувати: {current}\n\nЯк часто?", "de": "📡 Radar — empfange zufällige Burpees und teile deine mit der Welt außerhalb deiner Crew.\n\nEmpfangen: {current}\n\nWie oft?"},
+    "radar_ask_send": {"en": "📡 Radar works both ways — you can not only receive random burpees, but your videos can appear in others' Radar as well. Is that okay?\n\nYou can change this setting later via 📡 Radar.", "uk": "📡 Радар працює в обидва боки — ви не лише отримуєте випадкові берпі, а й ваші відео можуть з'являтися в Радарі інших. Це нормально?\n\nЦе налаштування можна змінити пізніше через 📡 Радар.", "de": "📡 Radar funktioniert in beide Richtungen — du empfängst nicht nur zufällige Burpees, sondern deine Videos können auch im Radar anderer erscheinen. Ist das okay?\n\nDu kannst diese Einstellung später über 📡 Radar ändern."},
+    "radar_off_msg": {"en": "📡 Radar off.", "uk": "📡 Радар вимкнено.", "de": "📡 Radar aus."},
+    "radar_set_msg": {"en": "📡 Radar set to {label} — you'll receive a random burpee from outside your sweat list.", "uk": "📡 Радар: {label} — ви отримуватимете випадкове берпі за межами вашого списку.", "de": "📡 Radar: {label} — du bekommst einen zufälligen Burpee von außerhalb deiner Liste."},
+    "radar_send_ok_yes": {"en": "✅ Got it — your videos can be shared via Radar.", "uk": "✅ Зрозуміло — вашими відео можна ділитися через Радар.", "de": "✅ Verstanden — deine Videos können über Radar geteilt werden."},
+    "radar_send_ok_no": {"en": "🔒 Got it — your videos stay within your crew.", "uk": "🔒 Зрозуміло — ваші відео лишаються у вашому гурті.", "de": "🔒 Verstanden — deine Videos bleiben in deiner Crew."},
+    "radar_recv_first_once": {"en": "📡 {name}: {reps} reps\nYou're getting this because your radar is on — a burpee from outside your crew. According to your radar settings you'll get 1 burpee bubble, just once. Use /radar to adjust frequency.", "uk": "📡 {name}: {reps} повторень\nВи отримали це, бо ваш радар увімкнено — берпі з-поза вашого гурту. За вашими налаштуваннями ви отримаєте 1 відео, лише раз. Використайте /radar, щоб змінити частоту.", "de": "📡 {name}: {reps} Wdh.\nDu bekommst das, weil dein Radar an ist — ein Burpee von außerhalb deiner Crew. Laut deinen Einstellungen bekommst du 1 Video, nur einmal. Nutze /radar, um die Häufigkeit zu ändern."},
+    "radar_recv_first_period": {"en": "📡 {name}: {reps} reps\nYou're getting this because your radar is on — a burpee from outside your crew. According to your radar settings you will get 1 random burpee bubble {period}. Use /radar to adjust frequency.", "uk": "📡 {name}: {reps} повторень\nВи отримали це, бо ваш радар увімкнено — берпі з-поза вашого гурту. За вашими налаштуваннями ви отримуватимете 1 випадкове відео {period}. Використайте /radar, щоб змінити частоту.", "de": "📡 {name}: {reps} Wdh.\nDu bekommst das, weil dein Radar an ist — ein Burpee von außerhalb deiner Crew. Laut deinen Einstellungen bekommst du 1 zufälliges Video {period}. Nutze /radar, um die Häufigkeit zu ändern."},
+    "radar_recv_repeat": {"en": "📡 {name}: {reps} reps\nYour Radar detected some burpee activity from someone outside your crew.", "uk": "📡 {name}: {reps} повторень\nВаш Радар виявив активність берпі від когось поза вашим гуртом.", "de": "📡 {name}: {reps} Wdh.\nDein Radar hat Burpee-Aktivität von jemandem außerhalb deiner Crew erkannt."},
+    # ── Pause ──
+    "pause_menu_active": {"en": "⏸️ Paused until {until} UTC.\n\nExtend or resume:", "uk": "⏸️ Призупинено до {until} UTC.\n\nПродовжити або відновити:", "de": "⏸️ Pausiert bis {until} UTC.\n\nVerlängern oder fortsetzen:"},
+    "pause_menu_inactive": {"en": "⏸️ Pause notifications — no sweat forwards or radar while paused.\n\nPause for:", "uk": "⏸️ Призупинити сповіщення — жодних надсилань чи радару під час паузи.\n\nПризупинити на:", "de": "⏸️ Benachrichtigungen pausieren — keine Weiterleitungen oder Radar während der Pause.\n\nPausieren für:"},
+    "pause_resumed": {"en": "▶️ Notifications resumed.", "uk": "▶️ Сповіщення відновлено.", "de": "▶️ Benachrichtigungen fortgesetzt."},
+    "pause_set": {"en": "⏸️ Paused until {until} — no sweat forwards or radar until then.", "uk": "⏸️ Призупинено до {until} — жодних надсилань чи радару до того часу.", "de": "⏸️ Pausiert bis {until} — bis dahin keine Weiterleitungen oder Radar."},
+    # ── Sweat ──
+    "sweat_menu": {"en": "🤝 Your sweat crew gets every video you log — and you get theirs.\nRadar is for strangers. Sweat is for your people.\n\nSweating with: {partners}\n\nType a name to add, mute, or remove:", "uk": "🤝 Ваш гурт отримує кожне ваше відео — а ви їхні.\nРадар — для незнайомців. Спільний піт — для своїх.\n\nСпільний піт з: {partners}\n\nНапишіть ім'я, щоб додати, приглушити або прибрати:", "de": "🤝 Deine Crew bekommt jedes deiner Videos — und du ihre.\nRadar ist für Fremde. Schwitzen ist für deine Leute.\n\nSchwitzt mit: {partners}\n\nGib einen Namen ein zum Hinzufügen, Stummschalten oder Entfernen:"},
+    "sweat_nobody": {"en": "nobody yet", "uk": "поки нікого", "de": "noch niemand"},
+    "sweat_name_not_found": {"en": "No user named \"{name}\" found. Try again or send /sweat to see current list.", "uk": "Користувача з ім'ям «{name}» не знайдено. Спробуйте ще або надішліть /sweat, щоб побачити список.", "de": "Kein Nutzer namens „{name}“ gefunden. Versuch es erneut oder sende /sweat, um die Liste zu sehen."},
+    "sweat_already_muted_until": {"en": " (muted until {until})", "uk": " (без звуку до {until})", "de": " (stumm bis {until})"},
+    "sweat_already_in_list": {"en": "{name} is in your sweat list{status}. What would you like to do?", "uk": "{name} у вашому списку{status}. Що бажаєте зробити?", "de": "{name} ist in deiner Liste{status}. Was möchtest du tun?"},
+    "sweat_added_notify": {"en": "Added {name} to your sweat list 🤝\n\nNotify {name}?", "uk": "{name} додано до вашого списку 🤝\n\nПовідомити {name}?", "de": "{name} zu deiner Liste hinzugefügt 🤝\n\n{name} benachrichtigen?"},
+    "sweat_summary": {"en": "{greet}sharing to: {summary}\n\nNow send your burpee video 💪", "uk": "{greet}ділитесь із: {summary}\n\nТепер надішліть своє відео берпі 💪", "de": "{greet}geteilt mit: {summary}\n\nJetzt schick dein Burpee-Video 💪"},
+    "follow_summary": {"en": "{greet}following: {summary}", "uk": "{greet}стежите за: {summary}", "de": "{greet}folgst: {summary}"},
+    "summary_anyone": {"en": "anyone", "uk": "будь-ким", "de": "jedem"},
+    "summary_nobody": {"en": "nobody", "uk": "ніким", "de": "niemandem"},
+    "cancelled": {"en": "Cancelled.", "uk": "Скасовано.", "de": "Abgebrochen."},
+    "sweat_unmuted": {"en": "▶️ {name} unmuted — you'll receive their updates again.", "uk": "▶️ Звук {name} увімкнено — ви знову отримуватимете їхні оновлення.", "de": "▶️ {name} nicht mehr stumm — du bekommst wieder ihre Updates."},
+    "sweat_muted": {"en": "🔕 {name} muted until {until} — still in your sweat list.", "uk": "🔕 {name} без звуку до {until} — досі у вашому списку.", "de": "🔕 {name} stumm bis {until} — bleibt in deiner Liste."},
+    "sweat_removed": {"en": "Removed {name} from your sweat list.", "uk": "{name} прибрано з вашого списку.", "de": "{name} aus deiner Liste entfernt."},
+    "sweat_added_you": {"en": "🤝 {name} added you to their sweat list!", "uk": "🤝 {name} додав(-ла) вас до свого списку!", "de": "🤝 {name} hat dich zu seiner Liste hinzugefügt!"},
+    "sweat_added_you_ask": {"en": "🤝 {name} added you to their sweat list!\n\nAdd {name} to your sweat list?", "uk": "🤝 {name} додав(-ла) вас до свого списку!\n\nДодати {name} до свого списку?", "de": "🤝 {name} hat dich zu seiner Liste hinzugefügt!\n\n{name} zu deiner Liste hinzufügen?"},
+    "sweat_added_back": {"en": "✓ Added {name} to your sweat list 🤝", "uk": "✓ {name} додано до вашого списку 🤝", "de": "✓ {name} zu deiner Liste hinzugefügt 🤝"},
+    "sweat_added_you_too": {"en": "🤝 {name} added you to their sweat list too!", "uk": "🤝 {name} теж додав(-ла) вас до свого списку!", "de": "🤝 {name} hat dich ebenfalls hinzugefügt!"},
+    # ── Milestone / monthly summary ──
+    "milestone": {"en": "🎉 Great job, {name}! You've already done {milestone} burpees this month!\nNext milestone: {next_m} 💪", "uk": "🎉 Чудова робота, {name}! Ви вже зробили {milestone} берпі цього місяця!\nНаступна ціль: {next_m} 💪", "de": "🎉 Super, {name}! Du hast diesen Monat schon {milestone} Burpees gemacht!\nNächstes Ziel: {next_m} 💪"},
+    "summary_header": {"en": "📅 {month} Summary, {name}!", "uk": "📅 Підсумок за {month}, {name}!", "de": "📅 {month}-Zusammenfassung, {name}!"},
+    "summary_workouts": {"en": "💪 Workouts: {count}  (consistency: {pct}%)", "uk": "💪 Тренувань: {count}  (регулярність: {pct}%)", "de": "💪 Workouts: {count}  (Konstanz: {pct}%)"},
+    "summary_total": {"en": "📊 Total reps: {total}  (avg {avg})", "uk": "📊 Усього повторень: {total}  (сер. {avg})", "de": "📊 Wiederholungen gesamt: {total}  (Ø {avg})"},
+    "summary_best": {"en": "🏆 Best day: {reps} reps on {day}", "uk": "🏆 Найкращий день: {reps} повторень {day}", "de": "🏆 Bester Tag: {reps} Wdh. am {day}"},
+    "summary_vs": {"en": "📈 vs {month}: {arrow} {pct}%  ({total} reps last month)", "uk": "📈 порівняно з {month}: {arrow} {pct}%  ({total} повторень торік. місяця)", "de": "📈 vs. {month}: {arrow} {pct}%  ({total} Wdh. letzten Monat)"},
+    "summary_streak": {"en": "🔥 Current streak: {streak} days — keep it going!", "uk": "🔥 Поточна серія: {streak} днів — так тримати!", "de": "🔥 Aktuelle Serie: {streak} Tage — weiter so!"},
+    "summary_milestones": {"en": "🏅 Milestones: {list}", "uk": "🏅 Досягнення: {list}", "de": "🏅 Meilensteine: {list}"},
+}
+
+
+# Localized main-keyboard button label → canonical slash command. Built once at
+# import; lets a tap on a translated reply-keyboard button route like a command.
+def _build_button_map() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for key, cmd in (("btn_sweat", "/sweat"), ("btn_radar", "/radar"),
+                     ("btn_pause", "/pause"), ("btn_info", "/info")):
+        for lang in _SUPPORTED_LANGS:
+            mapping[_STRINGS[key][lang]] = cmd
+    return mapping
+
+
+_BUTTON_TO_CMD = _build_button_map()
+
+# Localized full month names (index 1..12), for summaries.
+_MONTHS = {
+    "en": ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    "uk": ["", "січень", "лютий", "березень", "квітень", "травень", "червень", "липень", "серпень", "вересень", "жовтень", "листопад", "грудень"],
+    "de": ["", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"],
+}
+
+
+def _month_name(month_num: int, lang: str = "en") -> str:
+    return _MONTHS.get(lang, _MONTHS["en"])[month_num]
+
 
 def _build_token(name: str, secret: str | None) -> str:
     slug = name.lower().replace(" ", "-")
@@ -193,16 +437,17 @@ def _get_share_chats(cur, tg_id: int) -> list[tuple[int, str]]:
     return result
 
 
-def _share_keyboard(cur, tg_id: int) -> dict:
+def _share_keyboard(cur, tg_id: int, lang: str = "en") -> dict:
     stored = _get_share_set(cur, tg_id)
     has_all = "__all__" in stored
     others = _all_other_names(cur, tg_id)
+    anyone = _t("kb_anyone", lang)
     rows = []
-    rows.append([{"text": "✓ Anyone" if has_all else "Anyone", "callback_data": "share:__all__"}])
+    rows.append([{"text": ("✓ " if has_all else "") + anyone, "callback_data": "share:__all__"}])
     for p in others:
         label = f"✓ {p}" if (has_all or p in stored) else p
         rows.append([{"text": label, "callback_data": f"share:{p}"}])
-    rows.append([{"text": "Done", "callback_data": "share:done"}])
+    rows.append([{"text": _t("kb_done", lang), "callback_data": "share:done"}])
     return {"inline_keyboard": rows}
 
 
@@ -216,24 +461,25 @@ def _get_follow_set(cur, tg_id: int) -> set[str]:
     return {r["receive_participant"] for r in cur.fetchall()}
 
 
-_MAIN_KB = {
-    "keyboard": [
-        [{"text": "🤝 Sweat with"}, {"text": "📡 Radar"}],
-        [{"text": "⏸️ Pause"}, {"text": "ℹ️ Info"}],
-    ],
-    "resize_keyboard": True,
-    "is_persistent": True,
-}
+def _main_kb(lang: str = "en") -> dict:
+    return {
+        "keyboard": [
+            [{"text": _t("btn_sweat", lang)}, {"text": _t("btn_radar", lang)}],
+            [{"text": _t("btn_pause", lang)}, {"text": _t("btn_info", lang)}],
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True,
+    }
 
 
-def _pause_keyboard(is_paused: bool) -> dict:
+def _pause_keyboard(is_paused: bool, lang: str = "en") -> dict:
     rows = [
-        [{"text": "1 day",   "callback_data": "pause:1d"}],
-        [{"text": "1 week",  "callback_data": "pause:1w"}],
-        [{"text": "1 month", "callback_data": "pause:1m"}],
+        [{"text": _t("pause_1d", lang), "callback_data": "pause:1d"}],
+        [{"text": _t("pause_1w", lang), "callback_data": "pause:1w"}],
+        [{"text": _t("pause_1m", lang), "callback_data": "pause:1m"}],
     ]
     if is_paused:
-        rows.append([{"text": "▶️ Resume now", "callback_data": "pause:resume"}])
+        rows.append([{"text": _t("pause_resume", lang), "callback_data": "pause:resume"}])
     return {"inline_keyboard": rows}
 
 _REPS_RE = _re.compile(r"^(\d+)\s*(.*)", _re.DOTALL)
@@ -247,25 +493,32 @@ def _parse_reps(text: str) -> tuple[int, str] | None:
 
 
 _RADAR_FREQS = ["daily", "weekly", "monthly", "once", "never"]
-_RADAR_LABELS = {"daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "once": "Just once", "never": "Off"}
-_RADAR_PERIOD = {"daily": "every day", "weekly": "every week", "monthly": "every month"}
+_RADAR_LABEL_KEYS = {"daily": "radar_daily", "weekly": "radar_weekly", "monthly": "radar_monthly", "once": "radar_once", "never": "radar_off"}
+_RADAR_PERIOD_KEYS = {"daily": "radar_period_daily", "weekly": "radar_period_weekly", "monthly": "radar_period_monthly"}
 
-def _radar_keyboard(current: str, radar_send: bool | None = None) -> dict:
+
+def _radar_label(freq: str, lang: str = "en") -> str:
+    return _t(_RADAR_LABEL_KEYS.get(freq, "radar_off"), lang)
+
+
+def _radar_keyboard(current: str, lang: str = "en", radar_send: bool | None = None) -> dict:
     rows = []
     for freq in _RADAR_FREQS:
-        label = ("✓ " if freq == current else "") + _RADAR_LABELS[freq]
+        label = ("✓ " if freq == current else "") + _radar_label(freq, lang)
         rows.append([{"text": label, "callback_data": f"radar:{freq}"}])
     if radar_send is not None:
         rows.append([
-            {"text": ("✓ " if radar_send else "") + "📡 Share my videos: ON ✅", "callback_data": "radar_send_toggle:on"},
-            {"text": ("✓ " if not radar_send else "") + "📡 Share my videos: OFF 🚫", "callback_data": "radar_send_toggle:off"},
+            {"text": ("✓ " if radar_send else "") + _t("radar_share_on", lang), "callback_data": "radar_send_toggle:on"},
+            {"text": ("✓ " if not radar_send else "") + _t("radar_share_off", lang), "callback_data": "radar_send_toggle:off"},
         ])
     return {"inline_keyboard": rows}
 
-_RADAR_SEND_KB = {"inline_keyboard": [
-    [{"text": "✅ Yes, that's fine", "callback_data": "radar_send:yes"}],
-    [{"text": "🚫 No, keep my videos in my crew", "callback_data": "radar_send:no"}],
-]}
+
+def _radar_send_kb(lang: str = "en") -> dict:
+    return {"inline_keyboard": [
+        [{"text": _t("radar_send_yes", lang), "callback_data": "radar_send:yes"}],
+        [{"text": _t("radar_send_no", lang), "callback_data": "radar_send:no"}],
+    ]}
 
 def _radar_due(freq: str, last_received) -> bool:
     if freq == "never":
@@ -284,31 +537,32 @@ def _radar_due(freq: str, last_received) -> bool:
     return False
 
 
-def _sweat_manage_keyboard(name: str, muted_until=None) -> dict:
+def _sweat_manage_keyboard(name: str, lang: str = "en", muted_until=None) -> dict:
     rows = []
     if muted_until:
         until_str = muted_until.strftime("%b %d")
-        rows.append([{"text": f"▶️ Unmute (muted until {until_str})", "callback_data": f"sweat_manage:unmute:{name}"}])
+        rows.append([{"text": _t("sweat_unmute_btn", lang, until=until_str), "callback_data": f"sweat_manage:unmute:{name}"}])
     rows.append([
-        {"text": "🔕 Mute 1 day",   "callback_data": f"sweat_manage:mute_1d:{name}"},
-        {"text": "🔕 Mute 1 week",  "callback_data": f"sweat_manage:mute_1w:{name}"},
-        {"text": "🔕 Mute 1 month", "callback_data": f"sweat_manage:mute_1m:{name}"},
+        {"text": _t("sweat_mute_1d_btn", lang), "callback_data": f"sweat_manage:mute_1d:{name}"},
+        {"text": _t("sweat_mute_1w_btn", lang), "callback_data": f"sweat_manage:mute_1w:{name}"},
+        {"text": _t("sweat_mute_1m_btn", lang), "callback_data": f"sweat_manage:mute_1m:{name}"},
     ])
-    rows.append([{"text": "🗑 Remove from sweat list", "callback_data": f"sweat_manage:remove:{name}"}])
-    rows.append([{"text": "Cancel", "callback_data": "sweat_manage:cancel"}])
+    rows.append([{"text": _t("sweat_remove_btn", lang), "callback_data": f"sweat_manage:remove:{name}"}])
+    rows.append([{"text": _t("kb_cancel", lang), "callback_data": "sweat_manage:cancel"}])
     return {"inline_keyboard": rows}
 
 
-def _follow_keyboard(cur, tg_id: int) -> dict:
+def _follow_keyboard(cur, tg_id: int, lang: str = "en") -> dict:
     stored = _get_follow_set(cur, tg_id)
     has_all = "__all__" in stored
     others = _all_other_names(cur, tg_id)
+    anyone = _t("kb_anyone", lang)
     rows = []
-    rows.append([{"text": "✓ Anyone" if has_all else "Anyone", "callback_data": "follow:__all__"}])
+    rows.append([{"text": ("✓ " if has_all else "") + anyone, "callback_data": "follow:__all__"}])
     for p in others:
         label = f"✓ {p}" if (has_all or p in stored) else p
         rows.append([{"text": label, "callback_data": f"follow:{p}"}])
-    rows.append([{"text": "Done", "callback_data": "follow:done"}])
+    rows.append([{"text": _t("kb_done", lang), "callback_data": "follow:done"}])
     return {"inline_keyboard": rows}
 
 
@@ -338,22 +592,25 @@ def _log_entry(cur, participant: str, reps: int, comment: str | None = None) -> 
 
 
 def _do_forward(cur, conn, tg_id: int, participant: str, from_chat_id: int, message_id: int | None, reps: int, comment: str | None = None) -> None:
+    sender_lang = _user_lang(cur, tg_id)
     targets = _get_share_chats(cur, tg_id)
     conn.commit()
     for to_chat_id, name in targets:
         if message_id:
             _forward(from_chat_id, message_id, to_chat_id)
-        crew_msg = f"{participant}: {reps} reps"
+        recip_lang = _norm_lang(_lang_for_name(cur, name))
+        crew_msg = f"{participant}: {_t('reps_short', recip_lang, reps=reps)}"
         if comment:
             crew_msg += f"\n{comment}"
         _send(to_chat_id, crew_msg)
-    confirm = f"✓ {reps} reps" + (f" ({comment})" if comment else "")
+    confirm = (_t("confirm_reps_comment", sender_lang, reps=reps, comment=comment)
+               if comment else _t("confirm_reps", sender_lang, reps=reps))
     if targets:
         forwarded_to = ", ".join(n for _, n in targets)
-        _send(from_chat_id, f"{confirm} → forwarded to {forwarded_to}", reply_markup=_MAIN_KB)
+        _send(from_chat_id, _t("forwarded_to", sender_lang, confirm=confirm, names=forwarded_to), reply_markup=_main_kb(sender_lang))
         _log(f"💪 Video logged\n👤 {participant}: {reps} reps\n📤 → {forwarded_to}")
     else:
-        _send(from_chat_id, f"{confirm} logged", reply_markup=_MAIN_KB)
+        _send(from_chat_id, _t("confirm_logged", sender_lang, confirm=confirm), reply_markup=_main_kb(sender_lang))
         _log(f"💪 Video logged\n👤 {participant}: {reps} reps\n📤 → nobody")
 
     # ── Radar: queue this video as a candidate (only if user opted in to sending) ──
@@ -515,10 +772,8 @@ def _check_milestone_for_user(cur, conn, tg_id: int, participant: str) -> None:
 
     milestone = max(new_milestones)
     next_m = milestone + step
-    text = (
-        f"🎉 Great job, {participant}! You've already done {milestone} burpees this month!\n"
-        f"Next milestone: {next_m} 💪"
-    )
+    lang = _user_lang(cur, tg_id)
+    text = _t("milestone", lang, name=participant, milestone=milestone, next_m=next_m)
     _tg("sendMessage", {"chat_id": tg_id, "text": text})
     _log(f"🏅 Milestone {milestone} sent to {participant}")
 
@@ -557,7 +812,6 @@ def send_monthly_summaries(conn) -> None:
 
     prev_month_end = today - timedelta(days=1)
     prev_month_start = prev_month_end.replace(day=1)
-    month_label = prev_month_start.strftime("%B")
 
     # Dedup — only send once per month
     job_key = f"monthly_summary_{prev_month_start.strftime('%Y-%m')}"
@@ -572,7 +826,7 @@ def send_monthly_summaries(conn) -> None:
 
     # Previous-month entries for all users who logged at least once
     cur.execute(
-        "SELECT u.telegram_user_id, u.participant_name, u.chat_id "
+        "SELECT u.telegram_user_id, u.participant_name, u.chat_id, u.language_code "
         "FROM telegram_bot_users u "
         "WHERE EXISTS (SELECT 1 FROM burpee_entries e "
         "              WHERE e.participant = u.participant_name "
@@ -587,6 +841,7 @@ def send_monthly_summaries(conn) -> None:
         tg_id = user["telegram_user_id"]
         name = user["participant_name"]
         chat_id = user["chat_id"]
+        lang = _norm_lang(user["language_code"])
 
         cur.execute(
             "SELECT entry_date, reps FROM burpee_entries "
@@ -627,18 +882,19 @@ def send_monthly_summaries(conn) -> None:
         milestones = [r["milestone_reps"] for r in cur.fetchall()]
 
         # Build message
-        lines = [f"📅 {month_label} Summary, {name}!\n"]
-        lines.append(f"💪 Workouts: {count}  (consistency: {consistency_pct}%)")
-        lines.append(f"📊 Total reps: {total}  (avg {round(avg)})")
-        lines.append(f"🏆 Best day: {best['reps']} reps on {best['entry_date'].strftime('%b %d')}")
+        best_day = f"{_month_name(best['entry_date'].month, lang)} {best['entry_date'].day}"
+        lines = [_t("summary_header", lang, month=_month_name(prev_month_start.month, lang), name=name) + "\n"]
+        lines.append(_t("summary_workouts", lang, count=count, pct=consistency_pct))
+        lines.append(_t("summary_total", lang, total=total, avg=round(avg)))
+        lines.append(_t("summary_best", lang, reps=best["reps"], day=best_day))
         if prev_total > 0:
             delta = round((total - prev_total) / prev_total * 100)
             arrow = "↑" if delta >= 0 else "↓"
-            lines.append(f"📈 vs {pprev_start.strftime('%B')}: {arrow} {abs(delta)}%  ({prev_total} reps last month)")
+            lines.append(_t("summary_vs", lang, month=_month_name(pprev_start.month, lang), arrow=arrow, pct=abs(delta), total=prev_total))
         if streak > 0:
-            lines.append(f"🔥 Current streak: {streak} days — keep it going!")
+            lines.append(_t("summary_streak", lang, streak=streak))
         if milestones:
-            lines.append(f"🏅 Milestones: {', '.join(str(m) for m in milestones)}")
+            lines.append(_t("summary_milestones", lang, list=", ".join(str(m) for m in milestones)))
 
         _tg("sendMessage", {"chat_id": chat_id, "text": "\n".join(lines)})
         _log(f"📅 Monthly summary sent to {name}")
@@ -667,7 +923,7 @@ def _store_or_bind_video(cur, conn, tg_id: int, participant: str, chat_id: int, 
             (tg_id, chat_id, message_id),
         )
         conn.commit()
-        _send(chat_id, f"{_greet(cur, tg_id, participant)}how many reps?")
+        _send(chat_id, _t("how_many_reps", _user_lang(cur, tg_id), greet=_greet(cur, tg_id, participant)))
 
 
 def process_radar_candidates(conn) -> None:
@@ -688,7 +944,7 @@ def process_radar_candidates(conn) -> None:
 
     if candidates:
         cur.execute(
-            "SELECT telegram_user_id, chat_id, participant_name, radar_freq, radar_last_received, paused_until "
+            "SELECT telegram_user_id, chat_id, participant_name, radar_freq, radar_last_received, paused_until, language_code "
             "FROM telegram_bot_users WHERE radar_freq != 'never'",
         )
         recipients = cur.fetchall()
@@ -727,28 +983,19 @@ def process_radar_candidates(conn) -> None:
             if not best:
                 continue
 
+            rlang = _norm_lang(recipient.get("language_code"))
             is_first = recipient["radar_last_received"] is None
             if is_first:
                 if freq == "once":
-                    explanation = (
-                        f"📡 {best['participant_name']}: {best['reps']} reps\n"
-                        "You're getting this because your radar is on — a burpee from outside your crew. "
-                        "According to your radar settings you'll get 1 burpee bubble, just once. "
-                        "Use /radar to adjust frequency."
-                    )
+                    explanation = _t("radar_recv_first_once", rlang,
+                                     name=best["participant_name"], reps=best["reps"])
                 else:
-                    period = _RADAR_PERIOD.get(freq, freq)
-                    explanation = (
-                        f"📡 {best['participant_name']}: {best['reps']} reps\n"
-                        "You're getting this because your radar is on — a burpee from outside your crew. "
-                        f"According to your radar settings you will get 1 random burpee bubble {period}. "
-                        "Use /radar to adjust frequency."
-                    )
+                    period = _t(_RADAR_PERIOD_KEYS.get(freq, "radar_period_daily"), rlang)
+                    explanation = _t("radar_recv_first_period", rlang,
+                                     name=best["participant_name"], reps=best["reps"], period=period)
             else:
-                explanation = (
-                    f"📡 {best['participant_name']}: {best['reps']} reps\n"
-                    "Your Radar detected some burpee activity from someone outside your crew."
-                )
+                explanation = _t("radar_recv_repeat", rlang,
+                                 name=best["participant_name"], reps=best["reps"])
 
             _send(recipient["chat_id"], explanation)
             if best["message_id"]:
@@ -791,6 +1038,7 @@ def handle_webhook(body: dict, conn) -> None:
         chat_id = cq["message"]["chat"]["id"]
         msg_id = cq["message"]["message_id"]
         data = cq["data"]
+        lang = _norm_lang(cq["from"].get("language_code"))
         participant = _lookup_user(cur, tg_id)
         if not participant:
             return
@@ -801,9 +1049,9 @@ def handle_webhook(body: dict, conn) -> None:
             if target == "done":
                 stored = _get_share_set(cur, tg_id)
                 has_all = "__all__" in stored
-                summary = "anyone" if has_all else (", ".join(sorted(stored - {"__all__"})) or "nobody")
+                summary = _t("summary_anyone", lang) if has_all else (", ".join(sorted(stored - {"__all__"})) or _t("summary_nobody", lang))
                 _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-                _send(chat_id, f"{_greet(cur, tg_id, participant)}sharing to: {summary}\n\nNow send your burpee video 💪", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("sweat_summary", lang, greet=_greet(cur, tg_id, participant), summary=summary), reply_markup=_main_kb(lang))
                 return
             if target == "__all__":
                 stored = _get_share_set(cur, tg_id)
@@ -826,7 +1074,7 @@ def handle_webhook(body: dict, conn) -> None:
                 else:
                     cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, target))
             conn.commit()
-            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _share_keyboard(cur, tg_id)})
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _share_keyboard(cur, tg_id, lang)})
             return
 
         # Follow callbacks
@@ -835,9 +1083,9 @@ def handle_webhook(body: dict, conn) -> None:
             if target == "done":
                 stored = _get_follow_set(cur, tg_id)
                 has_all = "__all__" in stored
-                summary = "anyone" if has_all else (", ".join(sorted(stored - {"__all__"})) or "nobody")
+                summary = _t("summary_anyone", lang) if has_all else (", ".join(sorted(stored - {"__all__"})) or _t("summary_nobody", lang))
                 _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-                _send(chat_id, f"{_greet(cur, tg_id, participant)}following: {summary}", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("follow_summary", lang, greet=_greet(cur, tg_id, participant), summary=summary), reply_markup=_main_kb(lang))
                 return
             if target == "__all__":
                 stored = _get_follow_set(cur, tg_id)
@@ -860,7 +1108,7 @@ def handle_webhook(body: dict, conn) -> None:
                 else:
                     cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, target))
             conn.commit()
-            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _follow_keyboard(cur, tg_id)})
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _follow_keyboard(cur, tg_id, lang)})
             return
 
         # Radar frequency callbacks
@@ -885,19 +1133,17 @@ def handle_webhook(body: dict, conn) -> None:
             conn.commit()
             # Show send toggle in keyboard only when the user has already been asked
             show_toggle = not setup_mode and not needs_send_question
-            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(freq, radar_send=radar_send if show_toggle else None)})
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(freq, lang, radar_send=radar_send if show_toggle else None)})
             if setup_mode or needs_send_question:
                 # Next: ask about sending
-                _send(chat_id,
-                      "📡 Radar works both ways — you can not only receive random burpees, but your videos can appear in others' Radar as well. Is that okay?\n\nYou can change this setting later via 📡 Radar.",
-                      reply_markup=_RADAR_SEND_KB)
+                _send(chat_id, _t("radar_ask_send", lang), reply_markup=_radar_send_kb(lang))
             else:
-                label = _RADAR_LABELS[freq]
+                label = _radar_label(freq, lang)
                 if freq == "never":
-                    _send(chat_id, "📡 Radar off.", reply_markup=_MAIN_KB)
+                    _send(chat_id, _t("radar_off_msg", lang), reply_markup=_main_kb(lang))
                 else:
-                    _send(chat_id, f"📡 Radar set to {label.lower()} — you'll receive a random burpee from outside your sweat list.", reply_markup=_MAIN_KB)
-                _log(f"📡 Radar set\n👤 {participant} → {label}")
+                    _send(chat_id, _t("radar_set_msg", lang, label=label.lower()), reply_markup=_main_kb(lang))
+                _log(f"📡 Radar set\n👤 {participant} → {_radar_label(freq, 'en')}")
             return
 
         # Radar send toggle (ON/OFF buttons in the radar keyboard)
@@ -919,7 +1165,7 @@ def handle_webhook(body: dict, conn) -> None:
                 (new_send, tg_id),
             )
             conn.commit()
-            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(current_freq, radar_send=new_send)})
+            _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": _radar_keyboard(current_freq, lang, radar_send=new_send)})
             _log(f"📡 Radar send toggled\n👤 {participant} → {'ON' if new_send else 'OFF'}")
             return
 
@@ -934,9 +1180,9 @@ def handle_webhook(body: dict, conn) -> None:
             conn.commit()
             _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
             if radar_send:
-                _send(chat_id, "✅ Got it — your videos can be shared via Radar.", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("radar_send_ok_yes", lang), reply_markup=_main_kb(lang))
             else:
-                _send(chat_id, "🔒 Got it — your videos stay within your crew.", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("radar_send_ok_no", lang), reply_markup=_main_kb(lang))
             _log(f"📡 Radar send set\n👤 {participant} → {'yes' if radar_send else 'no'}")
             return
 
@@ -948,7 +1194,7 @@ def handle_webhook(body: dict, conn) -> None:
             if duration == "resume":
                 cur.execute("UPDATE telegram_bot_users SET paused_until = NULL WHERE telegram_user_id = %s", (tg_id,))
                 conn.commit()
-                _send(chat_id, "▶️ Notifications resumed.", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("pause_resumed", lang), reply_markup=_main_kb(lang))
                 _log(f"▶️ Pause resumed\n👤 {participant}")
             else:
                 if duration == "1d":
@@ -965,7 +1211,7 @@ def handle_webhook(body: dict, conn) -> None:
                 cur.execute("UPDATE telegram_bot_users SET paused_until = %s WHERE telegram_user_id = %s", (until, tg_id))
                 conn.commit()
                 until_str = until.strftime("%b %d")
-                _send(chat_id, f"⏸️ Paused until {until_str} — no sweat forwards or radar until then.", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("pause_set", lang, until=until_str), reply_markup=_main_kb(lang))
                 _log(f"⏸️ Paused\n👤 {participant} → {label}")
             return
 
@@ -975,9 +1221,10 @@ def handle_webhook(body: dict, conn) -> None:
             parts = data.split(":", 2)
             if parts[1] == "yes" and len(parts) == 3:
                 target_name = parts[2]
-                cur.execute("SELECT chat_id, telegram_user_id FROM telegram_bot_users WHERE participant_name = %s", (target_name,))
+                cur.execute("SELECT chat_id, telegram_user_id, language_code FROM telegram_bot_users WHERE participant_name = %s", (target_name,))
                 target_row = cur.fetchone()
                 if target_row:
+                    tlang = _norm_lang(target_row["language_code"])
                     cur.execute(
                         "SELECT 1 FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s "
                         "UNION "
@@ -986,13 +1233,13 @@ def handle_webhook(body: dict, conn) -> None:
                     )
                     already_connected = cur.fetchone() is not None
                     if already_connected:
-                        _send(target_row["chat_id"], f"🤝 {participant} added you to their sweat list!")
+                        _send(target_row["chat_id"], _t("sweat_added_you", tlang, name=participant))
                     else:
                         _send(target_row["chat_id"],
-                            f"🤝 {participant} added you to their sweat list!\n\nAdd {participant} to your sweat list?",
+                            _t("sweat_added_you_ask", tlang, name=participant),
                             reply_markup={"inline_keyboard": [[
-                                {"text": "Yes", "callback_data": f"sweat_add_back:yes:{participant}"},
-                                {"text": "No",  "callback_data": "sweat_add_back:no"},
+                                {"text": _t("kb_yes", tlang), "callback_data": f"sweat_add_back:yes:{participant}"},
+                                {"text": _t("kb_no", tlang),  "callback_data": "sweat_add_back:no"},
                             ]]},
                         )
             return
@@ -1004,7 +1251,7 @@ def handle_webhook(body: dict, conn) -> None:
             name = parts[2] if len(parts) > 2 else ""
             _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
             if action == "cancel":
-                _send(chat_id, "Cancelled.", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("cancelled", lang), reply_markup=_main_kb(lang))
                 return
             now = datetime.now(timezone.utc)
             if action == "unmute":
@@ -1013,7 +1260,7 @@ def handle_webhook(body: dict, conn) -> None:
                     (tg_id, name),
                 )
                 conn.commit()
-                _send(chat_id, f"▶️ {name} unmuted — you'll receive their updates again.", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("sweat_unmuted", lang, name=name), reply_markup=_main_kb(lang))
                 _log(f"🔔 Sweat unmuted\n👤 {participant} unmuted {name}")
             elif action in ("mute_1d", "mute_1w", "mute_1m"):
                 delta, label = {"mute_1d": (timedelta(days=1), "1 day"), "mute_1w": (timedelta(weeks=1), "1 week"), "mute_1m": (timedelta(days=30), "1 month")}[action]
@@ -1024,14 +1271,14 @@ def handle_webhook(body: dict, conn) -> None:
                     (tg_id, name, until),
                 )
                 conn.commit()
-                _send(chat_id, f"🔕 {name} muted until {until.strftime('%b %d')} — still in your sweat list.", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("sweat_muted", lang, name=name, until=until.strftime('%b %d')), reply_markup=_main_kb(lang))
                 _log(f"🔕 Sweat muted\n👤 {participant} muted {name} for {label}")
             elif action == "remove":
                 cur.execute("DELETE FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant = %s", (tg_id, name))
                 cur.execute("DELETE FROM telegram_bot_receive WHERE telegram_user_id = %s AND receive_participant = %s", (tg_id, name))
                 cur.execute("DELETE FROM sweat_mute WHERE telegram_user_id = %s AND muted_participant = %s", (tg_id, name))
                 conn.commit()
-                _send(chat_id, f"Removed {name} from your sweat list.", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("sweat_removed", lang, name=name), reply_markup=_main_kb(lang))
                 _log(f"🤝 Sweat removed\n👤 {participant} ✗ {name}")
             return
 
@@ -1044,11 +1291,11 @@ def handle_webhook(body: dict, conn) -> None:
                 cur.execute("INSERT INTO telegram_bot_notify (telegram_user_id, notify_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, adder_name))
                 cur.execute("INSERT INTO telegram_bot_receive (telegram_user_id, receive_participant) VALUES (%s, %s) ON CONFLICT DO NOTHING", (tg_id, adder_name))
                 conn.commit()
-                _send(chat_id, f"✓ Added {adder_name} to your sweat list 🤝", reply_markup=_MAIN_KB)
-                cur.execute("SELECT chat_id FROM telegram_bot_users WHERE participant_name = %s", (adder_name,))
+                _send(chat_id, _t("sweat_added_back", lang, name=adder_name), reply_markup=_main_kb(lang))
+                cur.execute("SELECT chat_id, language_code FROM telegram_bot_users WHERE participant_name = %s", (adder_name,))
                 adder_row = cur.fetchone()
                 if adder_row:
-                    _send(adder_row["chat_id"], f"🤝 {participant} added you to their sweat list too!")
+                    _send(adder_row["chat_id"], _t("sweat_added_you_too", _norm_lang(adder_row["language_code"]), name=participant))
                 _log(f"🤝 Sweat add-back\n👤 {participant} → {adder_name}")
             return
 
@@ -1061,15 +1308,19 @@ def handle_webhook(body: dict, conn) -> None:
 
     tg_id: int = msg["from"]["id"]
     chat_id: int = msg["chat"]["id"]
-    lang: str | None = msg["from"].get("language_code")
+    raw_lang: str | None = msg["from"].get("language_code")
+    lang: str = _norm_lang(raw_lang)
     text: str = msg.get("text", "").strip()
 
     # Persist language_code and chat_id so they stay current
     cur.execute(
         "UPDATE telegram_bot_users SET language_code = %s, chat_id = %s WHERE telegram_user_id = %s",
-        (lang, chat_id, tg_id),
+        (raw_lang, chat_id, tg_id),
     )
 
+    # Localized reply-keyboard button tap → canonical slash command
+    if text in _BUTTON_TO_CMD:
+        text = _BUTTON_TO_CMD[text]
     # Allow plain-text command names (e.g. "pause" → "/pause")
     if text.lower() in _COMMAND_ALIASES:
         text = "/" + text.lower()
@@ -1095,7 +1346,7 @@ def handle_webhook(body: dict, conn) -> None:
                 _log_entry(cur, participant_e, _reps_e, _comment_e)
                 conn.commit()
                 _log(f"✏️ Reps updated (edit)\n👤 {participant_e}: {_reps_e} reps")
-                _send(chat_id, f"✓ updated to {_reps_e} reps", reply_markup=_MAIN_KB)
+                _send(chat_id, _t("reps_updated", lang, reps=_reps_e), reply_markup=_main_kb(lang))
         return
 
     # ── /broadcast (admin only) ──────────────────────────────────────────────
@@ -1121,26 +1372,9 @@ def handle_webhook(body: dict, conn) -> None:
         row = cur.fetchone()
         token_val = row["token"] if row and row["token"] else None
         info_name = row["participant_name"] if row and row["participant_name"] else None
-        link_line = "\nYour app link:\nhttps://phase-app-yf5x.vercel.app/?token=" + token_val + "\n" if token_val else "\n(register first with /start)\n"
+        link_line = _t("app_link_line", lang, token=token_val) if token_val else _t("app_link_none", lang)
         _log(f"ℹ️ Info viewed\n👤 {info_name or f'unregistered (tg:{tg_id})'}")
-        _send(chat_id,
-            "👋 Welcome to Бурчик Challenge!\n\n"
-            "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
-            "How it works:\n"
-            "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
-            "• Then type your rep count. Optional: add a comment after a comma — it shows up in the app: 25, tough day\n"
-            "• Your workout is logged and forwarded to your crew\n\n"
-            f"{link_line}\n"
-            "Available commands:\n\n"
-            "/start — register your name\n"
-            "/rename — change your name\n"
-            "/secret — update your app link secret\n"
-            "/sweat — find who you share and follow\n"
-            "/radar — receive and send random burpees from outside your sweat list\n"
-            "/pause — pause all notifications for 1 day, 1 week, or 1 month\n"
-            "/info — show this list",
-            reply_markup=_MAIN_KB,
-        )
+        _send(chat_id, _t("info_body", lang, link_line=link_line), reply_markup=_main_kb(lang))
         return
 
     # ── /start ───────────────────────────────────────────────────────────────
@@ -1151,20 +1385,11 @@ def handle_webhook(body: dict, conn) -> None:
             row = cur.fetchone()
             token_val = row["token"] if row and row["token"] else None
             app_url = f"https://phase-app-yf5x.vercel.app/?token={token_val}" if token_val else "(no link yet)"
-            _send(chat_id, f"You're already registered as {existing}.\n\nYour app link:\n{app_url}", reply_markup=_MAIN_KB)
+            _send(chat_id, _t("already_registered", lang, name=existing, url=app_url), reply_markup=_main_kb(lang))
             return
         _set_state(cur, tg_id, "awaiting_name")
         conn.commit()
-        _send(chat_id,
-            "👋 Welcome to Бурчик Challenge!\n\n"
-            "3 minutes of AMRAP burpees every day — tracked, shared, and competed.\n\n"
-            "How it works:\n"
-            "• Record the first minute of your 3-minute burpee session as a round video bubble and send it here\n"
-            "• Then type your rep count. Optional: add a comment after a comma — it shows up in the app: 25, tough day\n"
-            "• Your workout is logged and forwarded to your crew\n\n"
-            "Use /sweat to find who you share and follow.\n\n"
-            "First, what would you like to be called?"
-        )
+        _send(chat_id, _t("start_body", lang))
         return
 
     participant = _lookup_user(cur, tg_id)
@@ -1173,26 +1398,25 @@ def handle_webhook(body: dict, conn) -> None:
     # ── /rename ──────────────────────────────────────────────────────────────
     if text.startswith("/rename") or text == "✏️ Rename":
         if not participant:
-            _send(chat_id, "Please register first — send /start")
+            _send(chat_id, _t("register_first", lang))
             return
         _set_state(cur, tg_id, "awaiting_rename")
         conn.commit()
-        _send(chat_id, f"{_greet(cur, tg_id, participant)}what would you like to change your name to?")
+        _send(chat_id, _t("ask_rename", lang, greet=_greet(cur, tg_id, participant)))
         return
 
     # ── /secret ──────────────────────────────────────────────────────────────
     if text.startswith("/secret") or text == "🔑 Secret":
         if not participant:
-            _send(chat_id, "Please register first — send /start")
+            _send(chat_id, _t("register_first", lang))
             return
         _set_state(cur, tg_id, "awaiting_secret_update")
         conn.commit()
-        _send(chat_id, "Name a fictional character you love:")
+        _send(chat_id, _t("ask_secret", lang))
         return
 
     # Any command or main keyboard button cancels a pending state
-    _KB_BUTTONS = {"🤝 Sweat with", "📡 Radar", "⏸️ Pause", "ℹ️ Info"}
-    if (text.startswith("/") or text in _KB_BUTTONS) and state:
+    if text.startswith("/") and state:
         _clear_state(cur, tg_id)
         conn.commit()
         state = None
@@ -1201,14 +1425,14 @@ def handle_webhook(body: dict, conn) -> None:
     if state in ("awaiting_name", "awaiting_rename") and text:
         name = text.strip()
         if len(name) > 32 or not name.replace(" ", "").isalpha():
-            _send(chat_id, "Please use letters only, up to 32 characters.")
+            _send(chat_id, _t("letters_32", lang))
             return
         cur.execute(
             "SELECT 1 FROM telegram_bot_users WHERE LOWER(participant_name) = LOWER(%s) AND telegram_user_id != %s",
             (name, tg_id),
         )
         if cur.fetchone():
-            _send(chat_id, f'"{name}" is already taken. Please choose a different name.')
+            _send(chat_id, _t("name_taken", lang, name=name))
             return
         old_name = participant
         if state == "awaiting_rename":
@@ -1236,12 +1460,12 @@ def handle_webhook(body: dict, conn) -> None:
             conn.commit()
             app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
             _log(f"✏️ Renamed\n👤 {old_name} → {name}\n🔑 {token}")
-            _send(chat_id, f"Done! Your name is now {name}.\n\nUpdated app link:\n{app_url}", reply_markup=_MAIN_KB)
+            _send(chat_id, _t("renamed_done", lang, name=name, url=app_url), reply_markup=_main_kb(lang))
         else:
             # New registration — store name in state, ask for secret next
             _set_state(cur, tg_id, f"awaiting_secret:{name}")
             conn.commit()
-            _send(chat_id, "Name a fictional character you love:")
+            _send(chat_id, _t("ask_secret", lang))
         return
 
     # ── Awaiting secret (new registration) ───────────────────────────────────
@@ -1249,7 +1473,7 @@ def handle_webhook(body: dict, conn) -> None:
         name = state[len("awaiting_secret:"):]
         secret = text.strip()
         if len(secret) > 64 or not secret.replace(" ", "").replace("'", "").replace("-", "").isalpha():
-            _send(chat_id, "Letters only please (up to 64 characters).")
+            _send(chat_id, _t("letters_64", lang))
             return
         token = _build_token(name, secret)
         cur.execute(
@@ -1264,25 +1488,18 @@ def handle_webhook(body: dict, conn) -> None:
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
         _log(f"📋 New registration\n👤 {name} (tg:{tg_id})\n🔑 {token}")
-        _send(chat_id,
-            f"Welcome, {name}! 👋 Your app link:\n{app_url}\n\n"
-            "Next: add your crew via 🤝 Sweat with.\n"
-            "They'll get every video you log — and you'll get theirs.",
-            reply_markup=_MAIN_KB)
+        _send(chat_id, _t("welcome_registered", lang, name=name, url=app_url), reply_markup=_main_kb(lang))
         # Kick off radar setup
         _set_state(cur, tg_id, "awaiting_radar_freq_setup")
         conn.commit()
-        _send(chat_id,
-            "📡 Radar works differently — it sends you one random burpee from someone outside your crew. How often?",
-            reply_markup=_radar_keyboard("never"),
-        )
+        _send(chat_id, _t("radar_setup_freq", lang), reply_markup=_radar_keyboard("never", lang))
         return
 
     # ── Awaiting secret update (existing user via /secret) ───────────────────
     if state == "awaiting_secret_update" and text:
         secret = text.strip()
         if len(secret) > 64 or not secret.replace(" ", "").replace("'", "").replace("-", "").isalpha():
-            _send(chat_id, "Letters only please (up to 64 characters).")
+            _send(chat_id, _t("letters_64", lang))
             return
         token = _build_token(participant, secret)
         cur.execute(
@@ -1293,13 +1510,13 @@ def handle_webhook(body: dict, conn) -> None:
         conn.commit()
         app_url = f"https://phase-app-yf5x.vercel.app/?token={token}"
         _log(f"🔑 Secret updated\n👤 {participant}\n🔗 {token}")
-        _send(chat_id, f"Done! Your new app link:\n{app_url}", reply_markup=_MAIN_KB)
+        _send(chat_id, _t("secret_done", lang, url=app_url), reply_markup=_main_kb(lang))
         return
 
     # ── /radar ───────────────────────────────────────────────────────────────
     if text.startswith("/radar") or text == "📡 Radar":
         if not participant:
-            _send(chat_id, "Please register first — send /start")
+            _send(chat_id, _t("register_first", lang))
             return
         cur.execute(
             "SELECT radar_freq, radar_send, radar_asked FROM telegram_bot_users WHERE telegram_user_id = %s",
@@ -1310,18 +1527,14 @@ def handle_webhook(body: dict, conn) -> None:
         radar_send = row["radar_send"] if row else False
         radar_asked = row["radar_asked"] if row else False
         # Show send toggle only for users who have already answered the send question
-        kb = _radar_keyboard(current, radar_send=radar_send if radar_asked else None)
-        _send(chat_id,
-            f"📡 Radar — receive random burpees & share yours with the world outside your crew.\n\n"
-            f"Receive: {_RADAR_LABELS.get(current, 'Off')}\n\nHow often?",
-            reply_markup=kb,
-        )
+        kb = _radar_keyboard(current, lang, radar_send=radar_send if radar_asked else None)
+        _send(chat_id, _t("radar_menu", lang, current=_radar_label(current, lang)), reply_markup=kb)
         return
 
     # ── /pause ───────────────────────────────────────────────────────────────
     if text.startswith("/pause") or text == "⏸️ Pause":
         if not participant:
-            _send(chat_id, "Please register first — send /start")
+            _send(chat_id, _t("register_first", lang))
             return
         _log(f"⏸️ Pause menu opened\n👤 {participant}")
         cur.execute("SELECT paused_until FROM telegram_bot_users WHERE telegram_user_id = %s", (tg_id,))
@@ -1331,21 +1544,15 @@ def handle_webhook(body: dict, conn) -> None:
         is_paused = bool(paused_until and paused_until > now)
         if is_paused:
             until_str = paused_until.strftime("%b %d, %H:%M")
-            _send(chat_id,
-                f"⏸️ Paused until {until_str} UTC.\n\nExtend or resume:",
-                reply_markup=_pause_keyboard(True),
-            )
+            _send(chat_id, _t("pause_menu_active", lang, until=until_str), reply_markup=_pause_keyboard(True, lang))
         else:
-            _send(chat_id,
-                "⏸️ Pause notifications — no sweat forwards or radar while paused.\n\nPause for:",
-                reply_markup=_pause_keyboard(False),
-            )
+            _send(chat_id, _t("pause_menu_inactive", lang), reply_markup=_pause_keyboard(False, lang))
         return
 
     # ── /sweat ───────────────────────────────────────────────────────────────
     if text.startswith("/sweat") or text == "🤝 Sweat with":
         if not participant:
-            _send(chat_id, "Please register first — send /start")
+            _send(chat_id, _t("register_first", lang))
             return
         cur.execute(
             "SELECT notify_participant AS name FROM telegram_bot_notify WHERE telegram_user_id = %s AND notify_participant != '__all__' "
@@ -1362,15 +1569,10 @@ def handle_webhook(body: dict, conn) -> None:
             muted_set = {r["muted_participant"] for r in cur.fetchall()}
             partner_list = ", ".join(f"{p} 🔕" if p in muted_set else p for p in partners)
         else:
-            partner_list = "nobody yet"
+            partner_list = _t("sweat_nobody", lang)
         _set_state(cur, tg_id, "awaiting_sweat_name")
         conn.commit()
-        _send(chat_id,
-            f"🤝 Your sweat crew gets every video you log — and you get theirs.\n"
-            f"Radar is for strangers. Sweat is for your people.\n\n"
-            f"Sweating with: {partner_list}\n\n"
-            "Type a name to add, mute, or remove:"
-        )
+        _send(chat_id, _t("sweat_menu", lang, partners=partner_list))
         return
 
     # ── Awaiting sweat partner name ───────────────────────────────────────────
@@ -1390,7 +1592,7 @@ def handle_webhook(body: dict, conn) -> None:
         row = cur.fetchone()
         if not row:
             _log(f"🔍 Sweat name not found\n👤 {participant} searched: {name}")
-            _send(chat_id, f'No user named "{name}" found. Try again or send /sweat to see current list.')
+            _send(chat_id, _t("sweat_name_not_found", lang, name=name))
             return
         matched_name = row["participant_name"]
         cur.execute(
@@ -1409,10 +1611,10 @@ def handle_webhook(body: dict, conn) -> None:
             muted_until = mute_row["muted_until"] if mute_row else None
             _clear_state(cur, tg_id)
             conn.commit()
-            status = f" (muted until {muted_until.strftime('%b %d')})" if muted_until else ""
+            status = _t("sweat_already_muted_until", lang, until=muted_until.strftime('%b %d')) if muted_until else ""
             _send(chat_id,
-                f"{matched_name} is in your sweat list{status}. What would you like to do?",
-                reply_markup=_sweat_manage_keyboard(matched_name, muted_until),
+                _t("sweat_already_in_list", lang, name=matched_name, status=status),
+                reply_markup=_sweat_manage_keyboard(matched_name, lang, muted_until),
             )
             return
         else:
@@ -1422,10 +1624,10 @@ def handle_webhook(body: dict, conn) -> None:
             _clear_state(cur, tg_id)
             conn.commit()
             _send(chat_id,
-                f"Added {matched_name} to your sweat list 🤝\n\nNotify {matched_name}?",
+                _t("sweat_added_notify", lang, name=matched_name),
                 reply_markup={"inline_keyboard": [
-                    [{"text": "Yes", "callback_data": f"sweat_notify:yes:{matched_name}"},
-                     {"text": "No", "callback_data": "sweat_notify:no"}]
+                    [{"text": _t("kb_yes", lang), "callback_data": f"sweat_notify:yes:{matched_name}"},
+                     {"text": _t("kb_no", lang), "callback_data": "sweat_notify:no"}]
                 ]},
             )
             return
@@ -1438,10 +1640,7 @@ def handle_webhook(body: dict, conn) -> None:
         if row and not row["radar_asked"]:
             _set_state(cur, tg_id, "awaiting_radar_freq_setup")
             conn.commit()
-            _send(chat_id,
-                "📡 Before we continue — Radar can send you a random burpee from outside your crew. How often?",
-                reply_markup=_radar_keyboard("never"),
-            )
+            _send(chat_id, _t("radar_nudge_freq", lang), reply_markup=_radar_keyboard("never", lang))
             return
 
     # ── Plain number (+ optional comment) → reps for pending video or bare log ─
@@ -1470,7 +1669,7 @@ def handle_webhook(body: dict, conn) -> None:
             )
             conn.commit()
             _log(f"💪 Reps logged (no video)\n👤 {participant}: {reps} reps")
-            _send(chat_id, f"✓ {reps} reps logged", reply_markup=_MAIN_KB)
+            _send(chat_id, _t("reps_logged", lang, reps=reps), reply_markup=_main_kb(lang))
         return
 
     has_video = "video" in msg
@@ -1481,11 +1680,11 @@ def handle_webhook(body: dict, conn) -> None:
         if text:
             name_label = participant or f"unregistered (tg:{tg_id})"
             _log(f"❓ Unhandled message\n👤 {name_label}\n💬 {text[:200]}")
-            _send(chat_id, "Tap ℹ️ Info to see what I can do.", reply_markup=_MAIN_KB)
+            _send(chat_id, _t("unknown_msg", lang), reply_markup=_main_kb(lang))
         return
 
     if not participant:
-        _send(chat_id, "Please register first — send /start")
+        _send(chat_id, _t("register_first", lang))
         return
 
     # ── Video or photo with optional caption ─────────────────────────────────

@@ -11,6 +11,9 @@ _TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 _API = f"https://api.telegram.org/bot{_TOKEN}"
 _LOG_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
 
+# Plain-text aliases for slash commands — update when adding a new command
+_COMMAND_ALIASES = {"info", "help", "start", "rename", "secret", "radar", "pause", "sweat"}
+
 
 def _build_token(name: str, secret: str | None) -> str:
     slug = name.lower().replace(" ", "-")
@@ -961,6 +964,10 @@ def handle_webhook(body: dict, conn) -> None:
     tg_id: int = msg["from"]["id"]
     chat_id: int = msg["chat"]["id"]
     text: str = msg.get("text", "").strip()
+
+    # Allow plain-text command names (e.g. "pause" → "/pause")
+    if text.lower() in _COMMAND_ALIASES:
+        text = "/" + text.lower()
 
     # ── Replies to messages are social reactions — don't process as bot input ─
     if msg.get("reply_to_message"):

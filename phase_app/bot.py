@@ -546,6 +546,104 @@ def check_milestones(conn) -> None:
         _check_milestone_for_user(cur, conn, user["telegram_user_id"], user["participant_name"])
 
 
+def send_monthly_summaries(conn) -> None:
+    """On the 1st of each month, send each user a summary of their previous month."""
+    import math as _math
+    import calendar
+    cur = conn.cursor()
+    today = date.today()
+    if today.day != 1:
+        return
+
+    prev_month_end = today - timedelta(days=1)
+    prev_month_start = prev_month_end.replace(day=1)
+    month_label = prev_month_start.strftime("%B")
+
+    # Dedup — only send once per month
+    job_key = f"monthly_summary_{prev_month_start.strftime('%Y-%m')}"
+    cur.execute(
+        "INSERT INTO cron_log (job_name, run_date) VALUES (%s, %s) "
+        "ON CONFLICT DO NOTHING RETURNING job_name",
+        (job_key, today),
+    )
+    if not cur.fetchone():
+        return
+    conn.commit()
+
+    # Previous-month entries for all users who logged at least once
+    cur.execute(
+        "SELECT u.telegram_user_id, u.participant_name, u.chat_id "
+        "FROM telegram_bot_users u "
+        "WHERE EXISTS (SELECT 1 FROM burpee_entries e "
+        "              WHERE e.participant = u.participant_name "
+        "              AND e.entry_date >= %s AND e.entry_date <= %s)",
+        (prev_month_start, prev_month_end),
+    )
+    users = cur.fetchall()
+
+    days_in_month = calendar.monthrange(prev_month_start.year, prev_month_start.month)[1]
+
+    for user in users:
+        tg_id = user["telegram_user_id"]
+        name = user["participant_name"]
+        chat_id = user["chat_id"]
+
+        cur.execute(
+            "SELECT entry_date, reps FROM burpee_entries "
+            "WHERE participant = %s AND entry_date >= %s AND entry_date <= %s "
+            "ORDER BY entry_date",
+            (name, prev_month_start, prev_month_end),
+        )
+        entries = cur.fetchall()
+        if not entries:
+            continue
+
+        total = sum(r["reps"] for r in entries)
+        count = len(entries)
+        avg = total / count
+        best = max(entries, key=lambda r: r["reps"])
+        consistency_pct = round(count / days_in_month * 100)
+
+        # Streak at end of prev month (entries already ASC, need DESC for _compute_streak)
+        entries_desc = list(reversed(entries))
+        streak, _, _ = _compute_streak(entries_desc)
+
+        # Previous-previous month for comparison
+        pprev_end = prev_month_start - timedelta(days=1)
+        pprev_start = pprev_end.replace(day=1)
+        cur.execute(
+            "SELECT COALESCE(SUM(reps), 0) AS total FROM burpee_entries "
+            "WHERE participant = %s AND entry_date >= %s AND entry_date <= %s",
+            (name, pprev_start, pprev_end),
+        )
+        prev_total = cur.fetchone()["total"] or 0
+
+        # Milestones hit that month
+        cur.execute(
+            "SELECT milestone_reps FROM milestone_notifications "
+            "WHERE participant = %s AND month = %s ORDER BY milestone_reps",
+            (name, prev_month_start),
+        )
+        milestones = [r["milestone_reps"] for r in cur.fetchall()]
+
+        # Build message
+        lines = [f"📅 {month_label} Summary, {name}!\n"]
+        lines.append(f"💪 Workouts: {count}  (consistency: {consistency_pct}%)")
+        lines.append(f"📊 Total reps: {total}  (avg {round(avg)})")
+        lines.append(f"🏆 Best day: {best['reps']} reps on {best['entry_date'].strftime('%b %d')}")
+        if prev_total > 0:
+            delta = round((total - prev_total) / prev_total * 100)
+            arrow = "↑" if delta >= 0 else "↓"
+            lines.append(f"📈 vs {pprev_start.strftime('%B')}: {arrow} {abs(delta)}%  ({prev_total} reps last month)")
+        if streak > 0:
+            lines.append(f"🔥 Current streak: {streak} days — keep it going!")
+        if milestones:
+            lines.append(f"🏅 Milestones: {', '.join(str(m) for m in milestones)}")
+
+        _tg("sendMessage", {"chat_id": chat_id, "text": "\n".join(lines)})
+        _log(f"📅 Monthly summary sent to {name}")
+
+
 def _store_or_bind_video(cur, conn, tg_id: int, participant: str, chat_id: int, message_id: int) -> None:
     """Store a video as pending (ask for reps), or bind it to reps logged within the last hour."""
     cur.execute(
@@ -963,7 +1061,14 @@ def handle_webhook(body: dict, conn) -> None:
 
     tg_id: int = msg["from"]["id"]
     chat_id: int = msg["chat"]["id"]
+    lang: str | None = msg["from"].get("language_code")
     text: str = msg.get("text", "").strip()
+
+    # Persist language_code and chat_id so they stay current
+    cur.execute(
+        "UPDATE telegram_bot_users SET language_code = %s, chat_id = %s WHERE telegram_user_id = %s",
+        (lang, chat_id, tg_id),
+    )
 
     # Allow plain-text command names (e.g. "pause" → "/pause")
     if text.lower() in _COMMAND_ALIASES:

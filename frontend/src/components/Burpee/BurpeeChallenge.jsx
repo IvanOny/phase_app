@@ -81,6 +81,18 @@ function fmtMonthShort(ym) {
 }
 // ─── Derived stats ────────────────────────────────────────────────────────────
 
+function computeLongestStreak(monthEntries) {
+  if (!monthEntries.length) return 0;
+  const days = [...new Set(monthEntries.map((e) => parseInt(e.entryDate.slice(8), 10)))].sort((a, b) => a - b);
+  let longest = 1;
+  let current = 1;
+  for (let i = 1; i < days.length; i++) {
+    current = days[i] === days[i - 1] + 1 ? current + 1 : 1;
+    longest = Math.max(longest, current);
+  }
+  return longest;
+}
+
 function computeStats(entries, currentMonth, participants) {
   const stats = {};
   for (const p of participants) {
@@ -95,9 +107,32 @@ function computeStats(entries, currentMonth, participants) {
       avg: days > 0 ? Math.round(total / days) : 0,
       days,
       best,
+      streak: computeLongestStreak(thisMonthEntries),
     };
   }
   return stats;
+}
+
+// ─── Sorting ──────────────────────────────────────────────────────────────────
+
+const SORT_OPTIONS = [
+  { key: 'frequency', label: 'Frequency', icon: '📅' },
+  { key: 'total', label: 'Total reps', icon: 'Σ' },
+  { key: 'best', label: 'Best day', icon: '🏆' },
+  { key: 'streak', label: 'Streak', icon: '🔥' },
+  { key: 'avg', label: 'Avg/workout', icon: '📈' },
+];
+
+function sortMetric(key, s) {
+  if (!s) return 0;
+  switch (key) {
+    case 'frequency': return s.days;
+    case 'total': return s.total;
+    case 'best': return s.best;
+    case 'streak': return s.streak;
+    case 'avg': return s.avg;
+    default: return 0;
+  }
 }
 
 function computeMonthlyWins(entries, participants) {
@@ -368,7 +403,20 @@ export default function BurpeeChallenge({ token }) {
     return [];
   });
   const [dragIdx, setDragIdx] = useState(null);
-  const hasCustomOrder = useRef(!!localStorage.getItem('burpee_pill_order'));
+  const [sortMode, setSortMode] = useState(() => {
+    try {
+      return localStorage.getItem('burpee_sort_mode') || 'frequency';
+    } catch {
+      return 'frequency';
+    }
+  });
+  const isCustomSort = useRef(sortMode === 'custom');
+  useEffect(() => { isCustomSort.current = sortMode === 'custom'; }, [sortMode]);
+
+  function selectSort(key) {
+    setSortMode(key);
+    try { localStorage.setItem('burpee_sort_mode', key); } catch {}
+  }
 
   const currentMonth = monthOf(today());
 
@@ -403,11 +451,16 @@ export default function BurpeeChallenge({ token }) {
           if (valid.length > 0) return valid;
           return list;
         });
-        setPillOrder((prev) => {
-          const kept = prev.filter((p) => list.includes(p));
-          const added = list.filter((p) => !kept.includes(p));
-          return [...kept, ...added];
-        });
+        // Only touch the persisted order once the user has actually dragged a
+        // pill — otherwise leave pillOrder empty so the frequency-based
+        // default in orderedAll keeps applying as new entries come in.
+        if (isCustomSort.current) {
+          setPillOrder((prev) => {
+            const kept = prev.filter((p) => list.includes(p));
+            const added = list.filter((p) => !kept.includes(p));
+            return [...kept, ...added];
+          });
+        }
       } catch {
         // fallback: participants will stay empty, derived from entries on next render
       }
@@ -489,12 +542,19 @@ export default function BurpeeChallenge({ token }) {
     );
   }
 
+  const stats = computeStats(entries, viewMonth, participants);
+
   const orderedAll = (() => {
-    const base = pillOrder.length > 0
-      ? pillOrder.filter(p => participants.includes(p) || p === me)
-      : (me ? [me, ...participants.filter(p => p !== me)] : participants);
-    if (!me || hasCustomOrder.current || base[0] === me) return base;
-    return [me, ...base.filter(p => p !== me)];
+    if (sortMode === 'custom' && pillOrder.length > 0) {
+      const base = pillOrder.filter(p => participants.includes(p) || p === me);
+      if (!me || base[0] === me) return base;
+      return [me, ...base.filter(p => p !== me)];
+    }
+    // Ranked by the selected metric for the currently viewed month.
+    const others = participants
+      .filter(p => p !== me)
+      .sort((a, b) => sortMetric(sortMode, stats[b]) - sortMetric(sortMode, stats[a]) || a.localeCompare(b));
+    return me ? [me, ...others] : others;
   })();
 
   const myView = orderedAll.filter(p => p === me || selectedParticipants.includes(p));
@@ -515,12 +575,11 @@ export default function BurpeeChallenge({ token }) {
     const next = [...orderedAll];
     const [moved] = next.splice(dragIdx, 1);
     next.splice(i, 0, moved);
-    hasCustomOrder.current = true;
     setPillOrder(next);
-    localStorage.setItem('burpee_pill_order', JSON.stringify(next));
+    selectSort('custom');
+    try { localStorage.setItem('burpee_pill_order', JSON.stringify(next)); } catch {}
     setDragIdx(null);
   }
-  const stats = computeStats(entries, viewMonth, participants);
   const wins = computeMonthlyWins(entries, participants);
   const chartData = buildChartData(entries, viewMonth);
 
@@ -545,6 +604,49 @@ export default function BurpeeChallenge({ token }) {
             3 min AMRAP Burpees
           </div>
         </div>
+      </div>
+
+      {/* Sort controls */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>sort:</span>
+        {SORT_OPTIONS.map((opt) => {
+          const active = sortMode === opt.key;
+          return (
+            <button
+              key={opt.key}
+              onClick={() => selectSort(opt.key)}
+              style={{
+                background: active ? 'var(--bg-elevated, #eef2ff)' : 'transparent',
+                border: `1px solid ${active ? 'var(--text-primary, #6366f1)' : 'var(--border, #e5e7eb)'}`,
+                color: active ? 'var(--text-primary, #111)' : 'var(--text-muted, #888)',
+                borderRadius: 14,
+                padding: '3px 10px',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {opt.icon} {opt.label}
+            </button>
+          );
+        })}
+        {pillOrder.length > 0 && (
+          <button
+            onClick={() => selectSort('custom')}
+            style={{
+              background: sortMode === 'custom' ? 'var(--bg-elevated, #eef2ff)' : 'transparent',
+              border: `1px solid ${sortMode === 'custom' ? 'var(--text-primary, #6366f1)' : 'var(--border, #e5e7eb)'}`,
+              color: sortMode === 'custom' ? 'var(--text-primary, #111)' : 'var(--text-muted, #888)',
+              borderRadius: 14,
+              padding: '3px 10px',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            ✋ Custom
+          </button>
+        )}
       </div>
 
       {/* Participant pills */}

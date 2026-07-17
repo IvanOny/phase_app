@@ -5,8 +5,10 @@ import CreatePhaseForm from './CreatePhaseForm.jsx';
 import ExerciseCatalogForm from './ExerciseCatalogForm.jsx';
 import ScreenshotImportForm from './ScreenshotImportForm.jsx';
 import BodyweightPanel from '../Powerlifting/BodyweightPanel.jsx';
+import QuickLogForm from './QuickLogForm.jsx';
 
 const TABS = [
+  { id: 'quick',       label: 'Quick' },
   { id: 'import',      label: 'Import' },
   { id: 'session',     label: 'Session' },
   { id: 'sets',        label: 'Sets' },
@@ -61,6 +63,13 @@ export default function DataEntryPanel({
         </div>
 
         <div className="panel-body">
+          {activeTab === 'quick' && (
+            <QuickLogForm
+              phaseId={selectedPhaseId}
+              exercises={exercises}
+              onSessionCreated={onSessionLogged}
+            />
+          )}
           {activeTab === 'phase' && (
             <CreatePhaseForm
               initialPhaseType={initialPhaseType}

@@ -251,6 +251,13 @@ class PhaseApi:
         is_planned = bool(payload.get("isPlanned", False))
         is_deload = bool(payload.get("isDeload", False))
         try:
+            if not is_planned:
+                existing = self._exec(
+                    "SELECT session_id FROM sessions WHERE phase_id = %s AND session_date = %s AND session_type = %s AND is_planned = FALSE",
+                    (payload["phaseId"], payload["sessionDate"], payload["sessionType"]),
+                ).fetchone()
+                if existing:
+                    return ApiResponse(409, {"error": "duplicate", "sessionId": existing["session_id"]})
             row = self._exec(
                 "INSERT INTO sessions "
                 "(phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, is_planned, is_deload, "

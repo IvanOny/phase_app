@@ -29,6 +29,7 @@ export default function DataEntryPanel({
   exercises,
   isAuthenticated,
   onSessionLogged,
+  onQuickLogged,
   onSetsLogged,
   onPhaseCreated,
   onExerciseCreated,
@@ -66,8 +67,9 @@ export default function DataEntryPanel({
           {activeTab === 'quick' && (
             <QuickLogForm
               phaseId={selectedPhaseId}
+              phaseType={phases.find(p => p.phaseId === selectedPhaseId)?.phaseType}
               exercises={exercises}
-              onSessionCreated={onSessionLogged}
+              onSessionCreated={onQuickLogged}
             />
           )}
           {activeTab === 'phase' && (

@@ -4,6 +4,7 @@ import {
   getSessionExercises,
   createSessionExercise,
   createExerciseSet,
+  getExerciseSets,
   createExercise,
 } from '../../api/client.js';
 
@@ -15,7 +16,7 @@ const QUICK_EXERCISES = [
   { label: 'Weighted Pull-ups', sessionType: 'pull',         flags: {},                             weighted: true  },
 ];
 
-export default function QuickLogForm({ phaseId, exercises, onSessionCreated }) {
+export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionCreated }) {
   const [selectedIdx, setSelectedIdx] = useState(null);
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
@@ -34,11 +35,15 @@ export default function QuickLogForm({ phaseId, exercises, onSessionCreated }) {
     try {
       const today = new Date().toISOString().slice(0, 10);
 
-      // 1. Find or create today's session
+      // 1. Find or create today's session.
+      // In a powerlifting phase all lifts on a day share ONE 'mixed' session,
+      // so the trend chart plots them on the same date and they appear together
+      // in the log. (Lift attribution is by exercise flag, not session type.)
+      const sessionType = phaseType === 'powerlifting' ? 'mixed' : selected.sessionType;
       const session = await createSession({
         phaseId: Number(phaseId),
         sessionDate: today,
-        sessionType: selected.sessionType,
+        sessionType,
       });
       const sessionId = session.sessionId;
 
@@ -56,29 +61,32 @@ export default function QuickLogForm({ phaseId, exercises, onSessionCreated }) {
       // 3. Find or create session_exercise entry
       const sessionExercises = await getSessionExercises(sessionId);
       let se = sessionExercises.find(e => e.exerciseId === exerciseId);
+      let existingSets = [];
       if (!se) {
         se = await createSessionExercise(sessionId, {
           exerciseId,
           exerciseOrder: sessionExercises.length + 1,
         });
+      } else {
+        existingSets = await getExerciseSets(se.sessionExerciseId);
       }
 
-      // 4. Set number — backend doesn't return sets count here, use 1 (top set for quick log)
-      const setNumber = 1;
+      // 4. Next set number continues from existing sets
+      const setNumber = existingSets.length + 1;
 
-      // 5. Create the set (always top set + working set for quick log)
+      // 5. Create the set (first set is top set; subsequent are working sets)
       await createExerciseSet(se.sessionExerciseId, {
         setNumber,
         reps: Number(reps),
         loadKg: selected.weighted ? Number(weight) : 0,
-        isTopSet: true,
+        isTopSet: existingSets.length === 0,
         isWorkingSet: true,
       });
 
       setStatus({ type: 'ok', message: `Logged ${selected.label}: ${selected.weighted ? `${weight} kg × ` : ''}${reps} reps` });
       setReps('');
       setWeight('');
-      if (session._duplicate === undefined) onSessionCreated?.();
+      onSessionCreated?.();
     } catch (err) {
       setStatus({ type: 'err', message: err.message || 'Failed to log.' });
     } finally {

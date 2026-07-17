@@ -13,7 +13,7 @@ import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 import PhaseCalendar from './PhaseCalendar.jsx';
 
 const SESSION_TYPES_BENCH = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
-const SESSION_TYPES_PL    = ['squat', 'deadlift', 'mix', 'run', 'other'];
+const SESSION_TYPES_PL    = ['squat', 'deadlift', 'mixed', 'mix', 'run', 'other'];
 const SESSION_TYPES_DEFAULT = SESSION_TYPES_BENCH;
 
 const TYPE_COLORS = {
@@ -504,7 +504,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
           <div className="session-edit-row1">
             <input type="date" value={form.sessionDate} onChange={e => setForm(f => ({ ...f, sessionDate: e.target.value }))} className="inline-input" />
             <select value={form.sessionType} onChange={e => setForm(f => ({ ...f, sessionType: e.target.value }))} className="inline-input">
-              {['squat','deadlift','mix','heavy_bench','volume_bench','speed_bench','run','pull','rest','other'].map(t => <option key={t} value={t}>{formatType(t)}</option>)}
+              {['squat','deadlift','mixed','heavy_bench','volume_bench','speed_bench','run','pull','rest','other'].map(t => <option key={t} value={t}>{formatType(t)}</option>)}
             </select>
             <input type="number" min="0" max="10" step="0.1" value={form.eliteHrvReadiness} onChange={e => setForm(f => ({ ...f, eliteHrvReadiness: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="HRV" />
             <div className="session-edit-actions">

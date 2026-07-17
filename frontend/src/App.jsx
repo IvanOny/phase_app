@@ -251,6 +251,10 @@ function App() {
             handleSessionLogged(session);
             setPanelOpen(false);
           }}
+          onQuickLogged={() => {
+            loadPhaseData(selectedPhaseId);
+            setSummaryKey(k => k + 1);
+          }}
           onSetsLogged={() => {
             loadPhaseData(selectedPhaseId);
             setSummaryKey(k => k + 1);

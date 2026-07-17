@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -81,18 +81,6 @@ function fmtMonthShort(ym) {
 }
 // ─── Derived stats ────────────────────────────────────────────────────────────
 
-function computeLongestStreak(monthEntries) {
-  if (!monthEntries.length) return 0;
-  const days = [...new Set(monthEntries.map((e) => parseInt(e.entryDate.slice(8), 10)))].sort((a, b) => a - b);
-  let longest = 1;
-  let current = 1;
-  for (let i = 1; i < days.length; i++) {
-    current = days[i] === days[i - 1] + 1 ? current + 1 : 1;
-    longest = Math.max(longest, current);
-  }
-  return longest;
-}
-
 function computeStats(entries, currentMonth, participants) {
   const stats = {};
   for (const p of participants) {
@@ -107,7 +95,6 @@ function computeStats(entries, currentMonth, participants) {
       avg: days > 0 ? Math.round(total / days) : 0,
       days,
       best,
-      streak: computeLongestStreak(thisMonthEntries),
     };
   }
   return stats;
@@ -118,9 +105,6 @@ function computeStats(entries, currentMonth, participants) {
 const SORT_OPTIONS = [
   { key: 'frequency', label: 'Frequency', icon: '📅' },
   { key: 'total', label: 'Total reps', icon: 'Σ' },
-  { key: 'best', label: 'Best day', icon: '🏆' },
-  { key: 'streak', label: 'Streak', icon: '🔥' },
-  { key: 'avg', label: 'Avg/workout', icon: '📈' },
 ];
 
 function sortMetric(key, s) {
@@ -128,9 +112,6 @@ function sortMetric(key, s) {
   switch (key) {
     case 'frequency': return s.days;
     case 'total': return s.total;
-    case 'best': return s.best;
-    case 'streak': return s.streak;
-    case 'avg': return s.avg;
     default: return 0;
   }
 }
@@ -410,9 +391,6 @@ export default function BurpeeChallenge({ token }) {
       return 'frequency';
     }
   });
-  const isCustomSort = useRef(sortMode === 'custom');
-  useEffect(() => { isCustomSort.current = sortMode === 'custom'; }, [sortMode]);
-
   function selectSort(key) {
     setSortMode(key);
     try { localStorage.setItem('burpee_sort_mode', key); } catch {}
@@ -451,16 +429,15 @@ export default function BurpeeChallenge({ token }) {
           if (valid.length > 0) return valid;
           return list;
         });
-        // Only touch the persisted order once the user has actually dragged a
-        // pill — otherwise leave pillOrder empty so the frequency-based
-        // default in orderedAll keeps applying as new entries come in.
-        if (isCustomSort.current) {
-          setPillOrder((prev) => {
-            const kept = prev.filter((p) => list.includes(p));
-            const added = list.filter((p) => !kept.includes(p));
-            return [...kept, ...added];
-          });
-        }
+        // Keep a saved custom order in sync with the live participant list:
+        // append newcomers, drop departed. Only when a custom order exists
+        // (empty means no drag yet, so the sort-mode default applies).
+        setPillOrder((prev) => {
+          if (prev.length === 0) return prev;
+          const kept = prev.filter((p) => list.includes(p));
+          const added = list.filter((p) => !kept.includes(p));
+          return [...kept, ...added];
+        });
       } catch {
         // fallback: participants will stay empty, derived from entries on next render
       }

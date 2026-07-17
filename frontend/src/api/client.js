@@ -148,10 +148,6 @@ export async function deleteSession(sessionId) {
 
 // ---- Session Exercises ----
 
-export async function getSessionExercises(sessionId) {
-  return apiFetchList('GET', `/v1/sessions/${sessionId}/exercises`);
-}
-
 export async function createSessionExercise(sessionId, payload) {
   if (MOCK_MODE) {
     const se = { sessionExerciseId: nextId(), sessionId, ...payload };

@@ -798,7 +798,7 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
   }
 
   const baseFiltered = [...sessions]
-    .filter(s => filters.types.includes(s.sessionType))
+    .filter(s => allTypesSelected || filters.types.includes(s.sessionType))
     .filter(s => {
       if (!filters.exerciseId) return true;
       if (s.isPlanned) return false; // planned sessions have no logged exercises

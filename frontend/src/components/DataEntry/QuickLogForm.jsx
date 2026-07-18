@@ -39,7 +39,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionC
       // In a powerlifting phase all lifts on a day share ONE 'mixed' session,
       // so the trend chart plots them on the same date and they appear together
       // in the log. (Lift attribution is by exercise flag, not session type.)
-      const sessionType = phaseType === 'powerlifting' ? 'mixed' : selected.sessionType;
+      const sessionType = phaseType === 'powerlifting' ? 'mix' : selected.sessionType;
       const session = await createSession({
         phaseId: Number(phaseId),
         sessionDate: today,

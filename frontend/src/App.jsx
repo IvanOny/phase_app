@@ -58,7 +58,7 @@ function App() {
   const [exercises, setExercises] = useState([]);
   const [summaryKey, setSummaryKey] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState('import');
+  const [panelTab, setPanelTab] = useState('quick');
   const [initialPhaseType, setInitialPhaseType] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('dashboard');
@@ -250,6 +250,10 @@ function App() {
           onSessionLogged={session => {
             handleSessionLogged(session);
             setPanelOpen(false);
+          }}
+          onQuickLogged={() => {
+            loadPhaseData(selectedPhaseId);
+            setSummaryKey(k => k + 1);
           }}
           onSetsLogged={() => {
             loadPhaseData(selectedPhaseId);

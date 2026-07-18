@@ -49,20 +49,35 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _api(self):
-        return PhaseApi(get_connection())
+        try:
+            conn = get_connection()
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+            raise
+        return PhaseApi(conn)
 
     def do_GET(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-        query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        import sys, traceback as _tb
+        print(f"[GET] {self.path}", flush=True)
+        try:
+            parsed = urlparse(self.path)
+            path = parsed.path
+            query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
 
-        if path == "/" or path == "/index.html":
-            return self._send_file(FRONTEND_ROOT / "index.html", "text/html; charset=utf-8")
-        if path == "/app.js":
-            return self._send_file(FRONTEND_ROOT / "app.js", "text/javascript; charset=utf-8")
+            if path == "/" or path == "/index.html":
+                return self._send_file(FRONTEND_ROOT / "index.html", "text/html; charset=utf-8")
+            if path == "/app.js":
+                return self._send_file(FRONTEND_ROOT / "app.js", "text/javascript; charset=utf-8")
 
-        response = self._api().handle("GET", path, query_params=query)
-        self._send_json(response.status, response.body)
+            response = self._api().handle("GET", path, query_params=query)
+            print(f"[GET] response {response.status}", flush=True)
+            self._send_json(response.status, response.body)
+        except Exception:
+            print("[GET] EXCEPTION:", flush=True)
+            _tb.print_exc()
+            sys.stdout.flush()
+            sys.stderr.flush()
 
     def _check_auth(self, method: str, path: str) -> bool:
         from phase_app.auth import require_auth

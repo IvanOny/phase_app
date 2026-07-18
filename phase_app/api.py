@@ -3,9 +3,30 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import date as _date
+import urllib.request
+import urllib.error
+from datetime import date as _date, datetime, timezone, timedelta
 from dataclasses import dataclass
 from typing import Any
+
+_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+_LOG_CHAT_ID = os.environ.get("LOG_CHAT_ID", "")
+
+
+def _tg_log(text: str) -> None:
+    if not _LOG_CHAT_ID or not _BOT_TOKEN:
+        return
+    ts = datetime.now(timezone(timedelta(hours=2))).strftime("%Y-%m-%d %H:%M")
+    payload = json.dumps({"chat_id": int(_LOG_CHAT_ID), "text": f"[{ts}]\n{text}"}).encode()
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{_BOT_TOKEN}/sendMessage",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass
 
 import psycopg2
 import psycopg2.extensions
@@ -164,12 +185,16 @@ class PhaseApi:
             return self.login(body)
 
         # Burpee challenge (token-gated, no user auth required)
+        if method == "GET" and path == "/v1/burpee/participants":
+            return self.get_burpee_participants(qp)
         if method == "GET" and path == "/v1/burpee":
             return self.get_burpee_entries(qp)
         if method == "POST" and path == "/v1/burpee":
             return self.log_burpee_entry(body, qp)
         if method == "DELETE" and re.fullmatch(r"/v1/burpee/\d+", path):
             return self.delete_burpee_entry(int(path.split("/")[3]), qp)
+        if method == "POST" and path == "/v1/burpee/ping":
+            return self.ping_burpee(qp)
 
         return ApiResponse(status=404, body={"error": "not_found"})
 
@@ -226,6 +251,13 @@ class PhaseApi:
         is_planned = bool(payload.get("isPlanned", False))
         is_deload = bool(payload.get("isDeload", False))
         try:
+            if not is_planned:
+                existing = self._exec(
+                    "SELECT session_id FROM sessions WHERE phase_id = %s AND session_date = %s AND session_type = %s AND is_planned = FALSE",
+                    (payload["phaseId"], payload["sessionDate"], payload["sessionType"]),
+                ).fetchone()
+                if existing:
+                    return ApiResponse(409, {"error": "duplicate", "sessionId": existing["session_id"]})
             row = self._exec(
                 "INSERT INTO sessions "
                 "(phase_id, session_date, session_type, elite_hrv_readiness, garmin_overnight_hrv, notes, is_planned, is_deload, "
@@ -1425,52 +1457,93 @@ class PhaseApi:
     # Burpee challenge                                                      #
     # ------------------------------------------------------------------ #
 
-    def _check_burpee_token(self, qp: dict) -> "ApiResponse | None":
-        expected = os.environ.get("BURPEE_TOKEN", "")
-        if not expected or qp.get("token", "") != expected:
-            return ApiResponse(401, {"error": "unauthorized"})
-        return None
+    def _resolve_burpee_participant(self, qp: dict) -> "str | None":
+        """Map token → participant name. Token is stored in telegram_bot_users."""
+        token = qp.get("token", "")
+        if not token:
+            return None
+        row = self._exec(
+            "SELECT participant_name FROM telegram_bot_users WHERE token = %s",
+            (token,),
+        ).fetchone()
+        return row["participant_name"] if row else None
+
+    def get_burpee_participants(self, qp: dict) -> ApiResponse:
+        me = self._resolve_burpee_participant(qp)
+        all_rows = self._exec(
+            "SELECT name FROM burpee_participants "
+            "UNION "
+            "SELECT participant_name AS name FROM telegram_bot_users "
+            "UNION "
+            "SELECT DISTINCT participant AS name FROM burpee_entries "
+            "ORDER BY name"
+        ).fetchall()
+        all_names = [r["name"] for r in all_rows]
+
+        if me:
+            follow_rows = self._exec(
+                "SELECT receive_participant FROM telegram_bot_receive r "
+                "JOIN telegram_bot_users u ON u.telegram_user_id = r.telegram_user_id "
+                "WHERE u.token = %s",
+                (qp.get("token", ""),),
+            ).fetchall()
+            follow_set = {r["receive_participant"] for r in follow_rows}
+            # __all__ → return everyone
+            if "__all__" in follow_set:
+                return ApiResponse(200, {"participants": all_names})
+            # specific follow list (or empty) → return only followed + self
+            filtered = [n for n in all_names if n == me or n in follow_set]
+            return ApiResponse(200, {"participants": filtered})
+
+        return ApiResponse(200, {"participants": all_names})
 
     def get_burpee_entries(self, qp: dict) -> ApiResponse:
-        err = self._check_burpee_token(qp)
-        if err:
-            return err
+        me = self._resolve_burpee_participant(qp)
+        if not me:
+            return ApiResponse(401, {"error": "unauthorized"})
         rows = self._exec(
-            "SELECT id, participant, entry_date, reps FROM burpee_entries ORDER BY entry_date DESC"
+            "SELECT id, participant, entry_date, reps, comment FROM burpee_entries ORDER BY entry_date DESC"
         ).fetchall()
-        return ApiResponse(200, [
-            {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"]}
+        entries = [
+            {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"], "comment": r["comment"]}
             for r in rows
-        ])
+        ]
+        return ApiResponse(200, {"entries": entries, "me": me})
 
     def log_burpee_entry(self, body: dict, qp: dict) -> ApiResponse:
-        err = self._check_burpee_token(qp)
-        if err:
-            return err
-        participant = body.get("participant", "")
-        entry_date  = body.get("entry_date", "")
-        reps        = body.get("reps")
-        if participant not in ("Ivan", "Yurii") or not entry_date or not reps:
+        me = self._resolve_burpee_participant(qp)
+        if not me:
+            return ApiResponse(401, {"error": "unauthorized"})
+        entry_date = body.get("entry_date", "")
+        reps       = body.get("reps")
+        comment    = body.get("comment") or None
+        if not entry_date or not reps:
             return ApiResponse(400, {"error": "invalid_input"})
         r = self._exec(
             """
-            INSERT INTO burpee_entries (participant, entry_date, reps)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps
-            RETURNING id, participant, entry_date, reps
+            INSERT INTO burpee_entries (participant, entry_date, reps, comment)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (participant, entry_date) DO UPDATE SET reps = EXCLUDED.reps, comment = EXCLUDED.comment
+            RETURNING id, participant, entry_date, reps, comment
             """,
-            (participant, entry_date, int(reps)),
+            (me, entry_date, int(reps), comment),
         ).fetchone()
         self.conn.commit()
-        return ApiResponse(200, {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"]})
+        return ApiResponse(200, {"id": r["id"], "participant": r["participant"], "entryDate": str(r["entry_date"]), "reps": r["reps"], "comment": r["comment"]})
 
     def delete_burpee_entry(self, entry_id: int, qp: dict) -> ApiResponse:
-        err = self._check_burpee_token(qp)
-        if err:
-            return err
-        self._exec("DELETE FROM burpee_entries WHERE id = %s", (entry_id,))
+        me = self._resolve_burpee_participant(qp)
+        if not me:
+            return ApiResponse(401, {"error": "unauthorized"})
+        self._exec("DELETE FROM burpee_entries WHERE id = %s AND participant = %s", (entry_id, me))
         self.conn.commit()
         return ApiResponse(200, {"deleted": entry_id})
+
+    def ping_burpee(self, qp: dict) -> ApiResponse:
+        me = self._resolve_burpee_participant(qp)
+        if me:
+            _tg_log(f"👆 App opened\n👤 {me}")
+        return ApiResponse(200, {})
 
 
 def to_http_payload(resp: ApiResponse) -> tuple[int, str]:

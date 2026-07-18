@@ -59,6 +59,35 @@ def add_cors(response):
     return response
 
 
+@app.route("/api/bot", methods=["POST"])
+def telegram_bot():
+    secret = os.environ.get("TELEGRAM_BOT_SECRET", "")
+    if secret and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
+        return jsonify({"error": "unauthorized"}), 403
+    from phase_app.bot import handle_webhook
+    import traceback
+    try:
+        handle_webhook(request.get_json(force=True) or {}, _get_api().conn)
+    except Exception:
+        traceback.print_exc()
+    return jsonify({"ok": True}), 200
+
+
+@app.route("/api/cron/radar", methods=["GET", "POST"])
+def cron_radar():
+    from phase_app.bot import process_radar_candidates, send_daily_report, check_milestones, send_monthly_summaries
+    import traceback
+    try:
+        process_radar_candidates(_get_api().conn)
+        send_daily_report(_get_api().conn)
+        check_milestones(_get_api().conn)
+        send_monthly_summaries(_get_api().conn)
+    except Exception:
+        traceback.print_exc()
+        return jsonify({"ok": False}), 500
+    return jsonify({"ok": True}), 200
+
+
 @app.route("/", defaults={"path": ""}, methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
 @app.route("/<path:path>", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
 def handle(path: str):

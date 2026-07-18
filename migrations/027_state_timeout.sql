@@ -1,0 +1,1 @@
+ALTER TABLE telegram_bot_state ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();

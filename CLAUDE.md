@@ -2,6 +2,8 @@
 
 > **CRITICAL — Phase type bugs:** Whenever a bug is fixed that was caused by introducing a new phase type (missing config entry, missing null guard, DB constraint gap, etc.), **always append it to `docs/adding-a-new-phase-type.md`** so the checklist stays complete for the next phase type.
 
+> **RULE — After every code change, immediately stage and commit with a descriptive message. Never push to remote unless the user explicitly says "push".**
+
 > **RULE — After every code change, always tell the user what to restart/refresh:**
 > - Changed `api/index.py` or `phase_app/*.py` → **restart backend** (`flask --app api/index run --port 5001`)
 > - Changed any `frontend/src/**` file → **refresh browser** (Vite hot-reloads, but a manual refresh ensures state is clean)

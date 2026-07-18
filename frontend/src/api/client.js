@@ -30,7 +30,7 @@ function nextId() {
   return ++_nextId;
 }
 
-async function apiFetch(method, path, body, { allow404 = false } = {}) {
+async function apiFetch(method, path, body, { allow404 = false, allow409 = false } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (method !== 'GET') {
     const token = getStoredToken();
@@ -47,6 +47,7 @@ async function apiFetch(method, path, body, { allow404 = false } = {}) {
     throw new Error('Session expired. Please log in again.');
   }
   if (res.status === 404 && allow404) return null;
+  if (res.status === 409 && allow409) return res.json();
   if (!res.ok) {
     let detail = '';
     try {
@@ -122,7 +123,10 @@ export async function createSession(payload) {
     _sessions.push(session);
     return Promise.resolve(session);
   }
-  return apiFetch('POST', '/v1/sessions', payload);
+  const result = await apiFetch('POST', '/v1/sessions', payload, { allow409: true });
+  // 409 means a real session already exists for this date+type — return it with a flag
+  if (result?.error === 'duplicate') return { sessionId: result.sessionId, _duplicate: true };
+  return result;
 }
 
 export async function updateSession(sessionId, payload) {

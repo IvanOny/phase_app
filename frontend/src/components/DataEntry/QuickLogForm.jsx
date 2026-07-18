@@ -9,7 +9,7 @@ import {
 } from '../../api/client.js';
 
 const QUICK_EXERCISES = [
-  { label: 'Bench Press',       sessionType: 'heavy_bench', flags: { isBarbellBenchPress: true },  weighted: true  },
+  { label: 'Bench Press',       sessionType: 'heavy_bench', flags: { isBarbellBenchPress: true },  matchFlag: 'isBarbellBenchPress', weighted: true  },
   { label: 'Squat',             sessionType: 'squat',        flags: { isSquat: true },              weighted: true  },
   { label: 'Deadlift',          sessionType: 'deadlift',     flags: { isDeadlift: true },           weighted: true  },
   { label: 'Pull-ups',          sessionType: 'pull',         flags: { isBodyweight: true },         weighted: false },
@@ -47,9 +47,11 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionC
       });
       const sessionId = session.sessionId;
 
-      // 2. Resolve exercise — find in catalog or create
-      const matchName = selected.label.toLowerCase();
-      let catalogEx = exercises.find(e => e.exerciseName.toLowerCase() === matchName);
+      // 2. Resolve exercise — match by flag first (avoids "Bench Press" vs "Barbell Bench Press" mismatch),
+      //    then fall back to name
+      let catalogEx = selected.matchFlag
+        ? exercises.find(e => e[selected.matchFlag] === true)
+        : exercises.find(e => e.exerciseName.toLowerCase() === selected.label.toLowerCase());
       if (!catalogEx) {
         catalogEx = await createExercise({
           exerciseName: selected.label,

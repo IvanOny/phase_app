@@ -9,7 +9,7 @@ import {
 } from '../../api/client.js';
 
 const QUICK_EXERCISES = [
-  { label: 'Bench Press',       sessionType: 'heavy_bench', flags: { isBarbellBenchPress: true },  matchFlag: 'isBarbellBenchPress', weighted: true  },
+  { label: 'Barbell Bench Press', sessionType: 'heavy_bench', flags: { isBarbellBenchPress: true }, matchFlag: 'isBarbellBenchPress', weighted: true  },
   { label: 'Squat',             sessionType: 'squat',        flags: { isSquat: true },              weighted: true  },
   { label: 'Deadlift',          sessionType: 'deadlift',     flags: { isDeadlift: true },           weighted: true  },
   { label: 'Pull-ups',          sessionType: 'pull',         flags: { isBodyweight: true },         weighted: false },

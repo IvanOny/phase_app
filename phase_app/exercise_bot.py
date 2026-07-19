@@ -1,6 +1,6 @@
 """Exercise Queue feature — bolted onto the burpee Telegram bot.
 
-Single-user in v1 (gated by EXERCISE_BOT_ADMIN_ID in the webhook router), but every
+Single-user in v1 (gated by ADMIN_TG_ID in the webhook router), but every
 table is keyed by user_id so multi-user is a later flip, not a rewrite.
 
 Two tiers:
@@ -88,7 +88,7 @@ def _clear_state(cur, conn, user_id: int) -> None:
 
 def _get_ex_by_name(cur, user_id: int, name: str):
     cur.execute(
-        "SELECT * FROM exercises WHERE user_id = %s AND LOWER(name) = LOWER(%s)",
+        "SELECT * FROM exercise_items WHERE user_id = %s AND LOWER(name) = LOWER(%s)",
         (user_id, name),
     )
     return cur.fetchone()
@@ -127,7 +127,7 @@ def _is_due(ex, tz) -> bool:
 
 def _serve_next(cur, user_id: int, filters: dict):
     cur.execute(
-        "SELECT * FROM exercises "
+        "SELECT * FROM exercise_items "
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
         "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
         "  AND (%s IS NULL OR focus_area ILIKE '%%' || %s || '%%') "
@@ -396,7 +396,7 @@ def _cmd_help(chat_id: int) -> None:
 def _cmd_next(cur, conn, user_id: int, chat_id: int, filters: dict) -> None:
     # Re-send an already-pending item rather than advancing past it.
     cur.execute(
-        "SELECT e.* FROM exercise_pending_serves p JOIN exercises e ON e.id = p.exercise_id "
+        "SELECT e.* FROM exercise_pending_serves p JOIN exercise_items e ON e.id = p.exercise_id "
         "WHERE p.user_id = %s",
         (user_id,),
     )
@@ -420,7 +420,7 @@ def _cmd_next(cur, conn, user_id: int, chat_id: int, filters: dict) -> None:
 
 def _cmd_done(cur, conn, user_id: int, chat_id: int, actual: str | None) -> None:
     cur.execute(
-        "SELECT e.* FROM exercise_pending_serves p JOIN exercises e ON e.id = p.exercise_id "
+        "SELECT e.* FROM exercise_pending_serves p JOIN exercise_items e ON e.id = p.exercise_id "
         "WHERE p.user_id = %s",
         (user_id,),
     )
@@ -431,7 +431,7 @@ def _cmd_done(cur, conn, user_id: int, chat_id: int, actual: str | None) -> None
 
     source = "fixed" if ex["schedule_type"] != "queue" else "next"
     cur.execute(
-        "UPDATE exercises SET last_done_at = NOW(), consecutive_skips = 0, skipped_until = NULL WHERE id = %s",
+        "UPDATE exercise_items SET last_done_at = NOW(), consecutive_skips = 0, skipped_until = NULL WHERE id = %s",
         (ex["id"],),
     )
     cur.execute(
@@ -451,14 +451,14 @@ def _cmd_done(cur, conn, user_id: int, chat_id: int, actual: str | None) -> None
         target = ex["acq_target_sessions"] or 0
         if done_n >= target:
             cur.execute(
-                "UPDATE exercises SET schedule_type = 'queue', acq_sessions_done = 0, "
+                "UPDATE exercise_items SET schedule_type = 'queue', acq_sessions_done = 0, "
                 "acq_target_sessions = NULL, acq_interval_days = NULL WHERE id = %s",
                 (ex["id"],),
             )
             msg += f"\n🎓 Acquisition complete ({done_n}/{target}) — {ex['name']} rejoins the queue."
             _log(f"🎓 Acquisition complete\n🏋️ {ex['name']} → queue")
         else:
-            cur.execute("UPDATE exercises SET acq_sessions_done = %s WHERE id = %s", (done_n, ex["id"]))
+            cur.execute("UPDATE exercise_items SET acq_sessions_done = %s WHERE id = %s", (done_n, ex["id"]))
             msg += f"\n📈 Acquisition {done_n}/{target}"
 
     conn.commit()
@@ -468,7 +468,7 @@ def _cmd_done(cur, conn, user_id: int, chat_id: int, actual: str | None) -> None
 
 def _cmd_skip(cur, conn, user_id: int, chat_id: int) -> None:
     cur.execute(
-        "SELECT e.* FROM exercise_pending_serves p JOIN exercises e ON e.id = p.exercise_id "
+        "SELECT e.* FROM exercise_pending_serves p JOIN exercise_items e ON e.id = p.exercise_id "
         "WHERE p.user_id = %s",
         (user_id,),
     )
@@ -478,7 +478,7 @@ def _cmd_skip(cur, conn, user_id: int, chat_id: int) -> None:
         return
     skips = ex["consecutive_skips"] + 1
     cur.execute(
-        "UPDATE exercises SET skipped_until = NOW() + INTERVAL '1 hour', consecutive_skips = %s WHERE id = %s",
+        "UPDATE exercise_items SET skipped_until = NOW() + INTERVAL '1 hour', consecutive_skips = %s WHERE id = %s",
         (skips, ex["id"]),
     )
     cur.execute("DELETE FROM exercise_pending_serves WHERE user_id = %s", (user_id,))
@@ -497,7 +497,7 @@ def _cmd_skip(cur, conn, user_id: int, chat_id: int) -> None:
 
 def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
     cur.execute(
-        "SELECT name, estimated_minutes, load_tag FROM exercises "
+        "SELECT name, estimated_minutes, load_tag FROM exercise_items "
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
         "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
         "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC",
@@ -519,7 +519,7 @@ def _cmd_list(cur, user_id: int, chat_id: int) -> None:
     cur.execute(
         "SELECT name, schedule_type, repeat_interval_days, acq_interval_days, "
         "       acq_sessions_done, acq_target_sessions, status "
-        "FROM exercises WHERE user_id = %s ORDER BY schedule_type, name",
+        "FROM exercise_items WHERE user_id = %s ORDER BY schedule_type, name",
         (user_id,),
     )
     rows = cur.fetchall()
@@ -548,7 +548,7 @@ def _cmd_status(cur, conn, user_id: int, chat_id: int, action: str, name: str) -
         _send(chat_id, f'No exercise named "{name}".')
         return
     new_status = {"pause": "paused", "park": "parked", "activate": "active"}[action]
-    cur.execute("UPDATE exercises SET status = %s WHERE id = %s", (new_status, ex["id"]))
+    cur.execute("UPDATE exercise_items SET status = %s WHERE id = %s", (new_status, ex["id"]))
     conn.commit()
     _send(chat_id, f"{ex['name']} → {new_status}.")
     _log(f"🏋️ Exercise {new_status}\n• {ex['name']}")
@@ -574,7 +574,7 @@ def _do_remove(cur, conn, user_id: int, chat_id: int, name: str) -> None:
     if not ex:
         _send(chat_id, f'No exercise named "{name}".')
         return
-    cur.execute("DELETE FROM exercises WHERE id = %s", (ex["id"],))
+    cur.execute("DELETE FROM exercise_items WHERE id = %s", (ex["id"],))
     conn.commit()
     _send(chat_id, f"Removed {ex['name']}.")
     _log(f"🗑 Exercise removed\n• {ex['name']}")
@@ -601,7 +601,7 @@ def _cmd_stats(cur, user_id: int, chat_id: int, name: str) -> None:
 def _cmd_history(cur, user_id: int, chat_id: int) -> None:
     cur.execute(
         "SELECT h.done_at, h.dose_actual, e.name FROM exercise_history h "
-        "LEFT JOIN exercises e ON e.id = h.exercise_id "
+        "LEFT JOIN exercise_items e ON e.id = h.exercise_id "
         "WHERE h.user_id = %s ORDER BY h.done_at DESC LIMIT 10",
         (user_id,),
     )
@@ -637,10 +637,10 @@ def _cmd_undo(cur, conn, user_id: int, chat_id: int) -> None:
         )
         prior = cur.fetchone()
         prior_done = prior["done_at"] if prior else None
-        cur.execute("UPDATE exercises SET last_done_at = %s WHERE id = %s", (prior_done, ex_id))
+        cur.execute("UPDATE exercise_items SET last_done_at = %s WHERE id = %s", (prior_done, ex_id))
         # If currently mid-acquisition, roll the counter back by one.
         cur.execute(
-            "UPDATE exercises SET acq_sessions_done = GREATEST(acq_sessions_done - 1, 0) "
+            "UPDATE exercise_items SET acq_sessions_done = GREATEST(acq_sessions_done - 1, 0) "
             "WHERE id = %s AND schedule_type = 'acquisition'",
             (ex_id,),
         )
@@ -825,7 +825,7 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
 
 def _save_new_exercise(cur, conn, user_id: int, chat_id: int, d: dict) -> None:
     cur.execute(
-        "INSERT INTO exercises (user_id, name, description, schedule_type, repeat_interval_days, "
+        "INSERT INTO exercise_items (user_id, name, description, schedule_type, repeat_interval_days, "
         "  estimated_minutes, dose, focus_area, location, equipment, load_tag, "
         "  acq_target_sessions, acq_interval_days) "
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
@@ -922,7 +922,7 @@ def _apply_edit_value(cur, conn, user_id: int, chat_id: int, ex_id: int, field: 
         newval = value
 
     cur.execute(
-        f"UPDATE exercises SET {field} = %s WHERE id = %s AND user_id = %s",
+        f"UPDATE exercise_items SET {field} = %s WHERE id = %s AND user_id = %s",
         (newval, ex_id, user_id),
     )
     conn.commit()
@@ -945,14 +945,14 @@ def send_exercise_overview(conn) -> None:
         tz = _user_tz(cur, user_id)
 
         cur.execute(
-            "SELECT * FROM exercises WHERE user_id = %s AND status = 'active' "
+            "SELECT * FROM exercise_items WHERE user_id = %s AND status = 'active' "
             "AND schedule_type IN ('fixed', 'acquisition')",
             (user_id,),
         )
         due = [e for e in cur.fetchall() if _is_due(e, tz)]
 
         cur.execute(
-            "SELECT name, estimated_minutes, load_tag FROM exercises "
+            "SELECT name, estimated_minutes, load_tag FROM exercise_items "
             "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
             "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
             "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC LIMIT 10",

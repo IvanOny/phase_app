@@ -1042,7 +1042,7 @@ def handle_webhook(body: dict, conn) -> None:
 
         # Exercise queue callbacks (single admin user) — route before burpee logic
         if data.startswith("ex:"):
-            _ex_admin = os.environ.get("EXERCISE_BOT_ADMIN_ID", "")
+            _ex_admin = os.environ.get("ADMIN_TG_ID", "")
             if _ex_admin and str(tg_id) == _ex_admin:
                 from phase_app.exercise_bot import handle_exercise_callback
                 handle_exercise_callback(cur, conn, tg_id, chat_id, msg_id, data)
@@ -1359,7 +1359,7 @@ def handle_webhook(body: dict, conn) -> None:
         return
 
     # ── Exercise queue (single admin user) — route before burpee logic ───────
-    _ex_admin = os.environ.get("EXERCISE_BOT_ADMIN_ID", "")
+    _ex_admin = os.environ.get("ADMIN_TG_ID", "")
     if _ex_admin and str(tg_id) == _ex_admin:
         from phase_app.exercise_bot import maybe_handle_exercise
         if maybe_handle_exercise(cur, conn, tg_id, chat_id, text):

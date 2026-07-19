@@ -1,5 +1,8 @@
 -- Exercise Queue feature (Tier 2 fixed / Tier 3 opportunistic queue / acquisition pins)
--- Single-user behavior in v1 (gated by EXERCISE_BOT_ADMIN_ID), multi-user schema.
+-- Single-user behavior in v1 (gated by ADMIN_TG_ID), multi-user schema.
+--
+-- NOTE: the item table is `exercise_items`, NOT `exercises` — the phase-app
+-- training tracker already owns an `exercises` table (exercise_id, exercise_name…).
 
 CREATE TABLE IF NOT EXISTS exercise_users (
     id SERIAL PRIMARY KEY,
@@ -11,7 +14,7 @@ CREATE TABLE IF NOT EXISTS exercise_users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS exercises (
+CREATE TABLE IF NOT EXISTS exercise_items (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES exercise_users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -35,20 +38,20 @@ CREATE TABLE IF NOT EXISTS exercises (
     UNIQUE (user_id, name)
 );
 
-CREATE INDEX IF NOT EXISTS idx_exercises_serve
-    ON exercises (user_id, schedule_type, status, last_done_at);
+CREATE INDEX IF NOT EXISTS idx_exercise_items_serve
+    ON exercise_items (user_id, schedule_type, status, last_done_at);
 
 -- One active served-but-unanswered item per user
 CREATE TABLE IF NOT EXISTS exercise_pending_serves (
     user_id INTEGER PRIMARY KEY REFERENCES exercise_users(id) ON DELETE CASCADE,
-    exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+    exercise_id INTEGER NOT NULL REFERENCES exercise_items(id) ON DELETE CASCADE,
     served_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS exercise_history (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES exercise_users(id) ON DELETE CASCADE,
-    exercise_id INTEGER REFERENCES exercises(id) ON DELETE SET NULL,
+    exercise_id INTEGER REFERENCES exercise_items(id) ON DELETE SET NULL,
     done_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     dose_actual TEXT,
     source TEXT

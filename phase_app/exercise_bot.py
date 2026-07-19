@@ -26,7 +26,9 @@ from phase_app.bot import _tg, _send, _log
 
 _STATE_TIMEOUT_MINUTES = 10
 
-_LOCATIONS = ("anywhere", "outdoors", "gym")
+_LOCATIONS = ("home", "barrack", "random")
+# The location that acts as a wildcard in the serve query (matches any filter).
+_LOCATION_ANY = "random"
 _LOAD_TAGS = ("easy", "upper", "lower", "systemic")
 _SCHEDULES = ("queue", "fixed", "acquisition")
 
@@ -131,7 +133,7 @@ def _serve_next(cur, user_id: int, filters: dict):
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
         "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
         "  AND (%s IS NULL OR focus_area ILIKE '%%' || %s || '%%') "
-        "  AND (%s IS NULL OR location = %s OR location = 'anywhere') "
+        "  AND (%s IS NULL OR location = %s OR location = 'random') "
         "  AND (%s IS NULL OR load_tag = %s) "
         "  AND (%s IS NULL OR estimated_minutes <= %s) "
         "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC "
@@ -221,9 +223,7 @@ def _kb_target() -> dict:
 
 def _kb_location() -> dict:
     return {"inline_keyboard": [[
-        {"text": "anywhere", "callback_data": "ex:add:loc:anywhere"},
-        {"text": "outdoors", "callback_data": "ex:add:loc:outdoors"},
-        {"text": "gym", "callback_data": "ex:add:loc:gym"},
+        {"text": loc, "callback_data": f"ex:add:loc:{loc}"} for loc in _LOCATIONS
     ]]}
 
 
@@ -241,7 +241,7 @@ def _kb_skip() -> dict:
 
 
 def _prompt_minutes(chat_id: int) -> None:
-    _send(chat_id, "How many minutes does it take? (a number)")
+    _send(chat_id, "How many minutes does it take? (a number, or tap Skip)", reply_markup=_kb_skip())
 
 
 def _add_confirm_text(d: dict) -> str:
@@ -711,7 +711,7 @@ def _handle_state_input(cur, conn, user_id: int, chat_id: int, state: str, data:
             return True
         data["estimated_minutes"] = int(text)
         _set_state(cur, conn, user_id, "ex_add:dose", data)
-        _send(chat_id, "What's the dose? (e.g. 1x10 easy)")
+        _send(chat_id, "What's the dose? (e.g. 1x10 easy, or tap Skip)", reply_markup=_kb_skip())
         return True
 
     if state == "ex_add:dose":
@@ -810,6 +810,14 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
             data["description"] = None
             _set_state(cur, conn, user_id, "ex_add:schedule", data)
             _send(chat_id, "How is it scheduled?", reply_markup=_kb_schedule())
+        elif state == "ex_add:minutes":
+            data["estimated_minutes"] = None
+            _set_state(cur, conn, user_id, "ex_add:dose", data)
+            _send(chat_id, "What's the dose? (e.g. 1x10 easy, or tap Skip)", reply_markup=_kb_skip())
+        elif state == "ex_add:dose":
+            data["dose"] = None
+            _set_state(cur, conn, user_id, "ex_add:focus", data)
+            _send(chat_id, "Focus tags? (e.g. knee shoulder, or Skip)", reply_markup=_kb_skip())
         elif state == "ex_add:focus":
             data["focus_area"] = None
             _set_state(cur, conn, user_id, "ex_add:location", data)
@@ -883,7 +891,7 @@ def _save_new_exercise(cur, conn, user_id: int, chat_id: int, d: dict) -> None:
         (
             user_id, d.get("name"), d.get("description"), d.get("schedule_type"),
             d.get("repeat_interval_days"), d.get("estimated_minutes"), d.get("dose"),
-            d.get("focus_area"), d.get("location", "anywhere"), d.get("equipment"),
+            d.get("focus_area"), d.get("location", _LOCATION_ANY), d.get("equipment"),
             d.get("load_tag"), d.get("acq_target_sessions"), d.get("acq_interval_days"),
         ),
     )

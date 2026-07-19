@@ -44,7 +44,7 @@ Sent as plain text (no leading slash needed; a slash is stripped if present).
 | Command | Effect |
 |---|---|
 | `/add` | Start the guided add flow (inline keyboards for enum fields) |
-| `next [filters]` | Serve the next queue item. Filters: a number = max minutes, plus `focus` / `location` (`anywhere`/`outdoors`/`gym`) / `load` (`easy`/`upper`/`lower`/`systemic`). e.g. `next knee outdoors 10` |
+| `next [filters]` | Serve the next queue item. Filters: a number = max minutes, plus `focus` / `location` (`home`/`barrack`/`random`) / `load` (`easy`/`upper`/`lower`/`systemic`). e.g. `next knee barrack 10` |
 | `done [actual]` | Mark the served item done; optional actual-dose note |
 | `skip` | Skip the served item for 1h. After 3 consecutive skips it offers to park it |
 | `overview` | Queue in serve order |

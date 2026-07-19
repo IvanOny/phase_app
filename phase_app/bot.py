@@ -1039,6 +1039,15 @@ def handle_webhook(body: dict, conn) -> None:
         msg_id = cq["message"]["message_id"]
         data = cq["data"]
         lang = _norm_lang(cq["from"].get("language_code"))
+
+        # Exercise queue callbacks (single admin user) — route before burpee logic
+        if data.startswith("ex:"):
+            _ex_admin = os.environ.get("EXERCISE_BOT_ADMIN_ID", "")
+            if _ex_admin and str(tg_id) == _ex_admin:
+                from phase_app.exercise_bot import handle_exercise_callback
+                handle_exercise_callback(cur, conn, tg_id, chat_id, msg_id, data)
+            return
+
         participant = _lookup_user(cur, tg_id)
         if not participant:
             return
@@ -1348,6 +1357,13 @@ def handle_webhook(body: dict, conn) -> None:
                 _log(f"✏️ Reps updated (edit)\n👤 {participant_e}: {_reps_e} reps")
                 _send(chat_id, _t("reps_updated", lang, reps=_reps_e), reply_markup=_main_kb(lang))
         return
+
+    # ── Exercise queue (single admin user) — route before burpee logic ───────
+    _ex_admin = os.environ.get("EXERCISE_BOT_ADMIN_ID", "")
+    if _ex_admin and str(tg_id) == _ex_admin:
+        from phase_app.exercise_bot import maybe_handle_exercise
+        if maybe_handle_exercise(cur, conn, tg_id, chat_id, text):
+            return
 
     # ── /broadcast (admin only) ──────────────────────────────────────────────
     if text.startswith("/broadcast "):

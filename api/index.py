@@ -76,12 +76,14 @@ def telegram_bot():
 @app.route("/api/cron/radar", methods=["GET", "POST"])
 def cron_radar():
     from phase_app.bot import process_radar_candidates, send_daily_report, check_milestones, send_monthly_summaries
+    from phase_app.exercise_bot import send_exercise_overview
     import traceback
     try:
         process_radar_candidates(_get_api().conn)
         send_daily_report(_get_api().conn)
         check_milestones(_get_api().conn)
         send_monthly_summaries(_get_api().conn)
+        send_exercise_overview(_get_api().conn)
     except Exception:
         traceback.print_exc()
         return jsonify({"ok": False}), 500

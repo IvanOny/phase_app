@@ -732,14 +732,67 @@ def _handle_state_input(cur, conn, user_id: int, chat_id: int, state: str, data:
         _send(chat_id, "Load tag?", reply_markup=_kb_load())
         return True
 
+    # ── Keyboard-only add steps: accept a typed enum value, else re-prompt.
+    #    Critically, do NOT fall through to the catch-all clear — that would wipe
+    #    the whole in-progress add flow just because the user typed instead of tapped.
+    if state == "ex_add:schedule":
+        val = text.strip().lower()
+        if val in _SCHEDULES:
+            _apply_schedule_choice(cur, conn, user_id, chat_id, data, val)
+        else:
+            _send(chat_id, "Please pick a schedule using the buttons.", reply_markup=_kb_schedule())
+        return True
+
+    if state == "ex_add:location":
+        val = text.strip().lower()
+        if val in _LOCATIONS:
+            data["location"] = val
+            _set_state(cur, conn, user_id, "ex_add:equipment", data)
+            _send(chat_id, "Equipment? (e.g. band, or Skip)", reply_markup=_kb_skip())
+        else:
+            _send(chat_id, "Please tap a location: anywhere / outdoors / gym.", reply_markup=_kb_location())
+        return True
+
+    if state == "ex_add:load":
+        val = text.strip().lower()
+        if val in _LOAD_TAGS:
+            data["load_tag"] = val
+            _set_state(cur, conn, user_id, "ex_add:confirm", data)
+            _send(chat_id, _add_confirm_text(data), reply_markup=_kb_confirm())
+        else:
+            _send(chat_id, "Please tap a load tag: easy / upper / lower / systemic.", reply_markup=_kb_load())
+        return True
+
+    if state == "ex_add:confirm":
+        _send(chat_id, "Tap Save or Cancel below.", reply_markup=_kb_confirm())
+        return True
+
     # ── Edit flow text step ──
     if state.startswith("ex_edit_val:"):
         _, field, ex_id = state.split(":", 2)
         return _apply_edit_value(cur, conn, user_id, chat_id, int(ex_id), field, text)
 
-    # Unknown state — clear it defensively.
+    # Mid-add unknown state — re-prompt without wiping progress. Only genuinely
+    # orphaned states (not part of an active flow) get cleared.
+    if state.startswith("ex_add:"):
+        _send(chat_id, "Use the buttons above, or send `cancel` to abandon this exercise.")
+        return True
     _clear_state(cur, conn, user_id)
     return False
+
+
+def _apply_schedule_choice(cur, conn, user_id: int, chat_id: int, data: dict, choice: str) -> None:
+    """Advance the add flow after a schedule type is chosen (tapped or typed)."""
+    data["schedule_type"] = choice
+    if choice == "fixed":
+        _set_state(cur, conn, user_id, "ex_add:interval", data)
+        _send(chat_id, "Repeat every how many days? (tap or type)", reply_markup=_kb_interval("ex:add:interval"))
+    elif choice == "acquisition":
+        _set_state(cur, conn, user_id, "ex_add:acq_interval", data)
+        _send(chat_id, "Acquisition cadence — every how many days?", reply_markup=_kb_interval("ex:add:acqint"))
+    else:
+        _set_state(cur, conn, user_id, "ex_add:minutes", data)
+        _prompt_minutes(chat_id)
 
 
 def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub: str) -> None:
@@ -769,17 +822,8 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
 
     if sub.startswith("sched:"):
         choice = sub[len("sched:"):]
-        data["schedule_type"] = choice
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        if choice == "fixed":
-            _set_state(cur, conn, user_id, "ex_add:interval", data)
-            _send(chat_id, "Repeat every how many days? (tap or type)", reply_markup=_kb_interval("ex:add:interval"))
-        elif choice == "acquisition":
-            _set_state(cur, conn, user_id, "ex_add:acq_interval", data)
-            _send(chat_id, "Acquisition cadence — every how many days?", reply_markup=_kb_interval("ex:add:acqint"))
-        else:
-            _set_state(cur, conn, user_id, "ex_add:minutes", data)
-            _prompt_minutes(chat_id)
+        _apply_schedule_choice(cur, conn, user_id, chat_id, data, choice)
         return
 
     if sub.startswith("interval:"):
@@ -824,6 +868,12 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
 
 
 def _save_new_exercise(cur, conn, user_id: int, chat_id: int, d: dict) -> None:
+    # Guard against a corrupted flow reaching Save without required fields
+    # (name is NOT NULL; schedule_type has a CHECK constraint).
+    if not d.get("name") or d.get("schedule_type") not in _SCHEDULES:
+        _clear_state(cur, conn, user_id)
+        _send(chat_id, "Something went wrong with that entry — please /add it again.")
+        return
     cur.execute(
         "INSERT INTO exercise_items (user_id, name, description, schedule_type, repeat_interval_days, "
         "  estimated_minutes, dose, focus_area, location, equipment, load_tag, "

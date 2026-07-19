@@ -36,7 +36,11 @@ _SCHEDULES = ("queue", "fixed", "acquisition")
 _EX_COMMANDS = {
     "add", "next", "done", "skip", "overview", "list", "edit",
     "pause", "park", "activate", "remove", "stats", "history", "undo", "exhelp",
+    "exapp",
 }
+
+# Web UI base (calendar / log / stats), reads ?exq_token=.
+_EXQ_APP_BASE = "https://phase-app-yf5x.vercel.app"
 
 
 # ── User + state helpers ─────────────────────────────────────────────────────
@@ -324,6 +328,8 @@ def maybe_handle_exercise(cur, conn, tg_id: int, chat_id: int, text: str) -> boo
         _cmd_history(cur, user_id, chat_id)
     elif word == "undo":
         _cmd_undo(cur, conn, user_id, chat_id)
+    elif word == "exapp":
+        _cmd_exapp(cur, conn, user_id, chat_id)
     return True
 
 
@@ -369,10 +375,24 @@ def handle_exercise_callback(cur, conn, tg_id: int, chat_id: int, msg_id: int, d
 
 # ── Commands ─────────────────────────────────────────────────────────────────
 
+def _cmd_exapp(cur, conn, user_id: int, chat_id: int) -> None:
+    """Issue (once) a token and send the web-UI link for calendar / log / stats."""
+    import secrets
+    cur.execute("SELECT token FROM exercise_users WHERE id = %s", (user_id,))
+    row = cur.fetchone()
+    token = row["token"] if row and row["token"] else None
+    if not token:
+        token = secrets.token_urlsafe(24)
+        cur.execute("UPDATE exercise_users SET token = %s WHERE id = %s", (token, user_id))
+        conn.commit()
+    _send(chat_id, f"🗓 Your exercise planner:\n{_EXQ_APP_BASE}/?exq_token={token}")
+
+
 def _cmd_help(chat_id: int) -> None:
     _send(chat_id,
         "🏋️ Exercise Queue commands:\n\n"
         "/add — register a new exercise\n"
+        "exapp — open the web planner (calendar / log / stats)\n"
         "next [filters] — serve the next queue item (e.g. next knee barrack)\n"
         "done [actual] — mark the served item done\n"
         "skip — skip the served item for 1h\n"

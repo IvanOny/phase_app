@@ -25,6 +25,7 @@ function useTheme() {
 import Dashboard from './components/Dashboard/Dashboard.jsx';
 import FaqPage from './components/Faq/FaqPage.jsx';
 import DataEntryPanel from './components/DataEntry/DataEntryPanel.jsx';
+import ExerciseQueueApp from './components/ExerciseQueue/ExerciseQueueApp.jsx';
 import {
   getPhases,
   getSessionsByPhase,
@@ -43,7 +44,7 @@ import {
   mergeExercise,
 } from './api/client.js';
 
-function App() {
+function PhaseApp() {
   const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, login, logout } = useAuth();
   const [showLogin, setShowLogin] = useState(false);
@@ -280,6 +281,14 @@ function App() {
       )}
     </>
   );
+}
+
+// A ?exq_token= link routes to the Exercise Queue planner instead of the
+// powerlifting/bench tracker. The two are separate domains sharing this deploy.
+function App() {
+  const exqToken = new URLSearchParams(window.location.search).get('exq_token');
+  if (exqToken) return <ExerciseQueueApp token={exqToken} />;
+  return <PhaseApp />;
 }
 
 export default App

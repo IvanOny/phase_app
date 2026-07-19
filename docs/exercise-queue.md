@@ -77,7 +77,39 @@ confuse them.
 19:00 Europe/Berlin, matching the default `overview_time`). It sends each user a
 "Today's plan": Tier-2 items due today plus a snapshot of the queue's top 10.
 
+## Web planner (calendar / log / stats)
+
+Alongside the Telegram bot there's a web UI, served from the phase-app frontend
+at `/?exq_token=<token>`. Get the link from the bot with **`exapp`**; it mints a
+per-user token stored on `exercise_users.token`.
+
+- **Calendar** (`ScheduleCalendar.jsx`) — week/month grid with drag-and-drop. A
+  side rail lists active exercises; drag one onto a day to schedule it. Solid
+  chips are committed occurrences; faint dashed chips are cadence *suggestions*.
+  **A manual placement overrides the suggestion** — dragging beats every-N-days.
+  Chips expose ✓ (done — resets the cadence anchor, advances acquisition) and ✕.
+- **Log** — recent completions from `exercise_history`.
+- **Stats** — per-exercise counts + totals.
+
+### Scheduling model (`exercise_schedule`, migration 031)
+
+One row per placed instance: `exercise_id, scheduled_date, origin (manual|auto),
+status`. Cadence suggestions for `fixed`/`acquisition` items are projected
+on the fly in `GET /v1/exq/schedule` (not materialized); a manual pin on a date
+suppresses that day's suggestion for the same exercise. Completing an occurrence
+sets `last_done_at = now`, so the rhythm continues from when it was actually done.
+
+### API (`phase_app/exercise_api.py`, token-gated via `?token=`)
+
+`GET /v1/exq/exercises` · `GET/POST /v1/exq/schedule` ·
+`PATCH/DELETE /v1/exq/schedule/:id` · `POST /v1/exq/schedule/:id/done` ·
+`GET /v1/exq/history` · `GET /v1/exq/stats`
+
+Note: drag-and-drop uses the native HTML5 DnD API — good on desktop; touch
+support is a known v1 limitation.
+
 ## Setup checklist
 
-1. Run `migrations/030_exercise_queue.sql` in Supabase.
+1. Run `migrations/030_exercise_queue.sql` and `migrations/031_exercise_schedule.sql` in Supabase.
 2. Ensure `ADMIN_TG_ID` is set in the bot's Vercel project.
+3. Send `exapp` to the bot to get your planner link.

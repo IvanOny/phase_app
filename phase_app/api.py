@@ -184,6 +184,28 @@ class PhaseApi:
         if method == "POST" and path == "/v1/auth/login":
             return self.login(body)
 
+        # Exercise Queue web UI (token-gated) — dispatched to a separate module
+        if path.startswith("/v1/exq/"):
+            from phase_app.exercise_api import ExerciseQueueApi
+            exq = ExerciseQueueApi(self.conn)
+            if method == "GET" and path == "/v1/exq/exercises":
+                return exq.list_exercises(qp)
+            if method == "GET" and path == "/v1/exq/schedule":
+                return exq.get_schedule(qp)
+            if method == "POST" and path == "/v1/exq/schedule":
+                return exq.create_occurrence(body, qp)
+            if method == "PATCH" and re.fullmatch(r"/v1/exq/schedule/\d+", path):
+                return exq.move_occurrence(int(path.split("/")[4]), body, qp)
+            if method == "DELETE" and re.fullmatch(r"/v1/exq/schedule/\d+", path):
+                return exq.delete_occurrence(int(path.split("/")[4]), qp)
+            if method == "POST" and re.fullmatch(r"/v1/exq/schedule/\d+/done", path):
+                return exq.complete_occurrence(int(path.split("/")[4]), qp)
+            if method == "GET" and path == "/v1/exq/history":
+                return exq.get_history(qp)
+            if method == "GET" and path == "/v1/exq/stats":
+                return exq.get_stats(qp)
+            return ApiResponse(status=404, body={"error": "not_found"})
+
         # Burpee challenge (token-gated, no user auth required)
         if method == "GET" and path == "/v1/burpee/participants":
             return self.get_burpee_participants(qp)

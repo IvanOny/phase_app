@@ -108,8 +108,9 @@ sets `last_done_at = now`, so the rhythm continues from when it was actually don
 `PATCH/DELETE /v1/exq/schedule/:id` · `POST /v1/exq/schedule/:id/done` ·
 `GET /v1/exq/history` · `GET /v1/exq/stats`
 
-Note: drag-and-drop uses the native HTML5 DnD API — good on desktop; touch
-support is a known v1 limitation.
+Drag-and-drop is built on Pointer Events (`ScheduleCalendar.jsx`), so it works
+with mouse, touch, and pen — draggables set `touch-action: none` and a floating
+ghost follows the finger; the drop target is found via `elementFromPoint`.
 
 ## Setup checklist
 

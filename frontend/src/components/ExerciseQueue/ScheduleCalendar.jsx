@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -14,11 +14,6 @@ function datesInRange(fromIso, toIso) {
   return out;
 }
 
-function setDrag(e, payload) {
-  e.dataTransfer.setData('text/plain', JSON.stringify(payload));
-  e.dataTransfer.effectAllowed = 'move';
-}
-
 export default function ScheduleCalendar({
   scope, setScope, anchor, onShift, onToday, rangeFor,
   exercises, schedule, onDropOnDay, onComplete, onRemove,
@@ -26,6 +21,48 @@ export default function ScheduleCalendar({
   const [from, to] = rangeFor(scope, anchor);
   const days = useMemo(() => datesInRange(from, to), [from, to]);
   const todayIso = iso(new Date());
+
+  // ── pointer-based drag (mouse + touch) ──
+  const dragState = useRef({ payload: null, hoverDate: null });
+  const [dragging, setDragging] = useState(false);
+  const [ghost, setGhost] = useState(null);        // { name, x, y }
+  const [hoverDate, setHoverDate] = useState(null);
+
+  useEffect(() => {
+    if (!dragging) return;
+    function move(e) {
+      const x = e.clientX, y = e.clientY;
+      const el = document.elementFromPoint(x, y);
+      const day = el && el.closest('[data-date]');
+      const hd = day ? day.getAttribute('data-date') : null;
+      dragState.current.hoverDate = hd;
+      setHoverDate(hd);
+      setGhost(g => (g ? { ...g, x, y } : g));
+    }
+    function up() {
+      const { payload, hoverDate: hd } = dragState.current;
+      if (payload && hd) onDropOnDay(payload, hd);
+      setDragging(false);
+    }
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      setGhost(null);
+      setHoverDate(null);
+      dragState.current = { payload: null, hoverDate: null };
+    };
+  }, [dragging, onDropOnDay]);
+
+  function startDrag(payload, e) {
+    e.preventDefault();
+    dragState.current = { payload, hoverDate: null };
+    setGhost({ name: payload.name, x: e.clientX, y: e.clientY });
+    setDragging(true);
+  }
 
   // occurrences + suggestions grouped by date
   const byDate = useMemo(() => {
@@ -35,7 +72,6 @@ export default function ScheduleCalendar({
     return m;
   }, [schedule]);
 
-  // Rail: active exercises, queue first (opportunistic — no auto date otherwise)
   const rail = useMemo(() =>
     exercises.filter(e => e.status === 'active')
       .sort((a, b) => (a.scheduleType === 'queue' ? -1 : 1) - (b.scheduleType === 'queue' ? -1 : 1)),
@@ -45,15 +81,8 @@ export default function ScheduleCalendar({
     ? `Week of ${new Date(from + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
     : `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
 
-  function allowDrop(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
-  function onDrop(e, dateStr) {
-    e.preventDefault();
-    e.currentTarget.classList.remove('exq-day--over');
-    try { onDropOnDay(JSON.parse(e.dataTransfer.getData('text/plain')), dateStr); } catch { /* ignore */ }
-  }
-
   return (
-    <div className="exq-cal">
+    <div className={`exq-cal${dragging ? ' exq-cal--dragging' : ''}`}>
       <aside className="exq-rail">
         <div className="exq-rail-title">Exercises</div>
         <div className="exq-rail-hint">Drag onto a day →</div>
@@ -61,8 +90,7 @@ export default function ScheduleCalendar({
           <div
             key={ex.id}
             className={`exq-pill exq-pill--${ex.scheduleType}`}
-            draggable
-            onDragStart={e => setDrag(e, { kind: 'exercise', exerciseId: ex.id })}
+            onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.name }, e)}
             title={ex.description || ex.name}
           >
             {ex.name}
@@ -98,11 +126,8 @@ export default function ScheduleCalendar({
             return (
               <div
                 key={ds}
-                className={`exq-day${ds === todayIso ? ' exq-day--today' : ''}${inMonth ? '' : ' exq-day--muted'}`}
-                onDragOver={allowDrop}
-                onDragEnter={e => e.currentTarget.classList.add('exq-day--over')}
-                onDragLeave={e => e.currentTarget.classList.remove('exq-day--over')}
-                onDrop={e => onDrop(e, ds)}
+                data-date={ds}
+                className={`exq-day${ds === todayIso ? ' exq-day--today' : ''}${inMonth ? '' : ' exq-day--muted'}${hoverDate === ds ? ' exq-day--over' : ''}`}
               >
                 <div className="exq-day-num">{d.getDate()}</div>
                 <div className="exq-day-items">
@@ -110,13 +135,12 @@ export default function ScheduleCalendar({
                     <div
                       key={`o${o.id}`}
                       className={`exq-chip exq-chip--${o.status}`}
-                      draggable
-                      onDragStart={e => setDrag(e, { kind: 'occurrence', id: o.id, exerciseId: o.exerciseId, date: o.date })}
+                      onPointerDown={e => startDrag({ kind: 'occurrence', id: o.id, exerciseId: o.exerciseId, date: o.date, name: o.name }, e)}
                     >
                       <span className="exq-chip-name">{o.name}</span>
                       <span className="exq-chip-actions">
-                        {o.status !== 'done' && <button className="exq-chip-btn" title="Mark done" onClick={() => onComplete(o.id)}>✓</button>}
-                        <button className="exq-chip-btn" title="Remove" onClick={() => onRemove(o.id)}>✕</button>
+                        {o.status !== 'done' && <button className="exq-chip-btn" title="Mark done" onPointerDown={e => e.stopPropagation()} onClick={() => onComplete(o.id)}>✓</button>}
+                        <button className="exq-chip-btn" title="Remove" onPointerDown={e => e.stopPropagation()} onClick={() => onRemove(o.id)}>✕</button>
                       </span>
                     </div>
                   ))}
@@ -124,8 +148,7 @@ export default function ScheduleCalendar({
                     <div
                       key={`s${s.exerciseId}-${s.date}`}
                       className="exq-chip exq-chip--suggestion"
-                      draggable
-                      onDragStart={e => setDrag(e, { kind: 'suggestion', exerciseId: s.exerciseId, date: s.date })}
+                      onPointerDown={e => startDrag({ kind: 'suggestion', exerciseId: s.exerciseId, date: s.date, name: s.name }, e)}
                       title="Cadence suggestion — drag to commit"
                     >
                       <span className="exq-chip-name">{s.name}</span>
@@ -137,6 +160,10 @@ export default function ScheduleCalendar({
           })}
         </div>
       </div>
+
+      {ghost && (
+        <div className="exq-ghost" style={{ left: ghost.x, top: ghost.y }}>{ghost.name}</div>
+      )}
     </div>
   );
 }

@@ -135,7 +135,6 @@ def _serve_next(cur, user_id: int, filters: dict):
         "  AND (%s IS NULL OR focus_area ILIKE '%%' || %s || '%%') "
         "  AND (%s IS NULL OR location = %s OR location = 'random') "
         "  AND (%s IS NULL OR load_tag = %s) "
-        "  AND (%s IS NULL OR estimated_minutes <= %s) "
         "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC "
         "LIMIT 1",
         (
@@ -143,19 +142,16 @@ def _serve_next(cur, user_id: int, filters: dict):
             filters.get("focus"), filters.get("focus"),
             filters.get("location"), filters.get("location"),
             filters.get("load"), filters.get("load"),
-            filters.get("max_min"), filters.get("max_min"),
         ),
     )
     return cur.fetchone()
 
 
 def _parse_filters(tokens: list[str]) -> dict:
-    f: dict = {"focus": None, "location": None, "load": None, "max_min": None}
+    f: dict = {"focus": None, "location": None, "load": None}
     for tok in tokens:
         t = tok.lower()
-        if t.isdigit():
-            f["max_min"] = int(t)
-        elif t in _LOCATIONS:
+        if t in _LOCATIONS:
             f["location"] = t
         elif t in _LOAD_TAGS:
             f["load"] = t
@@ -168,13 +164,9 @@ def _parse_filters(tokens: list[str]) -> dict:
 
 def _render_served(ex) -> str:
     lines = [f"▶ {ex['name']}"]
-    if ex["dose"]:
-        lines.append(ex["dose"])
     if ex["description"]:
         lines.append(ex["description"])
     meta = []
-    if ex["estimated_minutes"]:
-        meta.append(f"⏱ ~{ex['estimated_minutes']}m")
     meta.append(f"📍{ex['location']}")
     if ex["equipment"]:
         meta.append(f"🎒{ex['equipment']}")
@@ -240,8 +232,10 @@ def _kb_skip() -> dict:
     return {"inline_keyboard": [[{"text": "Skip", "callback_data": "ex:add:skip"}]]}
 
 
-def _prompt_minutes(chat_id: int) -> None:
-    _send(chat_id, "How many minutes does it take? (a number, or tap Skip)", reply_markup=_kb_skip())
+def _advance_to_focus(cur, conn, user_id: int, chat_id: int, data: dict) -> None:
+    """Move the add flow to the focus step (the step formerly after dose)."""
+    _set_state(cur, conn, user_id, "ex_add:focus", data)
+    _send(chat_id, "Focus tags? (e.g. knee shoulder, or Skip)", reply_markup=_kb_skip())
 
 
 def _add_confirm_text(d: dict) -> str:
@@ -256,8 +250,6 @@ def _add_confirm_text(d: dict) -> str:
         "Confirm new exercise:",
         f"• name: {d.get('name')}",
         f"• schedule: {sched_str}",
-        f"• minutes: {d.get('estimated_minutes')}",
-        f"• dose: {d.get('dose')}",
         f"• focus: {d.get('focus_area') or '—'}",
         f"• location: {d.get('location')}",
         f"• equipment: {d.get('equipment') or '—'}",
@@ -381,7 +373,7 @@ def _cmd_help(chat_id: int) -> None:
     _send(chat_id,
         "🏋️ Exercise Queue commands:\n\n"
         "/add — register a new exercise\n"
-        "next [filters] — serve the next queue item (e.g. next knee outdoors 10)\n"
+        "next [filters] — serve the next queue item (e.g. next knee barrack)\n"
         "done [actual] — mark the served item done\n"
         "skip — skip the served item for 1h\n"
         "overview — queue in serve order\n"
@@ -497,7 +489,7 @@ def _cmd_skip(cur, conn, user_id: int, chat_id: int) -> None:
 
 def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
     cur.execute(
-        "SELECT name, estimated_minutes, load_tag FROM exercise_items "
+        "SELECT name, load_tag FROM exercise_items "
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
         "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
         "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC",
@@ -509,9 +501,8 @@ def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
         return
     lines = ["📋 Queue (serve order):"]
     for i, r in enumerate(rows, 1):
-        mins = f"{r['estimated_minutes']}m" if r["estimated_minutes"] else "?m"
         load = f" · {r['load_tag']}" if r["load_tag"] else ""
-        lines.append(f"{i}. {r['name']} — {mins}{load}")
+        lines.append(f"{i}. {r['name']}{load}")
     _send(chat_id, "\n".join(lines))
 
 
@@ -683,8 +674,7 @@ def _handle_state_input(cur, conn, user_id: int, chat_id: int, state: str, data:
             _send(chat_id, "Send a whole number of days (e.g. 2).")
             return True
         data["repeat_interval_days"] = int(text)
-        _set_state(cur, conn, user_id, "ex_add:minutes", data)
-        _prompt_minutes(chat_id)
+        _advance_to_focus(cur, conn, user_id, chat_id, data)
         return True
 
     if state == "ex_add:acq_interval":
@@ -701,23 +691,7 @@ def _handle_state_input(cur, conn, user_id: int, chat_id: int, state: str, data:
             _send(chat_id, "Send a whole number of sessions.")
             return True
         data["acq_target_sessions"] = int(text)
-        _set_state(cur, conn, user_id, "ex_add:minutes", data)
-        _prompt_minutes(chat_id)
-        return True
-
-    if state == "ex_add:minutes":
-        if not text.isdigit() or int(text) < 1:
-            _send(chat_id, "Send minutes as a number (e.g. 10).")
-            return True
-        data["estimated_minutes"] = int(text)
-        _set_state(cur, conn, user_id, "ex_add:dose", data)
-        _send(chat_id, "What's the dose? (e.g. 1x10 easy, or tap Skip)", reply_markup=_kb_skip())
-        return True
-
-    if state == "ex_add:dose":
-        data["dose"] = text
-        _set_state(cur, conn, user_id, "ex_add:focus", data)
-        _send(chat_id, "Focus tags? (e.g. knee shoulder, or Skip)", reply_markup=_kb_skip())
+        _advance_to_focus(cur, conn, user_id, chat_id, data)
         return True
 
     if state == "ex_add:focus":
@@ -791,8 +765,7 @@ def _apply_schedule_choice(cur, conn, user_id: int, chat_id: int, data: dict, ch
         _set_state(cur, conn, user_id, "ex_add:acq_interval", data)
         _send(chat_id, "Acquisition cadence — every how many days?", reply_markup=_kb_interval("ex:add:acqint"))
     else:
-        _set_state(cur, conn, user_id, "ex_add:minutes", data)
-        _prompt_minutes(chat_id)
+        _advance_to_focus(cur, conn, user_id, chat_id, data)
 
 
 def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub: str) -> None:
@@ -810,14 +783,6 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
             data["description"] = None
             _set_state(cur, conn, user_id, "ex_add:schedule", data)
             _send(chat_id, "How is it scheduled?", reply_markup=_kb_schedule())
-        elif state == "ex_add:minutes":
-            data["estimated_minutes"] = None
-            _set_state(cur, conn, user_id, "ex_add:dose", data)
-            _send(chat_id, "What's the dose? (e.g. 1x10 easy, or tap Skip)", reply_markup=_kb_skip())
-        elif state == "ex_add:dose":
-            data["dose"] = None
-            _set_state(cur, conn, user_id, "ex_add:focus", data)
-            _send(chat_id, "Focus tags? (e.g. knee shoulder, or Skip)", reply_markup=_kb_skip())
         elif state == "ex_add:focus":
             data["focus_area"] = None
             _set_state(cur, conn, user_id, "ex_add:location", data)
@@ -837,8 +802,7 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
     if sub.startswith("interval:"):
         data["repeat_interval_days"] = int(sub[len("interval:"):])
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        _set_state(cur, conn, user_id, "ex_add:minutes", data)
-        _prompt_minutes(chat_id)
+        _advance_to_focus(cur, conn, user_id, chat_id, data)
         return
 
     if sub.startswith("acqint:"):
@@ -851,8 +815,7 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
     if sub.startswith("acqtarget:"):
         data["acq_target_sessions"] = int(sub[len("acqtarget:"):])
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        _set_state(cur, conn, user_id, "ex_add:minutes", data)
-        _prompt_minutes(chat_id)
+        _advance_to_focus(cur, conn, user_id, chat_id, data)
         return
 
     if sub.startswith("loc:"):
@@ -884,13 +847,13 @@ def _save_new_exercise(cur, conn, user_id: int, chat_id: int, d: dict) -> None:
         return
     cur.execute(
         "INSERT INTO exercise_items (user_id, name, description, schedule_type, repeat_interval_days, "
-        "  estimated_minutes, dose, focus_area, location, equipment, load_tag, "
+        "  focus_area, location, equipment, load_tag, "
         "  acq_target_sessions, acq_interval_days) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
         "ON CONFLICT (user_id, name) DO NOTHING RETURNING id",
         (
             user_id, d.get("name"), d.get("description"), d.get("schedule_type"),
-            d.get("repeat_interval_days"), d.get("estimated_minutes"), d.get("dose"),
+            d.get("repeat_interval_days"),
             d.get("focus_area"), d.get("location", _LOCATION_ANY), d.get("equipment"),
             d.get("load_tag"), d.get("acq_target_sessions"), d.get("acq_interval_days"),
         ),
@@ -908,7 +871,7 @@ def _save_new_exercise(cur, conn, user_id: int, chat_id: int, d: dict) -> None:
 
 # ── Edit flow ────────────────────────────────────────────────────────────────
 
-_EDITABLE_TEXT = ("name", "description", "dose", "focus_area", "equipment", "estimated_minutes")
+_EDITABLE_TEXT = ("name", "description", "focus_area", "equipment")
 
 
 def _cmd_edit(cur, conn, user_id: int, chat_id: int, name: str) -> None:
@@ -923,8 +886,6 @@ def _cmd_edit(cur, conn, user_id: int, chat_id: int, name: str) -> None:
     rows = [
         [{"text": "Name", "callback_data": f"ex:edit:field:name:{exid}"},
          {"text": "Description", "callback_data": f"ex:edit:field:description:{exid}"}],
-        [{"text": "Dose", "callback_data": f"ex:edit:field:dose:{exid}"},
-         {"text": "Minutes", "callback_data": f"ex:edit:field:estimated_minutes:{exid}"}],
         [{"text": "Focus", "callback_data": f"ex:edit:field:focus_area:{exid}"},
          {"text": "Equipment", "callback_data": f"ex:edit:field:equipment:{exid}"}],
         [{"text": "Location", "callback_data": f"ex:edit:pick:location:{exid}"},
@@ -945,8 +906,7 @@ def _handle_edit_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, su
         _, field, ex_id = sub.split(":", 2)
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         _set_state(cur, conn, user_id, f"ex_edit_val:{field}:{ex_id}", {})
-        label = "minutes (number)" if field == "estimated_minutes" else field
-        _send(chat_id, f"Send the new {label}:")
+        _send(chat_id, f"Send the new {field}:")
         return
 
     if sub.startswith("pick:"):
@@ -965,17 +925,12 @@ def _handle_edit_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, su
 
 
 def _apply_edit_value(cur, conn, user_id: int, chat_id: int, ex_id: int, field: str, value: str) -> bool:
-    if field == "estimated_minutes":
-        if not value.isdigit() or int(value) < 1:
-            _send(chat_id, "Send minutes as a number.")
-            return True
-        newval: object = int(value)
-    elif field == "name":
+    if field == "name":
         existing = _get_ex_by_name(cur, user_id, value)
         if existing and existing["id"] != ex_id:
             _send(chat_id, f'"{value}" is already taken.')
             return True
-        newval = value
+        newval: object = value
     else:
         newval = value
 
@@ -1010,7 +965,7 @@ def send_exercise_overview(conn) -> None:
         due = [e for e in cur.fetchall() if _is_due(e, tz)]
 
         cur.execute(
-            "SELECT name, estimated_minutes, load_tag FROM exercise_items "
+            "SELECT name, load_tag FROM exercise_items "
             "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
             "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
             "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC LIMIT 10",
@@ -1027,16 +982,15 @@ def send_exercise_overview(conn) -> None:
             for e in due:
                 if e["schedule_type"] == "acquisition":
                     tag = f"   [Active pin — {e['acq_sessions_done']}/{e['acq_target_sessions']}]"
-                    lines.append(f"• {e['name']} — {e['dose'] or ''}{tag}")
+                    lines.append(f"• {e['name']}{tag}")
                 else:
-                    lines.append(f"• {e['name']} — {e['dose'] or ''}   (every {e['repeat_interval_days']}d)")
+                    lines.append(f"• {e['name']}   (every {e['repeat_interval_days']}d)")
             lines.append("")
         if queue:
             lines.append("Queue preview (snapshot — real order set by `next`)")
             for i, r in enumerate(queue, 1):
-                mins = f"{r['estimated_minutes']}m" if r["estimated_minutes"] else "?m"
                 load = f" · {r['load_tag']}" if r["load_tag"] else ""
-                lines.append(f"{i}. {r['name']} — {mins}{load}")
+                lines.append(f"{i}. {r['name']}{load}")
 
         _send(chat_id, "\n".join(lines))
     conn.commit()

@@ -1,11 +1,14 @@
-# Exercise Queue (Telegram bot feature)
+# Movement Snacks (Telegram bot + web planner)
 
-A personal "movement snacks" scheduler bolted onto the existing burpee Telegram
+The user-facing name is **Movement Snacks**. Internally the code, DB tables, and
+API routes use the older `exercise` / `exq` prefix (`exercise_items`, `/v1/exq/…`,
+`exercise_bot.py`) — don't rename those, they're stable.
+
+A personal movement-snacks scheduler bolted onto the existing burpee Telegram
 bot. It lets a single admin user register small exercises (mobility drills, skill
 work, prehab) and be served them either on a fixed cadence or opportunistically
-from a queue. It is **separate from the phase-app training tracker** — different
-tables, no shared UI, no web frontend. The only thing the two share is the repo
-and the Vercel deployment.
+from a queue — via the bot or the web planner. It is **separate from the
+phase-app training tracker**; the two only share the repo and the Vercel deploy.
 
 ## Where it lives
 

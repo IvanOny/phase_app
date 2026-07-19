@@ -385,12 +385,12 @@ def _cmd_exapp(cur, conn, user_id: int, chat_id: int) -> None:
         token = secrets.token_urlsafe(24)
         cur.execute("UPDATE exercise_users SET token = %s WHERE id = %s", (token, user_id))
         conn.commit()
-    _send(chat_id, f"🗓 Your exercise planner:\n{_EXQ_APP_BASE}/?exq_token={token}")
+    _send(chat_id, f"🍎 Your Movement Snacks planner:\n{_EXQ_APP_BASE}/?exq_token={token}")
 
 
 def _cmd_help(chat_id: int) -> None:
     _send(chat_id,
-        "🏋️ Exercise Queue commands:\n\n"
+        "🍎 Movement Snacks — commands:\n\n"
         "/add — register a new exercise\n"
         "exapp — open the web planner (calendar / log / stats)\n"
         "next [filters] — serve the next queue item (e.g. next knee barrack)\n"

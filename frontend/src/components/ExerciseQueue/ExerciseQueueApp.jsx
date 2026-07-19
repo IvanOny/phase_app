@@ -55,6 +55,7 @@ export default function ExerciseQueueApp({ token }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { setExqToken(token); }, [token]);
+  useEffect(() => { document.title = 'Movement Snacks'; }, []);
 
   const loadExercises = useCallback(async () => {
     try { setExercises(await getExqExercises()); }
@@ -110,7 +111,7 @@ export default function ExerciseQueueApp({ token }) {
   return (
     <div className="exq-app">
       <header className="exq-header">
-        <span className="exq-title">🗓 Exercise Planner</span>
+        <span className="exq-title">🍎 Movement Snacks</span>
         <nav className="exq-tabs">
           {TABS.map(t => (
             <button key={t.id} className={`exq-tab${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>

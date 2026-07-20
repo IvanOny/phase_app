@@ -77,8 +77,22 @@ confuse them.
 ## Cron
 
 `send_exercise_overview(conn)` runs inside `/api/cron/radar` (17:00 UTC =
-19:00 Europe/Berlin, matching the default `overview_time`). It sends each user a
-"Today's plan": Tier-2 items due today plus a snapshot of the queue's top 10.
+19:00 Europe/Berlin, matching the default `overview_time`). "Today's plan" has
+three sections: **📌 Scheduled today** (committed occurrences placed in the web
+calendar), **Tier 2 — due today** (cadence), and a queue preview.
+
+### Keeping the bot and the calendar in agreement
+
+Both surfaces must answer "when is this due?" identically:
+
+- `exercise_bot._next_due_date` and `exercise_api._project_suggestions` implement
+  the same rule — `anchor_date` wins if set, else never-done => today, else
+  overdue => today, else `last_done + interval`. **Change one, change the other.**
+- A committed occurrence on a day suppresses that day's cadence suggestion, in
+  the calendar *and* in the daily plan (the plan filters `due` by `scheduled_ids`).
+
+Note `overview` is deliberately narrower: it lists only Tier-3 queue items in
+serve order and ignores the calendar.
 
 ## Web planner (calendar / log / stats)
 

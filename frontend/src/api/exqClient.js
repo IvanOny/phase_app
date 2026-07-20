@@ -27,11 +27,13 @@ export const getExqExercises = () => req('GET', '/v1/exq/exercises').then(r => r
 export const getExqSchedule = (from, to) =>
   req('GET', `/v1/exq/schedule?from=${from}&to=${to}`);
 
-export const createOccurrence = (exerciseId, date) =>
-  req('POST', '/v1/exq/schedule', { exerciseId, date });
+// mode: 'shift' (future occurrences follow, keeping cadence) | 'single' (only this one).
+// fromDate lets 'single' tombstone the day the item was dragged off.
+export const createOccurrence = (exerciseId, date, mode = 'single', fromDate = null) =>
+  req('POST', '/v1/exq/schedule', { exerciseId, date, mode, fromDate });
 
-export const moveOccurrence = (id, date) =>
-  req('PATCH', `/v1/exq/schedule/${id}`, { date });
+export const moveOccurrence = (id, date, mode = 'single') =>
+  req('PATCH', `/v1/exq/schedule/${id}`, { date, mode });
 
 export const deleteOccurrence = (id) =>
   req('DELETE', `/v1/exq/schedule/${id}`);

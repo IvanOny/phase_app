@@ -98,13 +98,16 @@ class ExerciseQueueApi:
             "ORDER BY s.scheduled_date",
             (uid, start, end),
         )
-        manual = [self._occurrence_row(r) for r in cur.fetchall()]
+        rows = [self._occurrence_row(r) for r in cur.fetchall()]
 
-        # Dates already covered by a manual pin, per exercise — suggestions skip these.
-        pinned = {(o["exerciseId"], o["date"]) for o in manual}
+        # Any row (including a 'skipped' tombstone left behind by a single-instance
+        # drag) suppresses the cadence ghost for that exercise on that day.
+        pinned = {(o["exerciseId"], o["date"]) for o in rows}
+        # Tombstones are suppression-only — they aren't shown on the calendar.
+        occurrences = [o for o in rows if o["status"] != "skipped"]
         suggestions = self._project_suggestions(cur, uid, start, end, pinned)
 
-        return ApiResponse(200, {"occurrences": manual, "suggestions": suggestions})
+        return ApiResponse(200, {"occurrences": occurrences, "suggestions": suggestions})
 
     @staticmethod
     def _occurrence_row(r) -> dict[str, Any]:
@@ -136,7 +139,7 @@ class ExerciseQueueApi:
         date); otherwise last_done + interval. Suggestions are forward-looking only."""
         today = self._user_today(cur, uid)
         cur.execute(
-            "SELECT id, name, schedule_type, repeat_interval_days, acq_interval_days, last_done_at "
+            "SELECT id, name, schedule_type, repeat_interval_days, acq_interval_days, last_done_at, anchor_date "
             "FROM exercise_items "
             "WHERE user_id = %s AND status = 'active' AND schedule_type IN ('fixed', 'acquisition')",
             (uid,),
@@ -146,11 +149,18 @@ class ExerciseQueueApi:
             interval = e["repeat_interval_days"] if e["schedule_type"] == "fixed" else e["acq_interval_days"]
             if not interval or interval < 1:
                 continue
-            if e["last_done_at"] is None:
+            last = e["last_done_at"]
+            last_date = (last.date() if hasattr(last, "date") else last) if last else None
+            if e["anchor_date"]:
+                # User re-phased the series by dragging — preserve that phase.
+                first = e["anchor_date"]
+                while first < today:
+                    first += timedelta(days=interval)
+                while last_date and first <= last_date:
+                    first += timedelta(days=interval)
+            elif last_date is None:
                 first = today  # bot: never done is due now
             else:
-                last = e["last_done_at"]
-                last_date = last.date() if hasattr(last, "date") else last
                 nxt = last_date + timedelta(days=interval)
                 first = nxt if nxt > today else today  # overdue => do it today
             d = first
@@ -185,14 +195,33 @@ class ExerciseQueueApi:
         cur.execute(
             "INSERT INTO exercise_schedule (user_id, exercise_id, scheduled_date, origin, status) "
             "VALUES (%s, %s, %s, 'manual', 'planned') "
-            "ON CONFLICT (exercise_id, scheduled_date) DO UPDATE SET origin = 'manual' "
+            "ON CONFLICT (exercise_id, scheduled_date) DO UPDATE SET origin = 'manual', status = 'planned' "
             "RETURNING id, exercise_id, scheduled_date, origin, status",
             (uid, ex_id, d),
         )
         row = cur.fetchone()
         row["name"] = ex["name"]
+        self._apply_drag_mode(cur, uid, ex_id, d, body)
         self.conn.commit()
         return ApiResponse(201, self._occurrence_row(row))
+
+    def _apply_drag_mode(self, cur, uid: int, ex_id: int, new_date, body: dict) -> None:
+        """'shift'  — re-phase the series so every future occurrence follows.
+        'single' — only this instance moves; tombstone the day it came from so the
+        original cadence ghost doesn't linger."""
+        mode = (body or {}).get("mode", "single")
+        if mode == "shift":
+            cur.execute("UPDATE exercise_items SET anchor_date = %s WHERE id = %s AND user_id = %s",
+                        (new_date, ex_id, uid))
+            return
+        from_date = self._parse_date((body or {}).get("fromDate"))
+        if from_date and from_date != new_date:
+            cur.execute(
+                "INSERT INTO exercise_schedule (user_id, exercise_id, scheduled_date, origin, status) "
+                "VALUES (%s, %s, %s, 'manual', 'skipped') "
+                "ON CONFLICT (exercise_id, scheduled_date) DO NOTHING",
+                (uid, ex_id, from_date),
+            )
 
     def move_occurrence(self, occ_id: int, body: dict, qp: dict[str, str]) -> ApiResponse:
         uid = self._uid(qp)
@@ -211,6 +240,10 @@ class ExerciseQueueApi:
         row = cur.fetchone()
         if not row:
             return ApiResponse(404, {"error": "not_found"})
+        # 'shift' re-phases the whole series to land on the dropped day.
+        if (body or {}).get("mode") == "shift":
+            cur.execute("UPDATE exercise_items SET anchor_date = %s WHERE id = %s AND user_id = %s",
+                        (d, row["exercise_id"], uid))
         cur.execute("SELECT name FROM exercise_items WHERE id = %s", (row["exercise_id"],))
         row["name"] = (cur.fetchone() or {}).get("name")
         self.conn.commit()

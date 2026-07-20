@@ -64,8 +64,17 @@
 .exq-btn:hover { color: var(--text-primary); border-color: var(--accent); }
 .exq-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* Controls row: drag mode + legend */
+.exq-controls {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.exq-dragmode { display: flex; align-items: center; gap: 4px; }
+.exq-dragmode-lbl { font-size: 11px; color: var(--text-muted); margin-right: 2px; }
+.exq-dragmode .exq-btn { padding: 3px 9px; font-size: 12px; }
+
 /* Legend */
-.exq-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.exq-legend { display: flex; gap: 14px; flex-wrap: wrap; }
 .exq-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); }
 .exq-sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 .exq-sw--planned { background: var(--accent); }

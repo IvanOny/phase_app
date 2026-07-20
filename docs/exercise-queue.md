@@ -94,6 +94,18 @@ per-user token stored on `exercise_users.token`.
 - **Log** — recent completions from `exercise_history`.
 - **Stats** — per-exercise counts + totals.
 
+### Drag behaviour (toggle in the calendar toolbar, remembered in localStorage)
+
+- **Shift series** — the dropped day becomes the exercise's `anchor_date`
+  (migration 032), so every future occurrence re-phases and follows, keeping the
+  cadence.
+- **Only this** — just this instance moves. The day it came from gets a
+  `status='skipped'` tombstone row so the original ghost doesn't linger; future
+  occurrences are untouched.
+
+Tombstones are suppression-only — the API filters them out of `occurrences` but
+still uses them to hide that day's suggestion.
+
 ### Scheduling model (`exercise_schedule`, migration 031)
 
 One row per placed instance: `exercise_id, scheduled_date, origin (manual|auto),
@@ -114,6 +126,7 @@ ghost follows the finger; the drop target is found via `elementFromPoint`.
 
 ## Setup checklist
 
-1. Run `migrations/030_exercise_queue.sql` and `migrations/031_exercise_schedule.sql` in Supabase.
+1. Run migrations `030_exercise_queue.sql`, `031_exercise_schedule.sql`, and
+   `032_exercise_anchor_date.sql` in Supabase.
 2. Ensure `ADMIN_TG_ID` is set in the bot's Vercel project.
 3. Send `exapp` to the bot to get your planner link.

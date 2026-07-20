@@ -48,6 +48,8 @@ function rangeFor(scope, anchor) {
 export default function ExerciseQueueApp({ token }) {
   const [tab, setTab] = useState('calendar');
   const [scope, setScope] = useState('week');
+  // Default drag behaviour, remembered between visits.
+  const [dragMode, setDragMode] = useState(() => localStorage.getItem('exq-drag-mode') || 'single');
   const [anchor, setAnchor] = useState(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; });
   const [exercises, setExercises] = useState([]);
   const [schedule, setSchedule] = useState({ occurrences: [], suggestions: [] });
@@ -95,16 +97,18 @@ export default function ExerciseQueueApp({ token }) {
   // ── mutations ──
   const handleDropOnDay = useCallback(async (payload, dateStr) => {
     try {
+      const mode = payload.mode || dragMode;
       if (payload.kind === 'occurrence') {
         if (payload.date === dateStr) return;
-        await moveOccurrence(payload.id, dateStr);
+        await moveOccurrence(payload.id, dateStr, mode);
       } else {
-        // suggestion or exercise from the rail → commit a manual occurrence
-        await createOccurrence(payload.exerciseId, dateStr);
+        // suggestion or rail exercise → commit a manual occurrence.
+        // payload.date (a suggestion's original day) lets 'single' tombstone it.
+        await createOccurrence(payload.exerciseId, dateStr, mode, payload.date || null);
       }
-      await loadSchedule();
+      await Promise.all([loadSchedule(), loadExercises()]);
     } catch (e) { setError(e.message); }
-  }, [loadSchedule]);
+  }, [loadSchedule, loadExercises, dragMode]);
 
   const handleComplete = useCallback(async (occId) => {
     try { await completeOccurrence(occId); await Promise.all([loadSchedule(), loadExercises()]); }
@@ -145,6 +149,8 @@ export default function ExerciseQueueApp({ token }) {
         <ScheduleCalendar
           scope={scope}
           setScope={setScope}
+          dragMode={dragMode}
+          setDragMode={m => { setDragMode(m); localStorage.setItem('exq-drag-mode', m); }}
           anchor={anchor}
           onShift={shift}
           onToday={goToday}

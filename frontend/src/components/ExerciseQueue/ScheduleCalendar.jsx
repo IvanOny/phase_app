@@ -15,7 +15,7 @@ function datesInRange(fromIso, toIso) {
 }
 
 export default function ScheduleCalendar({
-  scope, setScope, anchor, onShift, onToday, rangeFor,
+  scope, setScope, anchor, onShift, onToday, rangeFor, dragMode, setDragMode,
   exercises, schedule, onDropOnDay, onComplete, onRemove,
 }) {
   const [from, to] = rangeFor(scope, anchor);
@@ -114,10 +114,25 @@ export default function ScheduleCalendar({
           </div>
         </div>
 
-        <div className="exq-legend">
-          <span className="exq-legend-item"><i className="exq-sw exq-sw--planned" />planned</span>
-          <span className="exq-legend-item"><i className="exq-sw exq-sw--suggestion" />suggested (drag to commit)</span>
-          <span className="exq-legend-item"><i className="exq-sw exq-sw--done" />done</span>
+        <div className="exq-controls">
+          <div className="exq-dragmode">
+            <span className="exq-dragmode-lbl">On drag:</span>
+            <button
+              className={`exq-btn${dragMode === 'shift' ? ' active' : ''}`}
+              onClick={() => setDragMode('shift')}
+              title="Future occurrences follow, keeping the cadence"
+            >Shift series</button>
+            <button
+              className={`exq-btn${dragMode === 'single' ? ' active' : ''}`}
+              onClick={() => setDragMode('single')}
+              title="Only this one moves; future occurrences stay put"
+            >Only this</button>
+          </div>
+          <div className="exq-legend">
+            <span className="exq-legend-item"><i className="exq-sw exq-sw--planned" />planned</span>
+            <span className="exq-legend-item"><i className="exq-sw exq-sw--suggestion" />suggested</span>
+            <span className="exq-legend-item"><i className="exq-sw exq-sw--done" />done</span>
+          </div>
         </div>
 
         <div className="exq-weekdays">

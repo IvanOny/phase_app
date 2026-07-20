@@ -10,8 +10,13 @@ circular dependency.
 """
 from __future__ import annotations
 
-from datetime import date as _date, timedelta
+from datetime import date as _date, datetime, timedelta, timezone as _timezone
 from typing import Any
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 
 from phase_app.api import ApiResponse
 
@@ -112,10 +117,26 @@ class ExerciseQueueApi:
             "status": r["status"],
         }
 
+    def _user_today(self, cur, uid) -> _date:
+        """Today in the user's timezone — must match the bot's due check."""
+        cur.execute("SELECT timezone FROM exercise_users WHERE id = %s", (uid,))
+        row = cur.fetchone()
+        tzname = (row["timezone"] if row else None) or "Europe/Berlin"
+        tz = _timezone.utc
+        if ZoneInfo is not None:
+            try:
+                tz = ZoneInfo(tzname)
+            except Exception:
+                tz = _timezone.utc
+        return datetime.now(tz).date()
+
     def _project_suggestions(self, cur, uid, start, end, pinned) -> list[dict]:
-        """Cadence-based ghost occurrences for fixed/acquisition items in range."""
+        """Cadence ghosts for fixed/acquisition items, matching the bot's due model:
+        never done => due today; overdue => collapses to today (not a stale past
+        date); otherwise last_done + interval. Suggestions are forward-looking only."""
+        today = self._user_today(cur, uid)
         cur.execute(
-            "SELECT id, name, schedule_type, repeat_interval_days, acq_interval_days, last_done_at, created_at "
+            "SELECT id, name, schedule_type, repeat_interval_days, acq_interval_days, last_done_at "
             "FROM exercise_items "
             "WHERE user_id = %s AND status = 'active' AND schedule_type IN ('fixed', 'acquisition')",
             (uid,),
@@ -125,16 +146,16 @@ class ExerciseQueueApi:
             interval = e["repeat_interval_days"] if e["schedule_type"] == "fixed" else e["acq_interval_days"]
             if not interval or interval < 1:
                 continue
-            anchor = (e["last_done_at"] or e["created_at"])
-            anchor_date = anchor.date() if hasattr(anchor, "date") else anchor
-            # First projected occurrence strictly after the anchor.
-            d = anchor_date + timedelta(days=interval)
-            # Fast-forward into the window.
-            if d < start:
-                missed = (start - d).days // interval
-                d = d + timedelta(days=missed * interval)
-                while d < start:
-                    d += timedelta(days=interval)
+            if e["last_done_at"] is None:
+                first = today  # bot: never done is due now
+            else:
+                last = e["last_done_at"]
+                last_date = last.date() if hasattr(last, "date") else last
+                nxt = last_date + timedelta(days=interval)
+                first = nxt if nxt > today else today  # overdue => do it today
+            d = first
+            while d < start:
+                d += timedelta(days=interval)
             while d <= end:
                 if (e["id"], d.isoformat()) not in pinned:
                     out.append({

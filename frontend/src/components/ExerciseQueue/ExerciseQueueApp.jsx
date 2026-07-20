@@ -76,6 +76,22 @@ export default function ExerciseQueueApp({ token }) {
     })();
   }, [loadExercises, loadSchedule]);
 
+  // The bot edits the same data — re-sync when the tab comes back into focus so
+  // exercises added/completed in Telegram show up without a manual reload.
+  useEffect(() => {
+    function resync() {
+      if (document.hidden) return;
+      loadExercises();
+      loadSchedule();
+    }
+    window.addEventListener('focus', resync);
+    document.addEventListener('visibilitychange', resync);
+    return () => {
+      window.removeEventListener('focus', resync);
+      document.removeEventListener('visibilitychange', resync);
+    };
+  }, [loadExercises, loadSchedule]);
+
   // ── mutations ──
   const handleDropOnDay = useCallback(async (payload, dateStr) => {
     try {

@@ -19,6 +19,7 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None  # type: ignore
 
 from phase_app.api import ApiResponse
+from phase_app.exercise_due import first_due, interval_of
 
 
 class ExerciseQueueApi:
@@ -146,23 +147,14 @@ class ExerciseQueueApi:
         )
         out: list[dict] = []
         for e in cur.fetchall():
-            interval = e["repeat_interval_days"] if e["schedule_type"] == "fixed" else e["acq_interval_days"]
-            if not interval or interval < 1:
+            interval = interval_of(e)
+            if not interval:
                 continue
             last = e["last_done_at"]
             last_date = (last.date() if hasattr(last, "date") else last) if last else None
-            if e["anchor_date"]:
-                # User re-phased the series by dragging — preserve that phase.
-                first = e["anchor_date"]
-                while first < today:
-                    first += timedelta(days=interval)
-                while last_date and first <= last_date:
-                    first += timedelta(days=interval)
-            elif last_date is None:
-                first = today  # bot: never done is due now
-            else:
-                nxt = last_date + timedelta(days=interval)
-                first = nxt if nxt > today else today  # overdue => do it today
+            first = first_due(interval, last_date, e["anchor_date"], today)
+            if first is None:
+                continue
             d = first
             while d < start:
                 d += timedelta(days=interval)
@@ -301,8 +293,34 @@ class ExerciseQueueApi:
                 )
             else:
                 cur.execute("UPDATE exercise_items SET acq_sessions_done = %s WHERE id = %s", (done_n, ex_id))
+        self._drop_premature_auto(cur, uid, ex_id)
         self.conn.commit()
         return ApiResponse(200, {"done": True, "id": occ_id})
+
+    def _drop_premature_auto(self, cur, uid: int, ex_id: int) -> None:
+        """Mirror of exercise_bot._drop_premature_auto — after a completion, bin
+        auto-materialised future rows the new rhythm makes too early. Manual
+        placements survive; the user put those there on purpose."""
+        cur.execute(
+            "SELECT schedule_type, repeat_interval_days, acq_interval_days, last_done_at, anchor_date "
+            "FROM exercise_items WHERE id = %s AND user_id = %s",
+            (ex_id, uid),
+        )
+        ex = cur.fetchone()
+        if not ex or ex["schedule_type"] not in ("fixed", "acquisition"):
+            return
+        today = self._user_today(cur, uid)
+        last = ex["last_done_at"]
+        last_date = (last.date() if hasattr(last, "date") else last) if last else None
+        nxt = first_due(interval_of(ex), last_date, ex["anchor_date"], today)
+        if nxt is None:
+            return
+        cur.execute(
+            "DELETE FROM exercise_schedule WHERE user_id = %s AND exercise_id = %s "
+            "AND origin = 'auto' AND status = 'planned' "
+            "AND scheduled_date > %s AND scheduled_date < %s",
+            (uid, ex_id, today, nxt),
+        )
 
     # ── history + stats ─────────────────────────────────────────────────────
     def get_history(self, qp: dict[str, str]) -> ApiResponse:

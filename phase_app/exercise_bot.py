@@ -23,6 +23,7 @@ except ImportError:  # pragma: no cover
 # Reuse the burpee bot's Telegram helpers. This module is imported lazily from
 # handle_webhook, so phase_app.bot is fully initialized by the time this runs.
 from phase_app.bot import _tg, _send, _log
+from phase_app.exercise_due import first_due, interval_of
 
 _STATE_TIMEOUT_MINUTES = 10
 
@@ -119,34 +120,13 @@ def _user_tz(cur, user_id: int):
 
 
 def _next_due_date(ex, tz, as_of=None):
-    """First occurrence due on or after `as_of` (default: today), or None when the
-    item has no usable interval.
-
-    Must stay in step with exercise_api._project_suggestions — the web calendar
-    and this bot have to agree on when something is due. anchor_date (set by a
-    'shift series' drag in the planner) re-phases the series and wins over the
-    last_done_at rhythm. Anything overdue collapses onto `as_of`, so asking with
-    as_of=tomorrow naturally rolls pending items into tomorrow's plan.
-    """
-    interval = ex["repeat_interval_days"] if ex["schedule_type"] == "fixed" else ex["acq_interval_days"]
-    if not interval or interval < 1:
-        return None
+    """First occurrence due on or after `as_of` (default: today). See exercise_due."""
     ref = as_of or datetime.now(tz).date()
     last = ex["last_done_at"]
     last_date = last.astimezone(tz).date() if last else None
     # .get keeps this working if migration 032 hasn't been applied yet.
     anchor = ex.get("anchor_date") if hasattr(ex, "get") else None
-    if anchor:
-        first = anchor
-        while first < ref:
-            first += timedelta(days=interval)
-        while last_date and first <= last_date:
-            first += timedelta(days=interval)
-        return first
-    if last_date is None:
-        return ref  # never done => due as of the reference day
-    nxt = last_date + timedelta(days=interval)
-    return nxt if nxt > ref else ref  # overdue => collapses onto the reference day
+    return first_due(interval_of(ex), last_date, anchor, ref)
 
 
 # ── Serve query (Tier 3) ─────────────────────────────────────────────────────
@@ -499,6 +479,7 @@ def _cmd_done(cur, conn, user_id: int, chat_id: int, actual: str | None) -> None
             cur.execute("UPDATE exercise_items SET acq_sessions_done = %s WHERE id = %s", (done_n, ex["id"]))
             msg += f"\n📈 Acquisition {done_n}/{target}"
 
+    _drop_premature_auto(cur, user_id, ex["id"], _user_tz(cur, user_id))
     conn.commit()
     _send(chat_id, msg)
     _log(f"🏋️ Exercise done\n• {ex['name']}" + (f": {actual}" if actual else ""))
@@ -544,8 +525,9 @@ def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
 
     # Today's calendar rows tell us what's committed and what's already handled.
     cur.execute(
-        "SELECT s.exercise_id, s.status, e.name FROM exercise_schedule s "
-        "JOIN exercise_items e ON e.id = s.exercise_id "
+        "SELECT s.exercise_id, s.status, e.name, e.schedule_type, "
+        "       e.repeat_interval_days, e.acq_interval_days "
+        "FROM exercise_schedule s JOIN exercise_items e ON e.id = s.exercise_id "
         "WHERE s.user_id = %s AND s.scheduled_date = %s ORDER BY e.name",
         (user_id, today),
     )
@@ -576,19 +558,19 @@ def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
         _send(chat_id, "✅ Nothing left today.")
         return
 
-    lines = ["📋 Left today\n"]
+    # One list — whether an item is committed or still cadence-derived doesn't
+    # change what you do about it. The cadence shows up as an inline hint.
     todo: list[tuple[int, str]] = []  # gets ✓/⏭ buttons
-    if scheduled:
-        lines.append("📌 Scheduled")
-        for r in scheduled:
-            lines.append(f"• {r['name']}")
-            todo.append((r["exercise_id"], r["name"]))
-        lines.append("")
-    if due:
-        lines.append("Tier 2 — due")
-        for e in due:
-            lines.append(f"• {e['name']}")
-            todo.append((e["id"], e["name"]))
+    lines = ["📋 Left today\n"]
+    for r in scheduled:
+        hint = f"   (every {interval_of(r)}d)" if interval_of(r) else ""
+        lines.append(f"• {r['name']}{hint}")
+        todo.append((r["exercise_id"], r["name"]))
+    for e in due:
+        hint = f"   (every {interval_of(e)}d)" if interval_of(e) else ""
+        lines.append(f"• {e['name']}{hint}")
+        todo.append((e["id"], e["name"]))
+    if todo:
         lines.append("")
     if queue:
         lines.append("Queue (serve with `next`)")
@@ -603,6 +585,61 @@ def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
             {"text": "⏭", "callback_data": f"ex:tskip:{ex_id}"},
         ] for ex_id, name in todo[:8]]}
     _send(chat_id, "\n".join(lines), reply_markup=kb)
+
+
+def _drop_premature_auto(cur, user_id: int, ex_id: int, tz) -> None:
+    """After a completion, bin any auto-materialised future rows that the new
+    rhythm makes too early. Manual placements are left alone — the user put
+    those there deliberately."""
+    cur.execute("SELECT * FROM exercise_items WHERE id = %s AND user_id = %s", (ex_id, user_id))
+    ex = cur.fetchone()
+    if not ex or ex["schedule_type"] not in ("fixed", "acquisition"):
+        return
+    today = datetime.now(tz).date()
+    nxt = _next_due_date(ex, tz, today)
+    if nxt is None:
+        return
+    cur.execute(
+        "DELETE FROM exercise_schedule WHERE user_id = %s AND exercise_id = %s "
+        "AND origin = 'auto' AND status = 'planned' "
+        "AND scheduled_date > %s AND scheduled_date < %s",
+        (user_id, ex_id, today, nxt),
+    )
+
+
+def _lock_in_tomorrow(cur, user_id: int, tz) -> None:
+    """Turn tomorrow's cadence suggestions into committed rows.
+
+    Runs with the 19:00 plan: up to that point tomorrow is still fluid (dashed)
+    and can be rearranged freely; afterwards it's the day's actual programme.
+    Rows are origin='auto' so they stay distinguishable from hand-placed ones,
+    and they remain draggable — this is a commitment, not a lock.
+
+    Also closes the books on days gone by: anything still 'planned' before today
+    becomes 'skipped', so history is honest and old chips don't pile up.
+    """
+    today = datetime.now(tz).date()
+    tomorrow = today + timedelta(days=1)
+
+    cur.execute(
+        "UPDATE exercise_schedule SET status = 'skipped' "
+        "WHERE user_id = %s AND status = 'planned' AND scheduled_date < %s",
+        (user_id, today),
+    )
+
+    cur.execute(
+        "SELECT * FROM exercise_items WHERE user_id = %s AND status = 'active' "
+        "AND schedule_type IN ('fixed', 'acquisition')",
+        (user_id,),
+    )
+    for e in cur.fetchall():
+        if _next_due_date(e, tz, tomorrow) == tomorrow:
+            cur.execute(
+                "INSERT INTO exercise_schedule (user_id, exercise_id, scheduled_date, origin, status) "
+                "VALUES (%s, %s, %s, 'auto', 'planned') "
+                "ON CONFLICT (exercise_id, scheduled_date) DO NOTHING",
+                (user_id, e["id"], tomorrow),
+            )
 
 
 def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool) -> None:
@@ -654,6 +691,7 @@ def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool) -
         else:
             cur.execute("UPDATE exercise_items SET acq_sessions_done = %s WHERE id = %s", (done_n, ex_id))
             msg += f"\n📈 Acquisition {done_n}/{target}"
+    _drop_premature_auto(cur, user_id, ex_id, tz)
     conn.commit()
     _send(chat_id, msg)
     _log(f"🏋️ Exercise done\n• {ex['name']}")
@@ -1111,7 +1149,9 @@ def send_exercise_overview(conn) -> None:
         tz = _user_tz(cur, user_id)
 
         # Sent in the evening, so it previews TOMORROW — a plan for "today"
-        # arriving at 19:00 is too late to act on.
+        # arriving at 19:00 is too late to act on. Lock tomorrow in first: up to
+        # now it was fluid, from here it's the committed programme.
+        _lock_in_tomorrow(cur, user_id, tz)
         target = datetime.now(tz).date() + timedelta(days=1)
         cur.execute(
             "SELECT s.exercise_id, e.name FROM exercise_schedule s "

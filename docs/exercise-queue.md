@@ -86,15 +86,35 @@ backlog, not day-specific).
 That cron path is shared with the burpee jobs (radar, daily report, milestones,
 monthly summaries) — changing its schedule moves those too.
 
-### Keeping the bot and the calendar in agreement
+### Lock-in: how dashed becomes solid
 
-Both surfaces must answer "when is this due?" identically:
+Dashed vs solid is **temporal**, not an implementation detail:
 
-- `exercise_bot._next_due_date(ex, tz, as_of)` and
-  `exercise_api._project_suggestions` implement the same rule — `anchor_date`
-  wins if set, else never-done => `as_of`, else overdue => collapses onto
-  `as_of`, else `last_done + interval`. **Change one, change the other.**
-  The evening plan passes `as_of=tomorrow`, so pending items roll forward.
+- Days beyond tomorrow are **dashed** — cadence guesses, freely rearrangeable.
+- At the 19:00 cron, `_lock_in_tomorrow` materialises tomorrow's due items as
+  real rows (`origin='auto'`, `status='planned'`). Tomorrow becomes **solid** —
+  the committed programme, and it's what the evening message reports.
+- They stay draggable. It's a commitment, not a restriction.
+
+Same job closes the books on the past: rows still `planned` before today are
+flipped to `skipped`, so history is honest and stale chips don't accumulate.
+
+Because tomorrow is materialised the night before, by the time you work through
+it everything is already a committed row — which is why `overview` needs only
+one list. The cadence-derived branch remains as a fallback for items added after
+lock-in.
+
+If you complete something early, `_drop_premature_auto` deletes auto rows the new
+rhythm makes too soon. Manual placements are never touched.
+
+### Keeping the surfaces in agreement
+
+`phase_app/exercise_due.py` is the single source of truth for cadence maths
+(`interval_of`, `first_due`). The bot, the web projection, and both
+premature-cleanup paths all call it, so they cannot drift apart. `first_due`:
+`anchor_date` wins if set, else never-done => `as_of`, else overdue => collapses
+onto `as_of`, else `last_done + interval`. The evening plan passes
+`as_of=tomorrow`, so pending items roll forward.
 - A committed occurrence on a day suppresses that day's cadence suggestion, in
   the calendar *and* in the daily plan (the plan filters `due` by `scheduled_ids`).
 

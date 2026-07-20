@@ -213,6 +213,12 @@ export default function ScreenshotImportForm({ phases, selectedPhaseId, exercise
         ...runFields,
       });
 
+      if (session._duplicate) {
+        setError(`A ${editedData.sessionType} session on ${editedData.sessionDate} already exists.`);
+        setImportProgress(null);
+        return;
+      }
+
       const exercisesWithSets = editedData.exercises.filter(ex => ex.sets.length > 0);
       for (let exIdx = 0; exIdx < exercisesWithSets.length; exIdx++) {
         const ex = exercisesWithSets[exIdx];

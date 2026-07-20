@@ -50,7 +50,7 @@ Sent as plain text (no leading slash needed; a slash is stripped if present).
 | `next [filters]` | Serve the next queue item. Filters: `focus` / `location` (`home`/`barrack`/`random`) / `load` (`easy`/`upper`/`lower`/`systemic`). e.g. `next knee barrack` |
 | `done [actual]` | Mark the served item done; optional actual-dose note |
 | `skip` | Skip the served item for 1h. After 3 consecutive skips it offers to park it |
-| `overview` | Queue in serve order |
+| `overview` | What's still left **today** — scheduled + cadence-due + queue. Items already done/skipped today drop off, so the list shrinks through the day. Scheduled/Tier-2 rows get ✓/⏭ buttons |
 | `list` | All exercises with schedule + status |
 | `edit <name>` | Change one field (inline keyboard picks the field) |
 | `pause` / `park` / `activate` `<name>` | Set status. Note: bare `pause` (no name) falls through to the burpee bot's mute |
@@ -98,8 +98,17 @@ Both surfaces must answer "when is this due?" identically:
 - A committed occurrence on a day suppresses that day's cadence suggestion, in
   the calendar *and* in the daily plan (the plan filters `due` by `scheduled_ids`).
 
-Note `overview` is deliberately narrower: it lists only Tier-3 queue items in
-serve order and ignores the calendar.
+### The daily loop
+
+1. **19:00** — evening preview of *tomorrow's* plan.
+2. **During the day** — do things; tap ✓/⏭ in `overview`, or use `next`/`done`
+   for queue items, or tick them off in the web calendar.
+3. **`overview`** — what's still left *today*.
+
+Marking done/skipped from `overview` writes a row to `exercise_schedule` for
+today (`_mark_today`), which is why all three surfaces stay in sync: the web
+calendar shows it as a done/suppressed chip, and `overview` stops listing it.
+`done`/`skip` (bare) still act on the `next`-served queue item.
 
 ## Web planner (calendar / log / stats)
 

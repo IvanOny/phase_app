@@ -367,6 +367,12 @@ def handle_exercise_callback(cur, conn, tg_id: int, chat_id: int, msg_id: int, d
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         _cmd_skip(cur, conn, user_id, chat_id)
         return
+    if body.startswith("tdone:"):
+        _mark_today(cur, conn, user_id, chat_id, int(body[len("tdone:"):]), done=True)
+        return
+    if body.startswith("tskip:"):
+        _mark_today(cur, conn, user_id, chat_id, int(body[len("tskip:"):]), done=False)
+        return
     if body.startswith("park:"):
         name = body[len("park:"):]
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
@@ -416,7 +422,7 @@ def _cmd_help(chat_id: int) -> None:
         "next [filters] — serve the next queue item (e.g. next knee barrack)\n"
         "done [actual] — mark the served item done\n"
         "skip — skip the served item for 1h\n"
-        "overview — queue in serve order\n"
+        "overview — what's left to do today (with ✓/⏭ buttons)\n"
         "list — all exercises\n"
         "edit <name> — change a field\n"
         "pause/park/activate <name> — status\n"
@@ -528,22 +534,129 @@ def _cmd_skip(cur, conn, user_id: int, chat_id: int) -> None:
 
 
 def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
+    """What's still left to do TODAY — the companion to the evening plan.
+
+    Anything already marked done/skipped today (from here or the web calendar)
+    drops off, so the list shrinks as the day goes on.
+    """
+    tz = _user_tz(cur, user_id)
+    today = datetime.now(tz).date()
+
+    # Today's calendar rows tell us what's committed and what's already handled.
     cur.execute(
-        "SELECT name, load_tag FROM exercise_items "
+        "SELECT s.exercise_id, s.status, e.name FROM exercise_schedule s "
+        "JOIN exercise_items e ON e.id = s.exercise_id "
+        "WHERE s.user_id = %s AND s.scheduled_date = %s ORDER BY e.name",
+        (user_id, today),
+    )
+    today_rows = cur.fetchall()
+    handled = {r["exercise_id"] for r in today_rows if r["status"] in ("done", "skipped")}
+    scheduled = [r for r in today_rows if r["status"] == "planned"]
+    scheduled_ids = {r["exercise_id"] for r in scheduled}
+
+    cur.execute(
+        "SELECT * FROM exercise_items WHERE user_id = %s AND status = 'active' "
+        "AND schedule_type IN ('fixed', 'acquisition')",
+        (user_id,),
+    )
+    due = [e for e in cur.fetchall()
+           if e["id"] not in handled and e["id"] not in scheduled_ids
+           and _next_due_date(e, tz, today) == today]
+
+    cur.execute(
+        "SELECT id, name, load_tag FROM exercise_items "
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
         "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
         "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC",
         (user_id,),
     )
-    rows = cur.fetchall()
-    if not rows:
-        _send(chat_id, "Queue is empty.")
+    queue = [r for r in cur.fetchall() if r["id"] not in handled]
+
+    if not scheduled and not due and not queue:
+        _send(chat_id, "✅ Nothing left today.")
         return
-    lines = ["📋 Queue (serve order):"]
-    for i, r in enumerate(rows, 1):
-        load = f" · {r['load_tag']}" if r["load_tag"] else ""
-        lines.append(f"{i}. {r['name']}{load}")
-    _send(chat_id, "\n".join(lines))
+
+    lines = ["📋 Left today\n"]
+    todo: list[tuple[int, str]] = []  # gets ✓/⏭ buttons
+    if scheduled:
+        lines.append("📌 Scheduled")
+        for r in scheduled:
+            lines.append(f"• {r['name']}")
+            todo.append((r["exercise_id"], r["name"]))
+        lines.append("")
+    if due:
+        lines.append("Tier 2 — due")
+        for e in due:
+            lines.append(f"• {e['name']}")
+            todo.append((e["id"], e["name"]))
+        lines.append("")
+    if queue:
+        lines.append("Queue (serve with `next`)")
+        for i, r in enumerate(queue, 1):
+            load = f" · {r['load_tag']}" if r["load_tag"] else ""
+            lines.append(f"{i}. {r['name']}{load}")
+
+    kb = None
+    if todo:
+        kb = {"inline_keyboard": [[
+            {"text": f"✓ {name}", "callback_data": f"ex:tdone:{ex_id}"},
+            {"text": "⏭", "callback_data": f"ex:tskip:{ex_id}"},
+        ] for ex_id, name in todo[:8]]}
+    _send(chat_id, "\n".join(lines), reply_markup=kb)
+
+
+def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool) -> None:
+    """Mark a scheduled / cadence-due exercise done or skipped for today.
+
+    Records it on the calendar (exercise_schedule) so the web planner and the
+    bot agree, and so `overview` stops listing it.
+    """
+    cur.execute("SELECT * FROM exercise_items WHERE id = %s AND user_id = %s", (ex_id, user_id))
+    ex = cur.fetchone()
+    if not ex:
+        _send(chat_id, "That exercise no longer exists.")
+        return
+    tz = _user_tz(cur, user_id)
+    today = datetime.now(tz).date()
+    cur.execute(
+        "INSERT INTO exercise_schedule (user_id, exercise_id, scheduled_date, origin, status) "
+        "VALUES (%s, %s, %s, 'manual', %s) "
+        "ON CONFLICT (exercise_id, scheduled_date) DO UPDATE SET status = EXCLUDED.status",
+        (user_id, ex_id, today, "done" if done else "skipped"),
+    )
+
+    if not done:
+        conn.commit()
+        _send(chat_id, f"⏭ {ex['name']} — skipped for today.")
+        _log(f"⏭ Skipped today\n• {ex['name']}")
+        return
+
+    cur.execute(
+        "UPDATE exercise_items SET last_done_at = NOW(), consecutive_skips = 0, skipped_until = NULL "
+        "WHERE id = %s",
+        (ex_id,),
+    )
+    cur.execute(
+        "INSERT INTO exercise_history (user_id, exercise_id, done_at, source) VALUES (%s, %s, NOW(), 'overview')",
+        (user_id, ex_id),
+    )
+    msg = f"✓ {ex['name']} done"
+    if ex["schedule_type"] == "acquisition":
+        done_n = (ex["acq_sessions_done"] or 0) + 1
+        target = ex["acq_target_sessions"] or 0
+        if done_n >= target:
+            cur.execute(
+                "UPDATE exercise_items SET schedule_type = 'queue', acq_sessions_done = 0, "
+                "acq_target_sessions = NULL, acq_interval_days = NULL WHERE id = %s",
+                (ex_id,),
+            )
+            msg += f"\n🎓 Acquisition complete ({done_n}/{target}) — {ex['name']} rejoins the queue."
+        else:
+            cur.execute("UPDATE exercise_items SET acq_sessions_done = %s WHERE id = %s", (done_n, ex_id))
+            msg += f"\n📈 Acquisition {done_n}/{target}"
+    conn.commit()
+    _send(chat_id, msg)
+    _log(f"🏋️ Exercise done\n• {ex['name']}")
 
 
 def _cmd_list(cur, user_id: int, chat_id: int) -> None:

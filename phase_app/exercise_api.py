@@ -241,6 +241,10 @@ class ExerciseQueueApi:
         occ = cur.fetchone()
         if not occ:
             return ApiResponse(404, {"error": "not_found"})
+        # You can't have done something that hasn't happened yet.
+        if occ["scheduled_date"] > self._user_today(cur, uid):
+            return ApiResponse(400, {"error": "future_occurrence",
+                                     "detail": "Can't mark a future day as done."})
         ex_id = occ["exercise_id"]
         cur.execute("UPDATE exercise_schedule SET status = 'done' WHERE id = %s", (occ_id,))
         cur.execute(

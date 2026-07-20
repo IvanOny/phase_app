@@ -64,6 +64,14 @@
 .exq-btn:hover { color: var(--text-primary); border-color: var(--accent); }
 .exq-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* Legend */
+.exq-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.exq-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted); }
+.exq-sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.exq-sw--planned { background: var(--accent); }
+.exq-sw--suggestion { border: 1px dashed var(--text-muted); background: transparent; }
+.exq-sw--done { background: var(--ready-green, #16a34a); }
+
 /* Grid */
 .exq-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px; }
 .exq-weekday { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; text-align: center; }

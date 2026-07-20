@@ -114,6 +114,12 @@ export default function ScheduleCalendar({
           </div>
         </div>
 
+        <div className="exq-legend">
+          <span className="exq-legend-item"><i className="exq-sw exq-sw--planned" />planned</span>
+          <span className="exq-legend-item"><i className="exq-sw exq-sw--suggestion" />suggested (drag to commit)</span>
+          <span className="exq-legend-item"><i className="exq-sw exq-sw--done" />done</span>
+        </div>
+
         <div className="exq-weekdays">
           {WD.map(w => <div key={w} className="exq-weekday">{w}</div>)}
         </div>
@@ -139,7 +145,10 @@ export default function ScheduleCalendar({
                     >
                       <span className="exq-chip-name">{o.name}</span>
                       <span className="exq-chip-actions">
-                        {o.status !== 'done' && <button className="exq-chip-btn" title="Mark done" onPointerDown={e => e.stopPropagation()} onClick={() => onComplete(o.id)}>✓</button>}
+                        {/* Only past/today can be completed — you can't have done a future day. */}
+                        {o.status !== 'done' && o.date <= todayIso && (
+                          <button className="exq-chip-btn" title="Mark done" onPointerDown={e => e.stopPropagation()} onClick={() => onComplete(o.id)}>✓</button>
+                        )}
                         <button className="exq-chip-btn" title="Remove" onPointerDown={e => e.stopPropagation()} onClick={() => onRemove(o.id)}>✕</button>
                       </span>
                     </div>

@@ -76,18 +76,25 @@ confuse them.
 
 ## Cron
 
-`send_exercise_overview(conn)` runs inside `/api/cron/radar` (17:00 UTC =
-19:00 Europe/Berlin, matching the default `overview_time`). "Today's plan" has
-three sections: **📌 Scheduled today** (committed occurrences placed in the web
-calendar), **Tier 2 — due today** (cadence), and a queue preview.
+`send_exercise_overview(conn)` runs inside `/api/cron/radar` (`0 17 * * *` =
+19:00 Europe/Berlin in summer). Because it lands in the evening it previews
+**tomorrow**, not today — a plan for today arriving at 19:00 is too late to act
+on. Three sections: **📌 Scheduled tomorrow** (committed occurrences from the web
+calendar), **Tier 2 — due tomorrow** (cadence), and a queue preview (the standing
+backlog, not day-specific).
+
+That cron path is shared with the burpee jobs (radar, daily report, milestones,
+monthly summaries) — changing its schedule moves those too.
 
 ### Keeping the bot and the calendar in agreement
 
 Both surfaces must answer "when is this due?" identically:
 
-- `exercise_bot._next_due_date` and `exercise_api._project_suggestions` implement
-  the same rule — `anchor_date` wins if set, else never-done => today, else
-  overdue => today, else `last_done + interval`. **Change one, change the other.**
+- `exercise_bot._next_due_date(ex, tz, as_of)` and
+  `exercise_api._project_suggestions` implement the same rule — `anchor_date`
+  wins if set, else never-done => `as_of`, else overdue => collapses onto
+  `as_of`, else `last_done + interval`. **Change one, change the other.**
+  The evening plan passes `as_of=tomorrow`, so pending items roll forward.
 - A committed occurrence on a day suppresses that day's cadence suggestion, in
   the calendar *and* in the daily plan (the plan filters `due` by `scheduled_ids`).
 

@@ -118,38 +118,35 @@ def _user_tz(cur, user_id: int):
         return timezone.utc
 
 
-def _next_due_date(ex, tz):
-    """First upcoming occurrence, or None when the item has no usable interval.
+def _next_due_date(ex, tz, as_of=None):
+    """First occurrence due on or after `as_of` (default: today), or None when the
+    item has no usable interval.
 
     Must stay in step with exercise_api._project_suggestions — the web calendar
     and this bot have to agree on when something is due. anchor_date (set by a
     'shift series' drag in the planner) re-phases the series and wins over the
-    last_done_at rhythm.
+    last_done_at rhythm. Anything overdue collapses onto `as_of`, so asking with
+    as_of=tomorrow naturally rolls pending items into tomorrow's plan.
     """
     interval = ex["repeat_interval_days"] if ex["schedule_type"] == "fixed" else ex["acq_interval_days"]
     if not interval or interval < 1:
         return None
-    today_local = datetime.now(tz).date()
+    ref = as_of or datetime.now(tz).date()
     last = ex["last_done_at"]
     last_date = last.astimezone(tz).date() if last else None
     # .get keeps this working if migration 032 hasn't been applied yet.
     anchor = ex.get("anchor_date") if hasattr(ex, "get") else None
     if anchor:
         first = anchor
-        while first < today_local:
+        while first < ref:
             first += timedelta(days=interval)
         while last_date and first <= last_date:
             first += timedelta(days=interval)
         return first
     if last_date is None:
-        return today_local  # never done is due now
+        return ref  # never done => due as of the reference day
     nxt = last_date + timedelta(days=interval)
-    return nxt if nxt > today_local else today_local  # overdue => do it today
-
-
-def _is_due(ex, tz) -> bool:
-    d = _next_due_date(ex, tz)
-    return True if d is None else d == datetime.now(tz).date()
+    return nxt if nxt > ref else ref  # overdue => collapses onto the reference day
 
 
 # ── Serve query (Tier 3) ─────────────────────────────────────────────────────
@@ -990,7 +987,7 @@ def _apply_edit_value(cur, conn, user_id: int, chat_id: int, ex_id: int, field: 
 # ── Daily overview (called from the cron endpoint) ───────────────────────────
 
 def send_exercise_overview(conn) -> None:
-    """Compose and send each active exercise user's daily plan preview.
+    """Send each active exercise user an evening preview of TOMORROW's plan.
     Wired into /api/cron/radar, which fires at 17:00 UTC = 19:00 Europe/Berlin."""
     cur = conn.cursor()
     cur.execute("SELECT id, telegram_user_id, chat_id FROM exercise_users")
@@ -1000,14 +997,15 @@ def send_exercise_overview(conn) -> None:
         chat_id = u["chat_id"] or u["telegram_user_id"]
         tz = _user_tz(cur, user_id)
 
-        # Committed occurrences placed on today in the web planner.
-        today_local = datetime.now(tz).date()
+        # Sent in the evening, so it previews TOMORROW — a plan for "today"
+        # arriving at 19:00 is too late to act on.
+        target = datetime.now(tz).date() + timedelta(days=1)
         cur.execute(
             "SELECT s.exercise_id, e.name FROM exercise_schedule s "
             "JOIN exercise_items e ON e.id = s.exercise_id "
             "WHERE s.user_id = %s AND s.scheduled_date = %s AND s.status = 'planned' "
             "ORDER BY e.name",
-            (user_id, today_local),
+            (user_id, target),
         )
         scheduled = cur.fetchall()
         scheduled_ids = {r["exercise_id"] for r in scheduled}
@@ -1018,7 +1016,9 @@ def send_exercise_overview(conn) -> None:
             (user_id,),
         )
         # A committed placement wins over its cadence suggestion, same as the calendar.
-        due = [e for e in cur.fetchall() if _is_due(e, tz) and e["id"] not in scheduled_ids]
+        # Still-pending items collapse onto `target`, so they roll into tomorrow.
+        due = [e for e in cur.fetchall()
+               if _next_due_date(e, tz, target) == target and e["id"] not in scheduled_ids]
 
         cur.execute(
             "SELECT name, load_tag FROM exercise_items "
@@ -1032,14 +1032,14 @@ def send_exercise_overview(conn) -> None:
         if not due and not queue and not scheduled:
             continue
 
-        lines = ["🗓 Today's plan\n"]
+        lines = ["🗓 Tomorrow's plan\n"]
         if scheduled:
-            lines.append("📌 Scheduled today")
+            lines.append("📌 Scheduled tomorrow")
             for r in scheduled:
                 lines.append(f"• {r['name']}")
             lines.append("")
         if due:
-            lines.append("Tier 2 — due today")
+            lines.append("Tier 2 — due tomorrow")
             for e in due:
                 if e["schedule_type"] == "acquisition":
                     tag = f"   [Active pin — {e['acq_sessions_done']}/{e['acq_target_sessions']}]"

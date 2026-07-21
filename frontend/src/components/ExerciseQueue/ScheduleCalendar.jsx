@@ -103,10 +103,10 @@ export default function ScheduleCalendar({
       <div
         key={ex.id}
         className={`exq-pill exq-pill--${ex.scheduleType}`}
-        onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.name }, e)}
-        title={ex.description || ex.name}
+        onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.shortName || ex.name }, e)}
+        title={ex.name}
       >
-        <span className="exq-pill-name">{ex.name}</span>
+        <span className="exq-pill-name">{ex.shortName || ex.name}</span>
         <span className="exq-pill-tag">{tag}</span>
         <button
           className="exq-pill-edit"
@@ -208,9 +208,10 @@ export default function ScheduleCalendar({
                     <div
                       key={`o${o.id}`}
                       className={`exq-chip exq-chip--${o.status}`}
-                      onPointerDown={e => startDrag({ kind: 'occurrence', id: o.id, exerciseId: o.exerciseId, date: o.date, name: o.name }, e)}
+                      title={o.name}
+                      onPointerDown={e => startDrag({ kind: 'occurrence', id: o.id, exerciseId: o.exerciseId, date: o.date, name: o.label || o.name }, e)}
                     >
-                      <span className="exq-chip-name">{o.name}</span>
+                      <span className="exq-chip-name">{o.label || o.name}</span>
                       <span className="exq-chip-actions">
                         {/* Only past/today can be completed — you can't have done a future day. */}
                         {o.status !== 'done' && o.date <= todayIso && (
@@ -224,10 +225,10 @@ export default function ScheduleCalendar({
                     <div
                       key={`s${s.exerciseId}-${s.date}`}
                       className="exq-chip exq-chip--suggestion"
-                      onPointerDown={e => startDrag({ kind: 'suggestion', exerciseId: s.exerciseId, date: s.date, name: s.name }, e)}
-                      title="Cadence suggestion — drag to commit"
+                      onPointerDown={e => startDrag({ kind: 'suggestion', exerciseId: s.exerciseId, date: s.date, name: s.label || s.name }, e)}
+                      title={`${s.name} — cadence suggestion, drag to commit`}
                     >
-                      <span className="exq-chip-name">{s.name}</span>
+                      <span className="exq-chip-name">{s.label || s.name}</span>
                     </div>
                   ))}
                 </div>

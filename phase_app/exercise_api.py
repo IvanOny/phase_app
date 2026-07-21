@@ -52,7 +52,7 @@ class ExerciseQueueApi:
             return ApiResponse(401, {"error": "unauthorized"})
         cur = self.conn.cursor()
         cur.execute(
-            "SELECT id, name, description, schedule_type, repeat_interval_days, "
+            "SELECT id, name, short_name, description, schedule_type, repeat_interval_days, "
             "       acq_interval_days, acq_target_sessions, acq_sessions_done, "
             "       focus_area, location, equipment, load_tag, status, last_done_at "
             "FROM exercise_items WHERE user_id = %s ORDER BY schedule_type, name",
@@ -65,6 +65,7 @@ class ExerciseQueueApi:
         return {
             "id": r["id"],
             "name": r["name"],
+            "shortName": r["short_name"] if "short_name" in r else None,
             "description": r["description"],
             "scheduleType": r["schedule_type"],
             "repeatIntervalDays": r["repeat_interval_days"],
@@ -84,7 +85,7 @@ class ExerciseQueueApi:
         if uid is None:
             return ApiResponse(401, {"error": "unauthorized"})
         allowed = {
-            "name": "name", "description": "description", "scheduleType": "schedule_type",
+            "name": "name", "shortName": "short_name", "description": "description", "scheduleType": "schedule_type",
             "repeatIntervalDays": "repeat_interval_days", "acqIntervalDays": "acq_interval_days",
             "acqTargetSessions": "acq_target_sessions", "focusArea": "focus_area",
             "location": "location", "equipment": "equipment", "loadTag": "load_tag", "status": "status",
@@ -160,7 +161,7 @@ class ExerciseQueueApi:
 
         cur = self.conn.cursor()
         cur.execute(
-            "SELECT s.id, s.exercise_id, s.scheduled_date, s.origin, s.status, e.name "
+            "SELECT s.id, s.exercise_id, s.scheduled_date, s.origin, s.status, e.name, e.short_name "
             "FROM exercise_schedule s JOIN exercise_items e ON e.id = s.exercise_id "
             "WHERE s.user_id = %s AND s.scheduled_date BETWEEN %s AND %s "
             "ORDER BY s.scheduled_date",
@@ -179,10 +180,12 @@ class ExerciseQueueApi:
 
     @staticmethod
     def _occurrence_row(r) -> dict[str, Any]:
+        short = r["short_name"] if "short_name" in r else None
         return {
             "id": r["id"],
             "exerciseId": r["exercise_id"],
-            "name": r["name"],
+            "name": r["name"],           # full name — used for the hover tooltip
+            "label": short or r["name"],  # what the chip shows
             "date": r["scheduled_date"].isoformat(),
             "origin": r["origin"],
             "status": r["status"],
@@ -207,7 +210,7 @@ class ExerciseQueueApi:
         date); otherwise last_done + interval. Suggestions are forward-looking only."""
         today = self._user_today(cur, uid)
         cur.execute(
-            "SELECT id, name, schedule_type, repeat_interval_days, acq_interval_days, last_done_at, anchor_date "
+            "SELECT id, name, short_name, schedule_type, repeat_interval_days, acq_interval_days, last_done_at, anchor_date "
             "FROM exercise_items "
             "WHERE user_id = %s AND status = 'active' AND schedule_type IN ('fixed', 'acquisition')",
             (uid,),
@@ -230,6 +233,7 @@ class ExerciseQueueApi:
                     out.append({
                         "exerciseId": e["id"],
                         "name": e["name"],
+                        "label": e["short_name"] or e["name"],
                         "date": d.isoformat(),
                         "origin": "auto",
                         "scheduleType": e["schedule_type"],
@@ -247,7 +251,7 @@ class ExerciseQueueApi:
             return ApiResponse(400, {"error": "validation_error", "detail": "exerciseId and date required"})
         cur = self.conn.cursor()
         # Ownership check.
-        cur.execute("SELECT name FROM exercise_items WHERE id = %s AND user_id = %s", (ex_id, uid))
+        cur.execute("SELECT name, short_name FROM exercise_items WHERE id = %s AND user_id = %s", (ex_id, uid))
         ex = cur.fetchone()
         if not ex:
             return ApiResponse(404, {"error": "not_found"})
@@ -260,6 +264,7 @@ class ExerciseQueueApi:
         )
         row = cur.fetchone()
         row["name"] = ex["name"]
+        row["short_name"] = ex["short_name"]
         self._apply_drag_mode(cur, uid, ex_id, d, body)
         self.conn.commit()
         return ApiResponse(201, self._occurrence_row(row))
@@ -303,8 +308,10 @@ class ExerciseQueueApi:
         if (body or {}).get("mode") == "shift":
             cur.execute("UPDATE exercise_items SET anchor_date = %s WHERE id = %s AND user_id = %s",
                         (d, row["exercise_id"], uid))
-        cur.execute("SELECT name FROM exercise_items WHERE id = %s", (row["exercise_id"],))
-        row["name"] = (cur.fetchone() or {}).get("name")
+        cur.execute("SELECT name, short_name FROM exercise_items WHERE id = %s", (row["exercise_id"],))
+        ex = cur.fetchone() or {}
+        row["name"] = ex.get("name")
+        row["short_name"] = ex.get("short_name")
         self.conn.commit()
         return ApiResponse(200, self._occurrence_row(row))
 

@@ -8,6 +8,8 @@ import {
   moveOccurrence,
   deleteOccurrence,
   completeOccurrence,
+  updateExqExercise,
+  deleteExqExercise,
 } from '../../api/exqClient.js';
 import ScheduleCalendar from './ScheduleCalendar.jsx';
 import ExerciseLog from './ExerciseLog.jsx';
@@ -120,6 +122,16 @@ export default function ExerciseQueueApp({ token }) {
     catch (e) { setError(e.message); }
   }, [loadSchedule]);
 
+  const handleUpdateExercise = useCallback(async (id, patch) => {
+    await updateExqExercise(id, patch);           // let the editor surface errors
+    await Promise.all([loadExercises(), loadSchedule()]);
+  }, [loadExercises, loadSchedule]);
+
+  const handleDeleteExercise = useCallback(async (id) => {
+    try { await deleteExqExercise(id); await Promise.all([loadExercises(), loadSchedule()]); }
+    catch (e) { setError(e.message); }
+  }, [loadExercises, loadSchedule]);
+
   function shift(delta) {
     const d = new Date(anchor);
     if (scope === 'week') d.setDate(d.getDate() + delta * 7);
@@ -160,6 +172,8 @@ export default function ExerciseQueueApp({ token }) {
           onDropOnDay={handleDropOnDay}
           onComplete={handleComplete}
           onRemove={handleRemove}
+          onUpdateExercise={handleUpdateExercise}
+          onDeleteExercise={handleDeleteExercise}
         />
       ) : tab === 'log' ? (
         <ExerciseLog />

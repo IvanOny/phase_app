@@ -137,10 +137,16 @@ at `/?exq_token=<token>`. Get the link from the bot with **`exapp`**; it mints a
 per-user token stored on `exercise_users.token`.
 
 - **Calendar** (`ScheduleCalendar.jsx`) — week/month grid with drag-and-drop. A
-  side rail lists active exercises; drag one onto a day to schedule it. Solid
-  chips are committed occurrences; faint dashed chips are cadence *suggestions*.
-  **A manual placement overrides the suggestion** — dragging beats every-N-days.
-  Chips expose ✓ (done — resets the cadence anchor, advances acquisition) and ✕.
+  side rail lists active exercises in collapsible **Queue** / **Recurring**
+  groups (recurring sorted by frequency); drag one onto a day to schedule it.
+  Solid chips are committed occurrences; faint dashed chips are cadence
+  *suggestions*. **A manual placement overrides the suggestion** — dragging beats
+  every-N-days. Chips expose ✓ (done — resets the cadence anchor, advances
+  acquisition) and ✕. The ✎ on a rail pill opens the editor.
+- **Editor** (`ExerciseEditor.jsx`) — a modal to edit every field of an exercise
+  (name, description, schedule type + intervals, focus, location, equipment,
+  load, status) or delete it, via `PATCH`/`DELETE /v1/exq/exercises/:id`.
+  Switching schedule type nulls the cadence columns that no longer apply.
 - **Log** — recent completions from `exercise_history`.
 - **Stats** — per-exercise counts + totals.
 
@@ -166,9 +172,9 @@ sets `last_done_at = now`, so the rhythm continues from when it was actually don
 
 ### API (`phase_app/exercise_api.py`, token-gated via `?token=`)
 
-`GET /v1/exq/exercises` · `GET/POST /v1/exq/schedule` ·
-`PATCH/DELETE /v1/exq/schedule/:id` · `POST /v1/exq/schedule/:id/done` ·
-`GET /v1/exq/history` · `GET /v1/exq/stats`
+`GET /v1/exq/exercises` · `PATCH/DELETE /v1/exq/exercises/:id` ·
+`GET/POST /v1/exq/schedule` · `PATCH/DELETE /v1/exq/schedule/:id` ·
+`POST /v1/exq/schedule/:id/done` · `GET /v1/exq/history` · `GET /v1/exq/stats`
 
 Drag-and-drop is built on Pointer Events (`ScheduleCalendar.jsx`), so it works
 with mouse, touch, and pen — draggables set `touch-action: none` and a floating

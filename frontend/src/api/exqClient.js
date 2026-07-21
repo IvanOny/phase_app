@@ -24,6 +24,10 @@ async function req(method, path, body) {
 
 export const getExqExercises = () => req('GET', '/v1/exq/exercises').then(r => r.items ?? []);
 
+export const updateExqExercise = (id, patch) => req('PATCH', `/v1/exq/exercises/${id}`, patch);
+
+export const deleteExqExercise = (id) => req('DELETE', `/v1/exq/exercises/${id}`);
+
 export const getExqSchedule = (from, to) =>
   req('GET', `/v1/exq/schedule?from=${from}&to=${to}`);
 

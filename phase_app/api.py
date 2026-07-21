@@ -190,6 +190,10 @@ class PhaseApi:
             exq = ExerciseQueueApi(self.conn)
             if method == "GET" and path == "/v1/exq/exercises":
                 return exq.list_exercises(qp)
+            if method == "PATCH" and re.fullmatch(r"/v1/exq/exercises/\d+", path):
+                return exq.update_exercise(int(path.split("/")[4]), body, qp)
+            if method == "DELETE" and re.fullmatch(r"/v1/exq/exercises/\d+", path):
+                return exq.delete_exercise(int(path.split("/")[4]), qp)
             if method == "GET" and path == "/v1/exq/schedule":
                 return exq.get_schedule(qp)
             if method == "POST" and path == "/v1/exq/schedule":

@@ -79,6 +79,73 @@ class ExerciseQueueApi:
             "lastDoneAt": r["last_done_at"].isoformat() if r["last_done_at"] else None,
         }
 
+    def update_exercise(self, ex_id: int, body: dict, qp: dict[str, str]) -> ApiResponse:
+        uid = self._uid(qp)
+        if uid is None:
+            return ApiResponse(401, {"error": "unauthorized"})
+        allowed = {
+            "name": "name", "description": "description", "scheduleType": "schedule_type",
+            "repeatIntervalDays": "repeat_interval_days", "acqIntervalDays": "acq_interval_days",
+            "acqTargetSessions": "acq_target_sessions", "focusArea": "focus_area",
+            "location": "location", "equipment": "equipment", "loadTag": "load_tag", "status": "status",
+        }
+        raw = {col: body[key] for key, col in allowed.items() if key in (body or {})}
+        if not raw:
+            return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields"})
+        int_cols = {"repeat_interval_days", "acq_interval_days", "acq_target_sessions"}
+        enums = {"schedule_type": {"queue", "fixed", "acquisition"},
+                 "status": {"active", "paused", "parked"}}
+        updates: dict[str, Any] = {}
+        for col, val in raw.items():
+            if col in int_cols:
+                updates[col] = int(val) if val not in (None, "") else None
+            elif col in enums:
+                if val not in enums[col]:
+                    return ApiResponse(400, {"error": "validation_error", "detail": f"bad {col}"})
+                updates[col] = val
+            else:
+                updates[col] = val if val != "" else None
+        # Keep cadence columns consistent with the chosen schedule type.
+        st = updates.get("schedule_type")
+        if st == "queue":
+            updates.update(repeat_interval_days=None, acq_interval_days=None, acq_target_sessions=None)
+        elif st == "fixed":
+            updates.update(acq_interval_days=None, acq_target_sessions=None)
+        elif st == "acquisition":
+            updates["repeat_interval_days"] = None
+
+        cur = self.conn.cursor()
+        if "name" in updates and updates["name"]:
+            cur.execute(
+                "SELECT 1 FROM exercise_items WHERE user_id = %s AND LOWER(name) = LOWER(%s) AND id != %s",
+                (uid, updates["name"], ex_id),
+            )
+            if cur.fetchone():
+                return ApiResponse(409, {"error": "duplicate", "detail": "name already exists"})
+        set_clause = ", ".join(f"{c} = %s" for c in updates)
+        try:
+            cur.execute(
+                f"UPDATE exercise_items SET {set_clause} WHERE id = %s AND user_id = %s RETURNING *",
+                (*updates.values(), ex_id, uid),
+            )
+            row = cur.fetchone()
+        except Exception as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        if not row:
+            return ApiResponse(404, {"error": "not_found"})
+        self.conn.commit()
+        return ApiResponse(200, self._exercise_row(row))
+
+    def delete_exercise(self, ex_id: int, qp: dict[str, str]) -> ApiResponse:
+        uid = self._uid(qp)
+        if uid is None:
+            return ApiResponse(401, {"error": "unauthorized"})
+        cur = self.conn.cursor()
+        cur.execute("DELETE FROM exercise_items WHERE id = %s AND user_id = %s", (ex_id, uid))
+        self.conn.commit()
+        return ApiResponse(200, {"deleted": True, "id": ex_id})
+
     # ── schedule (occurrences) ──────────────────────────────────────────────
     def get_schedule(self, qp: dict[str, str]) -> ApiResponse:
         """Manual occurrences in [from, to] plus on-the-fly cadence suggestions.

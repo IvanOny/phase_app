@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
+import ExerciseEditor from './ExerciseEditor.jsx';
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -16,8 +17,9 @@ function datesInRange(fromIso, toIso) {
 
 export default function ScheduleCalendar({
   scope, setScope, anchor, onShift, onToday, rangeFor, dragMode, setDragMode,
-  exercises, schedule, onDropOnDay, onComplete, onRemove,
+  exercises, schedule, onDropOnDay, onComplete, onRemove, onUpdateExercise, onDeleteExercise,
 }) {
+  const [editing, setEditing] = useState(null); // exercise being edited
   const [from, to] = rangeFor(scope, anchor);
   const days = useMemo(() => datesInRange(from, to), [from, to]);
   const todayIso = iso(new Date());
@@ -104,8 +106,14 @@ export default function ScheduleCalendar({
         onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.name }, e)}
         title={ex.description || ex.name}
       >
-        {ex.name}
+        <span className="exq-pill-name">{ex.name}</span>
         <span className="exq-pill-tag">{tag}</span>
+        <button
+          className="exq-pill-edit"
+          title="Edit exercise"
+          onPointerDown={e => e.stopPropagation()}
+          onClick={() => setEditing(ex)}
+        >✎</button>
       </div>
     );
   }
@@ -231,6 +239,15 @@ export default function ScheduleCalendar({
 
       {ghost && (
         <div className="exq-ghost" style={{ left: ghost.x, top: ghost.y }}>{ghost.name}</div>
+      )}
+
+      {editing && (
+        <ExerciseEditor
+          exercise={editing}
+          onSave={onUpdateExercise}
+          onDelete={onDeleteExercise}
+          onClose={() => setEditing(null)}
+        />
       )}
     </div>
   );

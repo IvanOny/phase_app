@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import ExerciseEditor from './ExerciseEditor.jsx';
+import DayDetail from './DayDetail.jsx';
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -20,6 +21,7 @@ export default function ScheduleCalendar({
   exercises, schedule, onDropOnDay, onComplete, onRemove, onUpdateExercise, onDeleteExercise,
 }) {
   const [editing, setEditing] = useState(null); // exercise being edited
+  const [detailDate, setDetailDate] = useState(null); // day sheet open for this ISO date
   const [from, to] = rangeFor(scope, anchor);
   const days = useMemo(() => datesInRange(from, to), [from, to]);
   const todayIso = iso(new Date());
@@ -202,7 +204,7 @@ export default function ScheduleCalendar({
                 data-date={ds}
                 className={`exq-day${ds === todayIso ? ' exq-day--today' : ''}${inMonth ? '' : ' exq-day--muted'}${hoverDate === ds ? ' exq-day--over' : ''}`}
               >
-                <div className="exq-day-num">{d.getDate()}</div>
+                <button className="exq-day-num" onClick={() => setDetailDate(ds)} title="Open day">{d.getDate()}</button>
                 <div className="exq-day-items">
                   {cell.occ.map(o => (
                     <div
@@ -250,6 +252,22 @@ export default function ScheduleCalendar({
           onClose={() => setEditing(null)}
         />
       )}
+
+      {detailDate && (() => {
+        const cell = byDate[detailDate] || { occ: [], sug: [] };
+        return (
+          <DayDetail
+            dateLabel={new Date(detailDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+            isPast={detailDate <= todayIso}
+            occ={cell.occ}
+            sug={cell.sug}
+            onComplete={onComplete}
+            onRemove={onRemove}
+            onCommit={exId => onDropOnDay({ kind: 'suggestion', exerciseId: exId, date: detailDate }, detailDate)}
+            onClose={() => setDetailDate(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

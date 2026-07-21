@@ -143,6 +143,10 @@ per-user token stored on `exercise_users.token`.
   *suggestions*. **A manual placement overrides the suggestion** — dragging beats
   every-N-days. Chips expose ✓ (done — resets the cadence anchor, advances
   acquisition) and ✕. The ✎ on a rail pill opens the editor.
+- **Day sheet** (`DayDetail.jsx`) — tap a day number to open a full-width sheet
+  listing that day's committed occurrences (Done / Remove) and cadence
+  suggestions (Add), with roomy labelled buttons. The alternative to acting
+  inside cramped grid cells, especially on mobile.
 - **Editor** (`ExerciseEditor.jsx`) — a modal to edit every field of an exercise
   (name, description, schedule type + intervals, focus, location, equipment,
   load, status) or delete it, via `PATCH`/`DELETE /v1/exq/exercises/:id`.

@@ -90,6 +90,20 @@
 .exq-field-row .exq-field { flex: 1; }
 .exq-field-note { font-size: 12px; color: var(--text-muted); }
 .exq-modal-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+
+/* Day sheet rows */
+.exq-day-sheet { gap: 6px; }
+.exq-day-row {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px;
+}
+.exq-day-row--done { opacity: .6; }
+.exq-day-row--suggestion { border-style: dashed; }
+.exq-day-row-main { flex: 1; min-width: 0; }
+.exq-day-row-name { font-weight: 600; font-size: 14px; overflow-wrap: break-word; }
+.exq-day-row-desc { font-size: 12px; color: var(--text-muted); margin-top: 1px; overflow-wrap: break-word; }
+.exq-day-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.exq-day-row-actions .exq-btn { padding: 6px 12px; }
 .exq-btn--danger { border-color: var(--ready-red, #dc3c3c); color: var(--ready-red, #dc3c3c); }
 .exq-btn--danger:hover { background: var(--red-tint-10, rgba(220,60,60,.1)); border-color: var(--ready-red, #dc3c3c); }
 .exq-pill--queue { border-left: 3px solid var(--accent); }
@@ -141,7 +155,13 @@
 .exq-day--muted { opacity: .5; }
 .exq-day--today { border-color: var(--accent); }
 .exq-day--over { border-color: var(--accent); background: var(--accent-tint-10, rgba(80,120,255,.08)); }
-.exq-day-num { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.exq-day-num {
+  align-self: flex-start; background: transparent; border: none; cursor: pointer;
+  font-size: 12px; color: var(--text-muted); font-weight: 600;
+  padding: 1px 5px; margin: -1px 0 0 -3px; border-radius: 5px; font-variant-numeric: tabular-nums;
+}
+.exq-day-num:hover { background: var(--bg-elevated, rgba(127,127,127,.12)); color: var(--text-primary); }
+.exq-day--today .exq-day-num { color: var(--accent); }
 .exq-day-items { display: flex; flex-direction: column; gap: 4px; }
 
 /* Chips */

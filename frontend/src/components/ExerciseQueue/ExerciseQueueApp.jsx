@@ -15,11 +15,13 @@ import {
 import ScheduleCalendar from './ScheduleCalendar.jsx';
 import ExerciseLog from './ExerciseLog.jsx';
 import ExerciseStats from './ExerciseStats.jsx';
+import CoachChat from './CoachChat.jsx';
 
 const TABS = [
   { id: 'calendar', label: 'Calendar' },
   { id: 'log', label: 'Log' },
   { id: 'stats', label: 'Stats' },
+  { id: 'coach', label: 'Coach' },
 ];
 
 // Monday-start week containing `d`.
@@ -186,8 +188,10 @@ export default function ExerciseQueueApp({ token }) {
         />
       ) : tab === 'log' ? (
         <ExerciseLog />
-      ) : (
+      ) : tab === 'stats' ? (
         <ExerciseStats />
+      ) : (
+        <CoachChat />
       )}
     </div>
   );

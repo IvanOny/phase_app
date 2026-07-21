@@ -52,3 +52,6 @@ export const getExqStats = () => req('GET', '/v1/exq/stats');
 
 export const suggestSlot = (exerciseId, avoid = []) =>
   req('POST', '/v1/exq/suggest-slot', { exerciseId, avoid });
+
+export const chatCoach = (messages) =>
+  req('POST', '/v1/exq/chat', { messages }).then(r => r.reply);

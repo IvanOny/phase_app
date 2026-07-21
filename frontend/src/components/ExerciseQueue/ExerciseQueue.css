@@ -91,6 +91,35 @@
 .exq-field-note { font-size: 12px; color: var(--text-muted); }
 .exq-modal-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 
+/* Coach chat */
+.exq-chat { display: flex; flex-direction: column; height: calc(100vh - 130px); min-height: 400px; }
+.exq-chat-log { flex: 1; overflow-y: auto; padding: 4px 2px; display: flex; flex-direction: column; gap: 10px; }
+.exq-chat-empty { color: var(--text-muted); text-align: center; margin: auto 0; }
+.exq-chat-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; }
+.exq-chat-chip {
+  background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 999px; padding: 7px 14px; font-size: 13px; cursor: pointer;
+}
+.exq-chat-chip:hover { border-color: var(--accent); color: var(--text-primary); }
+.exq-msg { display: flex; }
+.exq-msg--user { justify-content: flex-end; }
+.exq-msg-bubble {
+  max-width: 82%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: break-word;
+}
+.exq-msg--user .exq-msg-bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.exq-msg--assistant .exq-msg-bubble {
+  background: var(--bg-card); border: 1px solid var(--border); color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+.exq-msg-typing { color: var(--text-muted); letter-spacing: 2px; }
+.exq-chat-input { display: flex; gap: 8px; align-items: flex-end; padding-top: 10px; border-top: 1px solid var(--border); }
+.exq-chat-input textarea {
+  flex: 1; resize: none; max-height: 120px; background: var(--bg-elevated, rgba(127,127,127,.08));
+  border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px;
+  color: var(--text-primary); font-size: 14px; font-family: inherit; line-height: 1.4;
+}
+
 /* Slot suggestion */
 .exq-suggest-date { font-size: 20px; font-weight: 700; color: var(--accent); margin: 4px 0 6px; }
 .exq-suggest-why { font-size: 13px; color: var(--text-secondary); line-height: 1.4; }

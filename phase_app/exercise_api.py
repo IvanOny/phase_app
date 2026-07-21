@@ -540,6 +540,135 @@ class ExerciseQueueApi:
                                  "rationale": result.get("rationale", ""),
                                  "exerciseId": ex["id"], "name": ex["name"]})
 
+    # ── Coach chat ──────────────────────────────────────────────────────────
+    def chat(self, body: dict, qp: dict[str, str]) -> ApiResponse:
+        """Conversational coach grounded in the athlete's real logs (phase-app
+        training + Movement Snacks). Stateless: the client sends the full message
+        history each turn; the server prepends a fresh data snapshot as the system
+        prompt."""
+        uid = self._uid(qp)
+        if uid is None:
+            return ApiResponse(401, {"error": "unauthorized"})
+        raw_msgs = (body or {}).get("messages") or []
+        messages = [{"role": m["role"], "content": m["content"]}
+                    for m in raw_msgs
+                    if m.get("role") in ("user", "assistant") and str(m.get("content", "")).strip()]
+        if not messages:
+            return ApiResponse(400, {"error": "validation_error", "detail": "messages required"})
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return ApiResponse(503, {"error": "ai_unavailable", "detail": "ANTHROPIC_API_KEY not set"})
+
+        system = (
+            "You are a knowledgeable, no-nonsense strength & conditioning coach chatting "
+            "with the athlete whose training data appears below. Ground every answer in "
+            "this data — cite specific numbers, lifts and dates from it. If it doesn't "
+            "contain what's asked, say so plainly instead of inventing figures. Be concise "
+            "and practical. e1RM is estimated as load*(1+reps/30). You are not a medical "
+            "professional; for pain or injury, advise seeing one.\n\n"
+            "=== ATHLETE TRAINING DATA ===\n" + self._training_context(uid)
+        )
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            msg = client.messages.create(
+                model="claude-sonnet-4-6", max_tokens=1024, system=system, messages=messages,
+            )
+            reply = msg.content[0].text
+        except Exception as exc:
+            return ApiResponse(502, {"error": "upstream_error", "detail": str(exc)})
+        return ApiResponse(200, {"reply": reply})
+
+    def _training_context(self, uid: int) -> str:
+        cur = self.conn.cursor()
+        today = self._user_today(cur, uid)
+        lines: list[str] = [f"Today: {today.isoformat()}"]
+
+        cur.execute(
+            "SELECT phase_type, start_date, end_date FROM phases ORDER BY start_date DESC LIMIT 3"
+        )
+        phases = cur.fetchall()
+        if phases:
+            lines.append("\nPHASES (recent):")
+            for p in phases:
+                lines.append(f"- {p['phase_type']}: {p['start_date']} → {p['end_date']}")
+
+        # Recent sessions with each exercise's best working set + estimated e1RM.
+        cur.execute(
+            "SELECT s.session_id, s.session_date, s.session_type, e.exercise_name, "
+            "       es.load_kg, es.reps, es.is_top_set "
+            "FROM sessions s "
+            "JOIN session_exercises se ON se.session_id = s.session_id "
+            "JOIN exercises e ON e.exercise_id = se.exercise_id "
+            "JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id "
+            "WHERE s.session_date >= %s AND COALESCE(s.is_planned, FALSE) = FALSE "
+            "  AND COALESCE(es.is_working_set, TRUE) = TRUE "
+            "ORDER BY s.session_date DESC, s.session_id, e.exercise_name",
+            (today - timedelta(days=45),),
+        )
+        sessions: dict = {}
+        order: list = []
+        for r in cur.fetchall():
+            sid = r["session_id"]
+            if sid not in sessions:
+                sessions[sid] = {"date": r["session_date"], "type": r["session_type"], "ex": {}}
+                order.append(sid)
+            best = sessions[sid]["ex"].get(r["exercise_name"])
+            load = float(r["load_kg"]) if r["load_kg"] is not None else 0.0
+            reps = r["reps"] or 0
+            e1rm = round(load * (1 + reps / 30.0)) if load and reps else 0
+            if best is None or e1rm > best["e1rm"]:
+                sessions[sid]["ex"][r["exercise_name"]] = {"load": load, "reps": reps, "e1rm": e1rm}
+        if order:
+            lines.append("\nRECENT SESSIONS (newest first, best working set per exercise):")
+            for sid in order[:15]:
+                s = sessions[sid]
+                parts = []
+                for name, b in s["ex"].items():
+                    if b["load"] and b["reps"]:
+                        parts.append(f"{name} {b['load']:g}×{b['reps']} (e1RM~{b['e1rm']})")
+                    elif b["reps"]:
+                        parts.append(f"{name} {b['reps']} reps")
+                lines.append(f"- {s['date']} [{s['type']}]: " + "; ".join(parts))
+
+        cur.execute(
+            "SELECT logged_date, weight_kg FROM bodyweight_log ORDER BY logged_date DESC LIMIT 5"
+        )
+        bw = cur.fetchall()
+        if bw:
+            lines.append("\nBODYWEIGHT (recent): " +
+                         ", ".join(f"{float(r['weight_kg']):g}kg ({r['logged_date']})" for r in bw))
+
+        cur.execute(
+            "SELECT name, description, schedule_type, repeat_interval_days, acq_interval_days, "
+            "       focus_area, load_tag, status, last_done_at "
+            "FROM exercise_items WHERE user_id = %s ORDER BY schedule_type, name",
+            (uid,),
+        )
+        snacks = cur.fetchall()
+        if snacks:
+            lines.append("\nMOVEMENT SNACKS (accessory/mobility):")
+            for e in snacks:
+                iv = e["repeat_interval_days"] if e["schedule_type"] == "fixed" else e["acq_interval_days"]
+                cadence = f"every {iv}d" if iv else e["schedule_type"]
+                extra = " ".join(x for x in [e["focus_area"], e["load_tag"]] if x)
+                last = e["last_done_at"].date().isoformat() if e["last_done_at"] else "never"
+                flag = "" if e["status"] == "active" else f" [{e['status']}]"
+                lines.append(f"- {e['name']} ({cadence}{flag}) — last {last}" + (f" · {extra}" if extra else ""))
+
+        cur.execute(
+            "SELECT h.done_at, e.name FROM exercise_history h "
+            "LEFT JOIN exercise_items e ON e.id = h.exercise_id "
+            "WHERE h.user_id = %s ORDER BY h.done_at DESC LIMIT 20",
+            (uid,),
+        )
+        hist = cur.fetchall()
+        if hist:
+            lines.append("\nMOVEMENT SNACK HISTORY (recent): " +
+                         ", ".join(f"{r['name'] or '(removed)'} {r['done_at'].date()}" for r in hist))
+
+        return "\n".join(lines)
+
     def _ask_claude_for_slot(self, ex, interval, training, candidates):
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:

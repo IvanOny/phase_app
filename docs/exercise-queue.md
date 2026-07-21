@@ -167,6 +167,13 @@ per-user token stored on `exercise_users.token`.
   names still clamp to two lines as a fallback.
 - **Log** — recent completions from `exercise_history`.
 - **Stats** — per-exercise counts + totals.
+- **Coach** (`CoachChat.jsx` + `POST /v1/exq/chat`) — a conversational coach
+  grounded in the athlete's real logs. Stateless: the client sends the full
+  message history each turn and the server prepends a fresh training snapshot
+  (`_training_context`: recent phases, last ~15 sessions with best working set +
+  estimated e1RM per exercise, recent bodyweight, Movement Snacks + history) as
+  the system prompt, then calls Claude (`claude-sonnet-4-6`). Returns 503 if
+  `ANTHROPIC_API_KEY` is unset. No conversations are persisted yet.
 
 ### Drag behaviour (toggle in the calendar toolbar, remembered in localStorage)
 
@@ -192,7 +199,8 @@ sets `last_done_at = now`, so the rhythm continues from when it was actually don
 
 `GET /v1/exq/exercises` · `PATCH/DELETE /v1/exq/exercises/:id` ·
 `GET/POST /v1/exq/schedule` · `PATCH/DELETE /v1/exq/schedule/:id` ·
-`POST /v1/exq/schedule/:id/done` · `GET /v1/exq/history` · `GET /v1/exq/stats`
+`POST /v1/exq/schedule/:id/done` · `GET /v1/exq/history` · `GET /v1/exq/stats` ·
+`POST /v1/exq/suggest-slot` · `POST /v1/exq/chat`
 
 Drag-and-drop is built on Pointer Events (`ScheduleCalendar.jsx`), so it works
 with mouse, touch, and pen — draggables set `touch-action: none` and a floating

@@ -210,6 +210,8 @@ class PhaseApi:
                 return exq.get_stats(qp)
             if method == "POST" and path == "/v1/exq/suggest-slot":
                 return exq.suggest_slot(body, qp)
+            if method == "POST" and path == "/v1/exq/chat":
+                return exq.chat(body, qp)
             return ApiResponse(status=404, body={"error": "not_found"})
 
         # Burpee challenge (token-gated, no user auth required)

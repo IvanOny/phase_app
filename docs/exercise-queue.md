@@ -144,13 +144,14 @@ per-user token stored on `exercise_users.token`.
   every-N-days. Chips expose ✓ (done — resets the cadence anchor, advances
   acquisition) and ✕. The ✎ on a rail pill opens the editor.
 - **Editor** (`ExerciseEditor.jsx`) — a modal to edit every field of an exercise
-  (name, short label, description, schedule type + intervals, focus, location,
-  equipment, load, status) or delete it, via `PATCH`/`DELETE /v1/exq/exercises/:id`.
+  (name, description, schedule type + intervals, focus, location, equipment,
+  load, status) or delete it, via `PATCH`/`DELETE /v1/exq/exercises/:id`.
   Switching schedule type nulls the cadence columns that no longer apply.
-- **Short labels** (`short_name`, migration 033) — chips and rail pills show
-  `short_name` when set (full name is the hover tooltip), so a long name like
-  "Resistance band ankle eversion/inversion" doesn't dominate a day cell. The
-  schedule API sends both `label` (short-or-name) and `name` (full) per row.
+- **Labels & tooltips** — chips and rail pills show `name` (keep it short); the
+  fuller `description` is the hover tooltip. Both are existing columns, editable
+  from the bot and the web, so there's no dedicated "short label" field. The
+  schedule API returns `name` + `description` per occurrence/suggestion. Long
+  names still clamp to two lines as a fallback.
 - **Log** — recent completions from `exercise_history`.
 - **Stats** — per-exercise counts + totals.
 
@@ -187,6 +188,6 @@ ghost follows the finger; the drop target is found via `elementFromPoint`.
 ## Setup checklist
 
 1. Run migrations `030_exercise_queue.sql`, `031_exercise_schedule.sql`,
-   `032_exercise_anchor_date.sql`, and `033_exercise_short_name.sql` in Supabase.
+   and `032_exercise_anchor_date.sql` in Supabase.
 2. Ensure `ADMIN_TG_ID` is set in the bot's Vercel project.
 3. Send `exapp` to the bot to get your planner link.

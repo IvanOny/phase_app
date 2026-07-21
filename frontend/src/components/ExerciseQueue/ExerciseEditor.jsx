@@ -12,7 +12,6 @@ const STATUSES = ['active', 'paused', 'parked'];
 export default function ExerciseEditor({ exercise, onSave, onDelete, onClose }) {
   const [f, setF] = useState({
     name: exercise.name ?? '',
-    shortName: exercise.shortName ?? '',
     description: exercise.description ?? '',
     scheduleType: exercise.scheduleType ?? 'queue',
     repeatIntervalDays: exercise.repeatIntervalDays ?? '',
@@ -33,7 +32,7 @@ export default function ExerciseEditor({ exercise, onSave, onDelete, onClose }) 
     if (!f.name.trim()) { setErr('Name is required.'); return; }
     setSaving(true); setErr(null);
     const patch = {
-      name: f.name.trim(), shortName: f.shortName.trim(), description: f.description,
+      name: f.name.trim(), description: f.description,
       scheduleType: f.scheduleType, focusArea: f.focusArea, location: f.location,
       equipment: f.equipment, loadTag: f.loadTag, status: f.status,
     };
@@ -55,14 +54,11 @@ export default function ExerciseEditor({ exercise, onSave, onDelete, onClose }) 
           <button className="exq-btn" onClick={onClose}>✕</button>
         </div>
 
-        <label className="exq-field"><span>Name</span>
+        <label className="exq-field"><span>Name (shown on calendar)</span>
           <input value={f.name} onChange={e => set('name', e.target.value)} autoFocus />
         </label>
-        <label className="exq-field"><span>Short label (shown on calendar)</span>
-          <input value={f.shortName} onChange={e => set('shortName', e.target.value)} placeholder="optional — defaults to name" />
-        </label>
-        <label className="exq-field"><span>Description</span>
-          <input value={f.description} onChange={e => set('description', e.target.value)} placeholder="—" />
+        <label className="exq-field"><span>Description (hover tooltip)</span>
+          <input value={f.description} onChange={e => set('description', e.target.value)} placeholder="fuller detail, shown on hover" />
         </label>
 
         <label className="exq-field"><span>Schedule</span>

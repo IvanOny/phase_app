@@ -72,10 +72,58 @@ export default function ScheduleCalendar({
     return m;
   }, [schedule]);
 
-  const rail = useMemo(() =>
-    exercises.filter(e => e.status === 'active')
-      .sort((a, b) => (a.scheduleType === 'queue' ? -1 : 1) - (b.scheduleType === 'queue' ? -1 : 1)),
-    [exercises]);
+  // Days between repeats — sorts the recurring group most-frequent first.
+  const freq = e => e.scheduleType === 'acquisition' ? (e.acqIntervalDays ?? 9999) : (e.repeatIntervalDays ?? 9999);
+  const groups = useMemo(() => {
+    const active = exercises.filter(e => e.status === 'active');
+    const queue = active.filter(e => e.scheduleType === 'queue')
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const recurring = active.filter(e => e.scheduleType !== 'queue')
+      .sort((a, b) => (freq(a) - freq(b)) || a.name.localeCompare(b.name));
+    return { queue, recurring };
+  }, [exercises]);
+
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('exq-rail-collapsed') || '{}'); }
+    catch { return {}; }
+  });
+  function toggleGroup(k) {
+    setCollapsed(c => {
+      const next = { ...c, [k]: !c[k] };
+      localStorage.setItem('exq-rail-collapsed', JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function renderPill(ex) {
+    const tag = ex.scheduleType === 'queue' ? 'queue' : `${freq(ex)}d`;
+    return (
+      <div
+        key={ex.id}
+        className={`exq-pill exq-pill--${ex.scheduleType}`}
+        onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.name }, e)}
+        title={ex.description || ex.name}
+      >
+        {ex.name}
+        <span className="exq-pill-tag">{tag}</span>
+      </div>
+    );
+  }
+
+  function renderGroup(key, title, items) {
+    if (items.length === 0) return null;
+    const isCol = !!collapsed[key];
+    return (
+      <div className="exq-rail-group" key={key}>
+        <button className="exq-rail-group-hd" onClick={() => toggleGroup(key)}>
+          <span className="exq-caret">{isCol ? '▸' : '▾'}</span>
+          <span>{title}</span>
+          <span className="exq-rail-group-count">{items.length}</span>
+        </button>
+        {!isCol && items.map(renderPill)}
+      </div>
+    );
+  }
 
   const title = scope === 'week'
     ? `Week of ${new Date(from + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
@@ -86,18 +134,14 @@ export default function ScheduleCalendar({
       <aside className="exq-rail">
         <div className="exq-rail-title">Exercises</div>
         <div className="exq-rail-hint">Drag onto a day →</div>
-        {rail.map(ex => (
-          <div
-            key={ex.id}
-            className={`exq-pill exq-pill--${ex.scheduleType}`}
-            onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.name }, e)}
-            title={ex.description || ex.name}
-          >
-            {ex.name}
-            <span className="exq-pill-tag">{ex.scheduleType === 'queue' ? 'queue' : ex.scheduleType === 'acquisition' ? 'acq' : `${ex.repeatIntervalDays}d`}</span>
-          </div>
-        ))}
-        {rail.length === 0 && <div className="exq-rail-empty">No exercises yet — add via the bot (/add).</div>}
+        {groups.queue.length === 0 && groups.recurring.length === 0 ? (
+          <div className="exq-rail-empty">No exercises yet — add via the bot (/add).</div>
+        ) : (
+          <>
+            {renderGroup('queue', 'Queue', groups.queue)}
+            {renderGroup('recurring', 'Recurring', groups.recurring)}
+          </>
+        )}
       </aside>
 
       <div className="exq-cal-main">

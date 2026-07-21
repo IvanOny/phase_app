@@ -135,7 +135,9 @@
 .exq-day {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
   padding: 6px; display: flex; flex-direction: column; gap: 4px; transition: border-color .1s, background .1s;
+  min-width: 0; /* let the cell shrink to its 1/7 track instead of stretching to fit long names */
 }
+.exq-day-items { min-width: 0; }
 .exq-day--muted { opacity: .5; }
 .exq-day--today { border-color: var(--accent); }
 .exq-day--over { border-color: var(--accent); background: var(--accent-tint-10, rgba(80,120,255,.08)); }
@@ -150,7 +152,12 @@
   user-select: none; touch-action: none;
 }
 .exq-chip:active { cursor: grabbing; }
-.exq-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exq-chip-name {
+  flex: 1; min-width: 0; overflow: hidden;
+  /* wrap up to 2 lines, then ellipsis — long names no longer widen the column */
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
 .exq-chip--done { background: var(--ready-green, #16a34a); opacity: .85; }
 .exq-chip--suggestion {
   background: transparent; color: var(--text-secondary);

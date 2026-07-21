@@ -143,6 +143,15 @@ per-user token stored on `exercise_users.token`.
   *suggestions*. **A manual placement overrides the suggestion** — dragging beats
   every-N-days. Chips expose ✓ (done — resets the cadence anchor, advances
   acquisition) and ✕. The ✎ on a rail pill opens the editor.
+- **AI slot suggestion** (`SlotSuggestion.jsx`, 💡 on recurring pills) — asks
+  `POST /v1/exq/suggest-slot`, which gathers the phase-app main-lift week
+  (Tier 1: `sessions` + `is_squat`/`is_deadlift`/`is_barbell_bench_press`) and
+  existing committed Movement Snacks (Tier 2), then asks Claude
+  (`claude-sonnet-4-6`, `ANTHROPIC_API_KEY`) for the best day + a one-line
+  rationale. Suggestion only — the user taps "Place it" to commit, "Suggest
+  another" to re-roll (passes an `avoid` list), or "Not now". Falls back to a
+  heuristic (first open non-main-lift day) if the API key is missing or the call
+  fails. Cross-domain read works because the phase app is effectively single-user.
 - **Day sheet** (`DayDetail.jsx`) — tap a day number to open a full-width sheet
   listing that day's committed occurrences (Done / Remove) and cadence
   suggestions (Add), with roomy labelled buttons. The alternative to acting

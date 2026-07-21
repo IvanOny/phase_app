@@ -10,6 +10,8 @@ circular dependency.
 """
 from __future__ import annotations
 
+import json
+import os
 from datetime import date as _date, datetime, timedelta, timezone as _timezone
 from typing import Any
 
@@ -453,3 +455,131 @@ class ExerciseQueueApi:
             "totalDone": totals["total"] or 0,
             "activeDays": totals["active_days"] or 0,
         })
+
+    # ── AI slot suggestion ──────────────────────────────────────────────────
+    def suggest_slot(self, body: dict, qp: dict[str, str]) -> ApiResponse:
+        """Ask Claude where to place a recurring exercise, reasoning from the
+        phase-app main-lift week (Tier 1) and existing Movement Snacks (Tier 2).
+        Suggestion only — the caller commits it if they accept."""
+        uid = self._uid(qp)
+        if uid is None:
+            return ApiResponse(401, {"error": "unauthorized"})
+        ex_id = (body or {}).get("exerciseId")
+        if not ex_id:
+            return ApiResponse(400, {"error": "validation_error", "detail": "exerciseId required"})
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT id, name, description, focus_area, load_tag, schedule_type, "
+            "       repeat_interval_days, acq_interval_days, last_done_at "
+            "FROM exercise_items WHERE id = %s AND user_id = %s",
+            (ex_id, uid),
+        )
+        ex = cur.fetchone()
+        if not ex:
+            return ApiResponse(404, {"error": "not_found"})
+
+        today = self._user_today(cur, uid)
+        win_start = today + timedelta(days=1)          # earliest we'd place it
+        win_end = today + timedelta(days=10)           # planning horizon
+        avoid = set((body or {}).get("avoid") or [])   # dates a re-roll should skip
+
+        # Tier 1 — recent + upcoming main-lift days from the phase app.
+        cur.execute(
+            "SELECT s.session_date, "
+            "       BOOL_OR(e.is_squat = 1) AS squat, "
+            "       BOOL_OR(e.is_deadlift = 1) AS deadlift, "
+            "       BOOL_OR(e.is_barbell_bench_press = 1) AS bench, "
+            "       STRING_AGG(DISTINCT s.session_type, ',') AS types "
+            "FROM sessions s "
+            "LEFT JOIN session_exercises se ON se.session_id = s.session_id "
+            "LEFT JOIN exercises e ON e.exercise_id = se.exercise_id "
+            "WHERE s.session_date BETWEEN %s AND %s AND COALESCE(s.is_planned, FALSE) = FALSE "
+            "GROUP BY s.session_date ORDER BY s.session_date",
+            (today - timedelta(days=14), win_end),
+        )
+        training = []
+        for r in cur.fetchall():
+            lifts = [n for n, v in (("squat", r["squat"]), ("bench", r["bench"]), ("deadlift", r["deadlift"])) if v]
+            training.append({"date": r["session_date"].isoformat(),
+                             "weekday": r["session_date"].strftime("%a"),
+                             "types": r["types"], "mainLifts": lifts})
+
+        # Tier 2 — already-committed Movement Snacks in the window.
+        cur.execute(
+            "SELECT s.scheduled_date, e.name FROM exercise_schedule s "
+            "JOIN exercise_items e ON e.id = s.exercise_id "
+            "WHERE s.user_id = %s AND s.status = 'planned' AND s.scheduled_date BETWEEN %s AND %s "
+            "ORDER BY s.scheduled_date",
+            (uid, win_start, win_end),
+        )
+        placed: dict[str, list[str]] = {}
+        for r in cur.fetchall():
+            placed.setdefault(r["scheduled_date"].isoformat(), []).append(r["name"])
+
+        candidates = []
+        d = win_start
+        while d <= win_end:
+            iso = d.isoformat()
+            candidates.append({"date": iso, "weekday": d.strftime("%A"),
+                               "scheduled": placed.get(iso, []), "avoid": iso in avoid})
+            d += timedelta(days=1)
+
+        interval = interval_of(ex)
+        result = self._ask_claude_for_slot(ex, interval, training, candidates)
+        if result is None:
+            # Heuristic fallback: first non-avoided day with no main lift and this
+            # exercise not already there.
+            main_days = {t["date"] for t in training if t["mainLifts"]}
+            pick = next((c for c in candidates
+                         if not c["avoid"] and c["date"] not in main_days
+                         and ex["name"] not in c["scheduled"]), None) or candidates[0]
+            result = {"date": pick["date"], "rationale": "Picked an open day (AI unavailable)."}
+
+        wd = _date.fromisoformat(result["date"]).strftime("%A")
+        return ApiResponse(200, {"date": result["date"], "weekday": wd,
+                                 "rationale": result.get("rationale", ""),
+                                 "exerciseId": ex["id"], "name": ex["name"]})
+
+    def _ask_claude_for_slot(self, ex, interval, training, candidates):
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return None
+        prompt = (
+            "You help schedule a recurring accessory/mobility exercise into a training week.\n"
+            "Pick the single best day for it and explain why in one short sentence.\n\n"
+            "EXERCISE TO PLACE:\n"
+            f"- name: {ex['name']}\n"
+            f"- description: {ex['description'] or '(none)'}\n"
+            f"- focus: {ex['focus_area'] or '(none)'}\n"
+            f"- load tag: {ex['load_tag'] or '(none)'}\n"
+            f"- cadence: every {interval} days\n\n"
+            "MAIN LIFTS (Tier 1) — recent and upcoming barbell sessions:\n"
+            f"{json.dumps(training, indent=0)}\n\n"
+            "CANDIDATE DAYS (choose exactly one 'date' from this list):\n"
+            f"{json.dumps(candidates, indent=0)}\n\n"
+            "Reason from the exercise itself: infer which muscles/joints it loads and "
+            "space it sensibly against the main lifts (e.g. avoid stacking quad-heavy "
+            "accessory work the day of or after a heavy squat). Prefer days with lighter "
+            "existing load; never choose a day marked \"avoid\": true.\n"
+            "Reply with ONLY compact JSON: {\"date\":\"YYYY-MM-DD\",\"rationale\":\"...\"}"
+        )
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(
+                model="claude-sonnet-4-6", max_tokens=300,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = message.content[0].text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
+            data = json.loads(raw)
+            valid = {c["date"] for c in candidates if not c["avoid"]}
+            if data.get("date") in valid:
+                return {"date": data["date"], "rationale": str(data.get("rationale", ""))[:200]}
+        except Exception:
+            pass
+        return None

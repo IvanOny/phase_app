@@ -49,3 +49,6 @@ export const getExqHistory = (limit = 50) =>
   req('GET', `/v1/exq/history?limit=${limit}`).then(r => r.items ?? []);
 
 export const getExqStats = () => req('GET', '/v1/exq/stats');
+
+export const suggestSlot = (exerciseId, avoid = []) =>
+  req('POST', '/v1/exq/suggest-slot', { exerciseId, avoid });

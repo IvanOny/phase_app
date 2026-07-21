@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import ExerciseEditor from './ExerciseEditor.jsx';
 import DayDetail from './DayDetail.jsx';
+import SlotSuggestion from './SlotSuggestion.jsx';
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -19,9 +20,11 @@ function datesInRange(fromIso, toIso) {
 export default function ScheduleCalendar({
   scope, setScope, anchor, onShift, onToday, rangeFor, dragMode, setDragMode,
   exercises, schedule, onDropOnDay, onComplete, onRemove, onUpdateExercise, onDeleteExercise,
+  onSuggestSlot, onPlaceSuggested,
 }) {
   const [editing, setEditing] = useState(null); // exercise being edited
   const [detailDate, setDetailDate] = useState(null); // day sheet open for this ISO date
+  const [suggestFor, setSuggestFor] = useState(null); // exercise to suggest a slot for
   const [from, to] = rangeFor(scope, anchor);
   const days = useMemo(() => datesInRange(from, to), [from, to]);
   const todayIso = iso(new Date());
@@ -110,6 +113,14 @@ export default function ScheduleCalendar({
       >
         <span className="exq-pill-name">{ex.name}</span>
         <span className="exq-pill-tag">{tag}</span>
+        {ex.scheduleType !== 'queue' && (
+          <button
+            className="exq-pill-edit"
+            title="Suggest a slot"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={() => setSuggestFor(ex)}
+          >💡</button>
+        )}
         <button
           className="exq-pill-edit"
           title="Edit exercise"
@@ -250,6 +261,15 @@ export default function ScheduleCalendar({
           onSave={onUpdateExercise}
           onDelete={onDeleteExercise}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {suggestFor && (
+        <SlotSuggestion
+          exercise={suggestFor}
+          onSuggest={onSuggestSlot}
+          onPlace={onPlaceSuggested}
+          onClose={() => setSuggestFor(null)}
         />
       )}
 

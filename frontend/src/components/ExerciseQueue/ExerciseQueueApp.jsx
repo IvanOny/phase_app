@@ -10,6 +10,7 @@ import {
   completeOccurrence,
   updateExqExercise,
   deleteExqExercise,
+  suggestSlot,
 } from '../../api/exqClient.js';
 import ScheduleCalendar from './ScheduleCalendar.jsx';
 import ExerciseLog from './ExerciseLog.jsx';
@@ -132,6 +133,12 @@ export default function ExerciseQueueApp({ token }) {
     catch (e) { setError(e.message); }
   }, [loadExercises, loadSchedule]);
 
+  const handleSuggestSlot = useCallback((id, avoid) => suggestSlot(id, avoid), []);
+  const handlePlaceSuggested = useCallback(async (id, date) => {
+    await createOccurrence(id, date, 'single');
+    await loadSchedule();
+  }, [loadSchedule]);
+
   function shift(delta) {
     const d = new Date(anchor);
     if (scope === 'week') d.setDate(d.getDate() + delta * 7);
@@ -174,6 +181,8 @@ export default function ExerciseQueueApp({ token }) {
           onRemove={handleRemove}
           onUpdateExercise={handleUpdateExercise}
           onDeleteExercise={handleDeleteExercise}
+          onSuggestSlot={handleSuggestSlot}
+          onPlaceSuggested={handlePlaceSuggested}
         />
       ) : tab === 'log' ? (
         <ExerciseLog />

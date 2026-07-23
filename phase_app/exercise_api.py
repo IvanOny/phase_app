@@ -609,7 +609,7 @@ class ExerciseQueueApi:
             "JOIN exercises e ON e.exercise_id = se.exercise_id "
             "JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id "
             "WHERE s.session_date >= %s AND COALESCE(s.is_planned, FALSE) = FALSE "
-            "  AND COALESCE(es.is_working_set, TRUE) = TRUE "
+            "  AND COALESCE(es.is_working_set, 1) = 1 "  # is_working_set is INTEGER (0/1)
             "ORDER BY s.session_date DESC, s.session_id, e.exercise_name",
             # session_date is TEXT (ISO YYYY-MM-DD); compare as string, not a date.
             (str(today - timedelta(days=45)),),

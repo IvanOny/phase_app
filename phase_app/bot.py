@@ -902,26 +902,24 @@ def send_monthly_summaries(conn) -> None:
 
 def _store_or_bind_video(cur, conn, tg_id: int, participant: str, chat_id: int, message_id: int) -> None:
     """Store a video as pending (ask for reps), or bind it to reps logged within the last hour."""
+    # Upsert the video WITHOUT touching reps, so reps that arrived first (or land
+    # concurrently) are preserved. RETURNING tells us whether fresh reps are already
+    # waiting — if so, pair them and forward instead of asking again. Video notes
+    # can't carry a caption, so this is the only chance to reunite them.
     cur.execute(
-        "SELECT reps, comment FROM telegram_bot_pending "
-        "WHERE telegram_user_id = %s AND message_id IS NULL AND reps IS NOT NULL "
-        "AND created_at > NOW() - INTERVAL '1 hour'",
-        (tg_id,),
+        "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps) "
+        "VALUES (%s, %s, %s, NULL) ON CONFLICT (telegram_user_id) "
+        "DO UPDATE SET message_id = EXCLUDED.message_id, chat_id = EXCLUDED.chat_id "
+        "RETURNING reps, comment, (created_at > NOW() - INTERVAL '1 hour') AS reps_fresh",
+        (tg_id, chat_id, message_id),
     )
-    pending_reps = cur.fetchone()
-    if pending_reps:
-        reps = pending_reps["reps"]
-        comment = pending_reps["comment"]
+    row = cur.fetchone()
+    if row and row["reps"] is not None and row["reps_fresh"]:
+        reps = row["reps"]
+        comment = row["comment"]
         cur.execute("DELETE FROM telegram_bot_pending WHERE telegram_user_id = %s", (tg_id,))
         _do_forward(cur, conn, tg_id, participant, chat_id, message_id, reps, comment)
     else:
-        cur.execute(
-            "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps) "
-            "VALUES (%s, %s, %s, NULL) ON CONFLICT (telegram_user_id) "
-            "DO UPDATE SET message_id = EXCLUDED.message_id, chat_id = EXCLUDED.chat_id, "
-            "    reps = NULL, created_at = NOW()",
-            (tg_id, chat_id, message_id),
-        )
         conn.commit()
         _send(chat_id, _t("how_many_reps", _user_lang(cur, tg_id), greet=_greet(cur, tg_id, participant)))
 
@@ -1662,27 +1660,27 @@ def handle_webhook(body: dict, conn) -> None:
     # ── Plain number (+ optional comment) → reps for pending video or bare log ─
     if _reps is not None and participant:
         reps, comment = _reps, _comment
+        _log_entry(cur, participant, reps, comment)
 
+        # Upsert the reps WITHOUT touching message_id, so a video that was stored
+        # first (or lands concurrently) is preserved. RETURNING tells us whether a
+        # video is already waiting — if so, forward now instead of asking twice.
         cur.execute(
-            "SELECT message_id FROM telegram_bot_pending WHERE telegram_user_id = %s",
-            (tg_id,),
+            "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps, comment) "
+            "VALUES (%s, %s, NULL, %s, %s) ON CONFLICT (telegram_user_id) "
+            "DO UPDATE SET reps = EXCLUDED.reps, comment = EXCLUDED.comment, chat_id = EXCLUDED.chat_id, "
+            "    created_at = NOW() "
+            "RETURNING message_id",
+            (tg_id, chat_id, reps, comment),
         )
-        pending = cur.fetchone()
-        if pending and pending["message_id"] is not None:
-            # Video was stored first, number just arrived
-            _log_entry(cur, participant, reps, comment)
+        row = cur.fetchone()
+        if row and row["message_id"] is not None:
+            # Video was already pending → pair them and forward.
+            pending_msg = row["message_id"]
             cur.execute("DELETE FROM telegram_bot_pending WHERE telegram_user_id = %s", (tg_id,))
-            _do_forward(cur, conn, tg_id, participant, chat_id, pending["message_id"], reps, comment)
+            _do_forward(cur, conn, tg_id, participant, chat_id, pending_msg, reps, comment)
         else:
-            # No pending video — log now; store reps+comment so late video can bind within 1h
-            _log_entry(cur, participant, reps, comment)
-            cur.execute(
-                "INSERT INTO telegram_bot_pending (telegram_user_id, chat_id, message_id, reps, comment) "
-                "VALUES (%s, %s, NULL, %s, %s) ON CONFLICT (telegram_user_id) "
-                "DO UPDATE SET message_id = NULL, reps = EXCLUDED.reps, comment = EXCLUDED.comment, "
-                "    chat_id = EXCLUDED.chat_id, created_at = NOW()",
-                (tg_id, chat_id, reps, comment),
-            )
+            # No video yet — keep reps pending so the next video (within 1h) binds.
             conn.commit()
             _log(f"💪 Reps logged (no video)\n👤 {participant}: {reps} reps")
             _send(chat_id, _t("reps_logged", lang, reps=reps), reply_markup=_main_kb(lang))

@@ -495,13 +495,20 @@ class ExerciseQueueApi:
             "LEFT JOIN exercises e ON e.exercise_id = se.exercise_id "
             "WHERE s.session_date BETWEEN %s AND %s AND COALESCE(s.is_planned, FALSE) = FALSE "
             "GROUP BY s.session_date ORDER BY s.session_date",
-            (today - timedelta(days=14), win_end),
+            # session_date is TEXT (ISO YYYY-MM-DD); compare as string, not a date.
+            (str(today - timedelta(days=14)), str(win_end)),
         )
         training = []
         for r in cur.fetchall():
             lifts = [n for n, v in (("squat", r["squat"]), ("bench", r["bench"]), ("deadlift", r["deadlift"])) if v]
-            training.append({"date": r["session_date"].isoformat(),
-                             "weekday": r["session_date"].strftime("%a"),
+            # session_date is TEXT (ISO YYYY-MM-DD); tolerate a date object too.
+            sd = r["session_date"]
+            sd_str = sd.isoformat() if hasattr(sd, "isoformat") else str(sd)
+            try:
+                weekday = _date.fromisoformat(sd_str[:10]).strftime("%a")
+            except ValueError:
+                weekday = ""
+            training.append({"date": sd_str, "weekday": weekday,
                              "types": r["types"], "mainLifts": lifts})
 
         # Tier 2 — already-committed Movement Snacks in the window.
@@ -604,7 +611,8 @@ class ExerciseQueueApi:
             "WHERE s.session_date >= %s AND COALESCE(s.is_planned, FALSE) = FALSE "
             "  AND COALESCE(es.is_working_set, TRUE) = TRUE "
             "ORDER BY s.session_date DESC, s.session_id, e.exercise_name",
-            (today - timedelta(days=45),),
+            # session_date is TEXT (ISO YYYY-MM-DD); compare as string, not a date.
+            (str(today - timedelta(days=45)),),
         )
         sessions: dict = {}
         order: list = []

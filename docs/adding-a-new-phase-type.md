@@ -204,6 +204,10 @@ Fix: compute `isCurrentPhase` from `selectedPhase.endDate` in `Dashboard.jsx` an
 After setting a far-future `end_date`, `PhaseCalendar` computed a grid spanning the entire phase — thousands of cells, causing severe render slowdown.
 Fix: cap the calendar display to end of next month regardless of `phase.endDate`.
 
+**Duplicate `mixed`/`mix` session type for powerlifting**
+Migration 010 added `mixed` to `sessions_session_type_check`, but QuickLogForm wrote `mix`, and both ended up listed in `SESSION_TYPES_PL` — two near-identical filter chips. Root cause: the constraint value and the value the code writes drifted apart.
+Fix: migration 033 adds `mix` to the constraint and migrates `mixed`→`mix`; `SESSION_TYPES_PL` and the LogSessionForm dropdown use only `mix`. Lesson: the session-type string the frontend writes must exactly match a value in `sessions_session_type_check` — grep both when adding a type.
+
 ---
 
 ## Quick checklist

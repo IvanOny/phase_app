@@ -131,6 +131,11 @@ class PhaseApi:
         if method == "POST" and path == "/v1/exercises/merge":
             return self.merge_exercises(body)
 
+        if method == "GET" and re.fullmatch(r"/v1/settings/[\w-]+", path):
+            return self.get_setting(path.split("/")[3])
+        if method == "PUT" and re.fullmatch(r"/v1/settings/[\w-]+", path):
+            return self.put_setting(path.split("/")[3], body)
+
         if method == "GET" and path == "/v1/benchmarks":
             return self.list_benchmarks(qp)
         if method == "POST" and path == "/v1/benchmarks":
@@ -488,7 +493,7 @@ class PhaseApi:
         rows = self._exec(
             "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max, "
             "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift, "
-            "COALESCE(is_timed, FALSE) AS is_timed "
+            "COALESCE(is_timed, FALSE) AS is_timed, COALESCE(is_run, FALSE) AS is_run "
             "FROM exercises ORDER BY exercise_name"
         ).fetchall()
         return ApiResponse(200, {"items": [{
@@ -501,7 +506,30 @@ class PhaseApi:
             "repMin":              r["rep_min"],
             "repMax":              r["rep_max"],
             "isTimed":             bool(r["is_timed"]),
+            "isRun":               bool(r["is_run"]),
         } for r in rows]})
+
+    def get_setting(self, key: str) -> ApiResponse:
+        row = self._exec(
+            "SELECT value FROM app_settings WHERE key = %s", (key,)
+        ).fetchone()
+        if row is None:
+            return ApiResponse(200, {"key": key, "value": None})
+        value = row["value"]
+        if isinstance(value, str):
+            value = json.loads(value)
+        return ApiResponse(200, {"key": key, "value": value})
+
+    def put_setting(self, key: str, payload: dict[str, Any]) -> ApiResponse:
+        if "value" not in payload:
+            return ApiResponse(400, {"error": "validation_error", "missing": ["value"]})
+        self._exec(
+            "INSERT INTO app_settings (key, value) VALUES (%s, %s::jsonb) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            (key, json.dumps(payload["value"])),
+        )
+        self.conn.commit()
+        return ApiResponse(200, {"key": key, "value": payload["value"]})
 
     def list_benchmarks(self, qp: dict[str, str]) -> ApiResponse:
         if "phaseId" not in qp:
@@ -841,8 +869,8 @@ class PhaseApi:
         rep_max = payload.get("repMax")
         try:
             row = self._exec(
-                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift, rep_min, rep_max, is_timed) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING exercise_id",
+                "INSERT INTO exercises (exercise_name, is_barbell_bench_press, is_bodyweight, is_squat, is_deadlift, rep_min, rep_max, is_timed, is_run) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING exercise_id",
                 (payload["exerciseName"],
                  int(payload.get("isBarbellBenchPress", False)),
                  int(payload.get("isBodyweight", False)),
@@ -850,7 +878,8 @@ class PhaseApi:
                  int(payload.get("isDeadlift", False)),
                  int(rep_min) if rep_min is not None else None,
                  int(rep_max) if rep_max is not None else None,
-                 bool(payload.get("isTimed", False))),
+                 bool(payload.get("isTimed", False)),
+                 bool(payload.get("isRun", False))),
             ).fetchone()
             self.conn.commit()
         except psycopg2.DatabaseError as exc:
@@ -866,6 +895,7 @@ class PhaseApi:
             "repMin":              int(rep_min) if rep_min is not None else None,
             "repMax":              int(rep_max) if rep_max is not None else None,
             "isTimed":             bool(payload.get("isTimed", False)),
+            "isRun":               bool(payload.get("isRun", False)),
         })
 
     def delete_exercise(self, exercise_id: int) -> ApiResponse:

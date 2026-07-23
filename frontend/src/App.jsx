@@ -42,7 +42,10 @@ import {
   updateExercise,
   deleteExercise,
   mergeExercise,
+  getSetting,
+  putSetting,
 } from './api/client.js';
+import { QUICK_EXERCISES_KEY, DEFAULT_QUICK_EXERCISES } from './data/quickExercises.js';
 
 function PhaseApp() {
   const { theme, toggleTheme } = useTheme();
@@ -57,6 +60,7 @@ function PhaseApp() {
   const [runBenchmarksMap, setRunBenchmarksMap] = useState({});
   const [progressionMap, setProgressionMap] = useState({});
   const [exercises, setExercises] = useState([]);
+  const [quickList, setQuickList] = useState(DEFAULT_QUICK_EXERCISES);
   const [summaryKey, setSummaryKey] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState('quick');
@@ -64,6 +68,18 @@ function PhaseApp() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState('dashboard');
   const [bwKey, setBwKey] = useState(0);
+
+  useEffect(() => {
+    getSetting(QUICK_EXERCISES_KEY)
+      .then(list => { if (Array.isArray(list) && list.length > 0) setQuickList(list); })
+      .catch(() => {});
+  }, []);
+
+  // Persist the tier-1 list server-side (single account, shared across browsers).
+  const handleQuickListChange = useCallback((next) => {
+    setQuickList(next);
+    putSetting(QUICK_EXERCISES_KEY, next).catch(() => {});
+  }, []);
 
   useEffect(() => {
     Promise.all([getPhases(), getExercises()]).then(([ps, exs]) => {
@@ -219,6 +235,7 @@ function PhaseApp() {
         runBenchmarks={runBenchmarksMap[selectedPhaseId] || []}
         progression={progressionMap[selectedPhaseId] || []}
         exercises={exercises}
+        quickList={quickList}
         onSelectPhase={setSelectedPhaseId}
         onOpenPanel={() => setPanelOpen(true)}
         onAddPhase={handleAddPhase}
@@ -247,6 +264,8 @@ function PhaseApp() {
           selectedPhaseId={selectedPhaseId}
           sessions={sessions}
           exercises={exercises}
+          quickList={quickList}
+          onQuickListChange={handleQuickListChange}
           isAuthenticated={isAuthenticated}
           onSessionLogged={session => {
             handleSessionLogged(session);

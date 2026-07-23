@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   createSession,
   updateSession,
@@ -8,37 +8,15 @@ import {
   getExerciseSets,
   createExercise,
 } from '../../api/client.js';
-
-const STORAGE_KEY = 'quicklog_exercises_v2';
-
-const DEFAULT_EXERCISES = [
-  { label: 'Barbell Bench Press', sessionType: 'heavy_bench', flags: { isBarbellBenchPress: true }, matchFlag: 'isBarbellBenchPress', type: 'strength' },
-  { label: 'Barbell Squat',       sessionType: 'squat',       flags: { isSquat: true },             matchFlag: 'isSquat',             type: 'strength' },
-  { label: 'Barbell Deadlift',    sessionType: 'deadlift',    flags: { isDeadlift: true },          matchFlag: 'isDeadlift',          type: 'strength' },
-  { label: 'Pull',                sessionType: 'pull',        flags: { isBodyweight: true },                                          type: 'bodyweight' },
-  { label: 'Weighted Pull-ups',   sessionType: 'pull',        flags: {},                                                              type: 'strength' },
-  { label: 'Run',                 sessionType: 'run',         flags: {},                                                              type: 'run' },
-];
+import { DEFAULT_QUICK_EXERCISES, resolveQuickEntry } from '../../data/quickExercises.js';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function loadList() {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : DEFAULT_EXERCISES;
-  } catch {
-    return DEFAULT_EXERCISES;
-  }
-}
+export default function QuickLogForm({ phaseId, phaseType, exercises, quickList, onQuickListChange, onSessionCreated }) {
+  const list = (quickList && quickList.length > 0) ? quickList : DEFAULT_QUICK_EXERCISES;
 
-function saveList(list) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-}
-
-export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionCreated }) {
-  const [quickList, setQuickList]   = useState(loadList);
   const [selectedIdx, setSelectedIdx] = useState(null);
   const [date, setDate]             = useState(todayStr);
   const [weight, setWeight]         = useState('');
@@ -54,29 +32,27 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionC
   const [saving, setSaving]         = useState(false);
   const [status, setStatus]         = useState(null);
 
-  const selected = selectedIdx !== null ? quickList[selectedIdx] : null;
-
-  useEffect(() => { saveList(quickList); }, [quickList]);
+  const selected = selectedIdx !== null ? list[selectedIdx] : null;
 
   function removeExercise(idx) {
-    setQuickList(prev => prev.filter((_, i) => i !== idx));
+    onQuickListChange?.(list.filter((_, i) => i !== idx));
     if (selectedIdx === idx) setSelectedIdx(null);
-    else if (selectedIdx > idx) setSelectedIdx(idx => idx - 1);
+    else if (selectedIdx > idx) setSelectedIdx(i => i - 1);
   }
 
   function addExercise(ex) {
     const entry = {
       label: ex.exerciseName,
-      sessionType: 'other',
+      sessionType: ex.isRun ? 'run' : 'other',
       flags: {},
       exerciseId: ex.exerciseId,
-      type: ex.isBodyweight ? 'bodyweight' : 'strength',
+      type: ex.isRun ? 'run' : (ex.isBodyweight ? 'bodyweight' : 'strength'),
     };
-    setQuickList(prev => [...prev, entry]);
+    onQuickListChange?.([...list, entry]);
     setAddSearch('');
   }
 
-  const alreadyInList = new Set(quickList.map(e => e.exerciseId).filter(Boolean));
+  const alreadyInList = new Set(list.map(e => e.exerciseId).filter(Boolean));
   const catalogOptions = (exercises || [])
     .filter(ex => !alreadyInList.has(ex.exerciseId))
     .filter(ex => !addSearch || ex.exerciseName.toLowerCase().includes(addSearch.toLowerCase()));
@@ -93,14 +69,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionC
       const session = await createSession({ phaseId: Number(phaseId), sessionDate: date, sessionType });
       const sessionId = session.sessionId;
 
-      let catalogEx;
-      if (selected.exerciseId) {
-        catalogEx = exercises.find(e => e.exerciseId === selected.exerciseId);
-      } else if (selected.matchFlag) {
-        catalogEx = exercises.find(e => e[selected.matchFlag] === true);
-      } else {
-        catalogEx = exercises.find(e => e.exerciseName.toLowerCase() === selected.label.toLowerCase());
-      }
+      let catalogEx = resolveQuickEntry(selected, exercises);
       if (!catalogEx) {
         catalogEx = await createExercise({ exerciseName: selected.label, ...selected.flags });
       }
@@ -149,6 +118,18 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionC
       if (avgHr) patch.avg_hr = Number(avgHr);
       if (rpe)   patch.rpe    = Number(rpe);
       await updateSession(session.sessionId, patch);
+
+      // Link the run session to the Run catalog exercise so it has a real
+      // catalog identity. Metrics stay on the session (above); this is just
+      // the association. Best-effort — a missing Run exercise won't block logging.
+      try {
+        let runEx = resolveQuickEntry(selected, exercises) || (exercises || []).find(e => e.isRun);
+        if (!runEx) runEx = await createExercise({ exerciseName: 'Run', isRun: true });
+        const sessionExercises = await getSessionExercises(session.sessionId);
+        if (!sessionExercises.find(e => e.exerciseId === runEx.exerciseId)) {
+          await createSessionExercise(session.sessionId, { exerciseId: runEx.exerciseId, exerciseOrder: 1 });
+        }
+      } catch { /* non-fatal: run is still logged at session level */ }
 
       const parts = [`${distKm} km`, `${durMin} min`];
       if (avgHr) parts.push(`${avgHr} bpm`);
@@ -200,7 +181,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionC
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {quickList.map((ex, idx) => (
+          {list.map((ex, idx) => (
             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
                 onClick={() => { if (!editMode) { setSelectedIdx(idx); setStatus(null); } }}

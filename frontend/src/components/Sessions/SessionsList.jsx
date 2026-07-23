@@ -13,7 +13,7 @@ import ConfirmDialog from '../Common/ConfirmDialog.jsx';
 import PhaseCalendar from './PhaseCalendar.jsx';
 
 const SESSION_TYPES_BENCH = ['heavy_bench', 'volume_bench', 'speed_bench', 'run', 'pull'];
-const SESSION_TYPES_PL    = ['squat', 'deadlift', 'mixed', 'mix', 'run', 'other'];
+const SESSION_TYPES_PL    = ['squat', 'deadlift', 'mix', 'run', 'other'];
 const SESSION_TYPES_DEFAULT = SESSION_TYPES_BENCH;
 
 const TYPE_COLORS = {
@@ -504,7 +504,7 @@ function SessionRow({ session, e1rm, vol, isOpen, onToggle, onUpdated, onDeleted
           <div className="session-edit-row1">
             <input type="date" value={form.sessionDate} onChange={e => setForm(f => ({ ...f, sessionDate: e.target.value }))} className="inline-input" />
             <select value={form.sessionType} onChange={e => setForm(f => ({ ...f, sessionType: e.target.value }))} className="inline-input">
-              {['squat','deadlift','mixed','heavy_bench','volume_bench','speed_bench','run','pull','rest','other'].map(t => <option key={t} value={t}>{formatType(t)}</option>)}
+              {['squat','deadlift','mix','heavy_bench','volume_bench','speed_bench','run','pull','rest','other'].map(t => <option key={t} value={t}>{formatType(t)}</option>)}
             </select>
             <input type="number" min="0" max="10" step="0.1" value={form.eliteHrvReadiness} onChange={e => setForm(f => ({ ...f, eliteHrvReadiness: e.target.value }))} className="inline-input" style={{ width: 60 }} placeholder="HRV" />
             <div className="session-edit-actions">
@@ -720,7 +720,7 @@ function FilterBar({ filters, onChange, exercises, sessionTypes = SESSION_TYPES_
   );
 }
 
-export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exercises, exerciseVolumes, onUpdateSession, onDeleteSession, onSessionCreated, isAuthenticated, focusFilter }) {
+export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exercises, exerciseVolumes, tierOneIds, onUpdateSession, onDeleteSession, onSessionCreated, isAuthenticated, focusFilter }) {
   const sessionTypes = phase?.phaseType === 'powerlifting' ? SESSION_TYPES_PL : SESSION_TYPES_DEFAULT;
   const [expanded, setExpanded] = useState(new Set());
   const [filters, setFilters] = useState({ types: sessionTypes, exerciseId: '' });
@@ -754,8 +754,11 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
         if (matchingSessionIds.has(s.sessionId)) exerciseIds.add(ev.exerciseId);
       });
     });
-    return exercises.filter(e => exerciseIds.has(e.exerciseId));
-  }, [sessions, filters.types, exerciseVolumes, exercises]);
+    // In tier-1 mode (PL phase) restrict the dropdown to the tracked exercises.
+    return exercises.filter(e =>
+      exerciseIds.has(e.exerciseId) && (!tierOneIds || tierOneIds.has(e.exerciseId))
+    );
+  }, [sessions, filters.types, exerciseVolumes, exercises, tierOneIds]);
 
   function handleFiltersChange(next) {
     const typesChanged = next.types.join(',') !== filters.types.join(',');

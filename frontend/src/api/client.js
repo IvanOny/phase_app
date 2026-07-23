@@ -213,6 +213,19 @@ export async function createExercise(payload) {
   return apiFetch('POST', '/v1/exercises', payload);
 }
 
+// ---- App settings (single-account key/value store) ----
+export async function getSetting(key) {
+  if (MOCK_MODE) return Promise.resolve(null);
+  const res = await apiFetch('GET', `/v1/settings/${key}`);
+  return res?.value ?? null;
+}
+
+export async function putSetting(key, value) {
+  if (MOCK_MODE) return Promise.resolve(value);
+  const res = await apiFetch('PUT', `/v1/settings/${key}`, { value });
+  return res?.value ?? value;
+}
+
 export async function deleteExercise(exerciseId) {
   if (MOCK_MODE) return Promise.resolve({ deleted: true });
   return apiFetch('DELETE', `/v1/exercises/${exerciseId}`);

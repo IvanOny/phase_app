@@ -19,6 +19,7 @@ export default function Dashboard({
   exerciseVolumes,
   runBenchmarks,
   exercises,
+  quickList,
   progression,
   onSelectPhase,
   onOpenPanel,
@@ -53,6 +54,7 @@ export default function Dashboard({
         sessions={sessions}
         exercises={exercises}
         exerciseVolumes={exerciseVolumes}
+        quickList={quickList}
         onSelectPhase={onSelectPhase}
         onOpenPanel={onOpenPanel}
         onAddPhase={onAddPhase}

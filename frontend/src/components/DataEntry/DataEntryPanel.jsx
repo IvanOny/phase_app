@@ -27,6 +27,8 @@ export default function DataEntryPanel({
   selectedPhaseId,
   sessions,
   exercises,
+  quickList,
+  onQuickListChange,
   isAuthenticated,
   onSessionLogged,
   onQuickLogged,
@@ -69,6 +71,8 @@ export default function DataEntryPanel({
               phaseId={selectedPhaseId}
               phaseType={phases.find(p => p.phaseId === selectedPhaseId)?.phaseType}
               exercises={exercises}
+              quickList={quickList}
+              onQuickListChange={onQuickListChange}
               onSessionCreated={onQuickLogged}
             />
           )}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import PhaseHeader from '../Dashboard/PhaseHeader.jsx';
 import PhaseNav from '../Dashboard/PhaseNav.jsx';
 import SessionsList from '../Sessions/SessionsList.jsx';
@@ -6,6 +6,7 @@ import LiftTrendChart from './LiftTrendChart.jsx';
 import ClassificationPanel from './ClassificationPanel.jsx';
 import VolumeChart from '../Charts/VolumeChart.jsx';
 import { getSessionPlMetrics, getClassification } from '../../api/client.js';
+import { resolveTierOneExerciseIds } from '../../data/quickExercises.js';
 
 export default function PowerliftingDashboard({
   phases,
@@ -13,6 +14,7 @@ export default function PowerliftingDashboard({
   sessions,
   exercises,
   exerciseVolumes,
+  quickList,
   onSelectPhase,
   onOpenPanel,
   onAddPhase,
@@ -31,6 +33,17 @@ export default function PowerliftingDashboard({
   const [plMetrics, setPlMetrics] = useState(null);
   const [classification, setClassification] = useState(null);
   const [classLoading, setClassLoading] = useState(false);
+
+  // Tier-1 = the quick-add list. In the PL phase we track only these:
+  // the volume chart and the log's exercise dropdown are restricted to them.
+  const tierOneIds = useMemo(
+    () => resolveTierOneExerciseIds(quickList, exercises),
+    [quickList, exercises],
+  );
+  const tierOneVolumes = useMemo(
+    () => (exerciseVolumes || []).filter(ev => tierOneIds.has(ev.exerciseId)),
+    [exerciseVolumes, tierOneIds],
+  );
 
   const loadPlData = useCallback(async (phaseId) => {
     if (!phaseId) return;
@@ -108,7 +121,7 @@ export default function PowerliftingDashboard({
             loading={classLoading}
           />
           <LiftTrendChart sessions={sessions} plMetrics={plMetrics} showTotal={false} />
-          <VolumeChart sessions={sessions} exerciseVolumes={exerciseVolumes} exercises={exercises} hideBenchFilter />
+          <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises} hideBenchFilter />
         </>
       )}
 
@@ -119,6 +132,7 @@ export default function PowerliftingDashboard({
         volumeMap={{}}
         exercises={exercises}
         exerciseVolumes={exerciseVolumes}
+        tierOneIds={tierOneIds}
         onUpdateSession={onUpdateSession}
         onDeleteSession={onDeleteSession}
         isAuthenticated={isAuthenticated}

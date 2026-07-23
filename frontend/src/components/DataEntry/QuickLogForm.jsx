@@ -12,7 +12,7 @@ const QUICK_EXERCISES = [
   { label: 'Barbell Bench Press', sessionType: 'heavy_bench', flags: { isBarbellBenchPress: true }, matchFlag: 'isBarbellBenchPress', weighted: true  },
   { label: 'Barbell Squat',       sessionType: 'squat',       flags: { isSquat: true },             matchFlag: 'isSquat',             weighted: true  },
   { label: 'Barbell Deadlift',    sessionType: 'deadlift',    flags: { isDeadlift: true },          matchFlag: 'isDeadlift',          weighted: true  },
-  { label: 'Pull-ups',            sessionType: 'pull',        flags: { isBodyweight: true },                                          weighted: false },
+  { label: 'Pull',                 sessionType: 'pull',        flags: { isBodyweight: true },                                          weighted: false },
   { label: 'Weighted Pull-ups',   sessionType: 'pull',        flags: {},                                                              weighted: true  },
 ];
 
@@ -39,7 +39,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, onSessionC
       // In a powerlifting phase all lifts on a day share ONE 'mixed' session,
       // so the trend chart plots them on the same date and they appear together
       // in the log. (Lift attribution is by exercise flag, not session type.)
-      const sessionType = phaseType === 'powerlifting' ? 'mixed' : selected.sessionType;
+      const sessionType = phaseType === 'powerlifting' ? 'mix' : selected.sessionType;
       const session = await createSession({
         phaseId: Number(phaseId),
         sessionDate: today,

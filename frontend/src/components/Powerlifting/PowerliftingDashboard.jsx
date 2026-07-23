@@ -59,13 +59,19 @@ export default function PowerliftingDashboard({
     }
   }, [selectedPhase?.phaseId, loadPlData]);
 
+  // Refetch lift metrics + classification whenever the sessions change
+  // (e.g. after a quick-log). `sessions` is a fresh array reference each
+  // reload, so this fires even when a set is added to an existing session
+  // and sessions.length is unchanged.
   useEffect(() => {
-    if (selectedPhase?.phaseId && sessions.length > 0) {
-      getClassification(selectedPhase.phaseId, null)
-        .then(setClassification)
-        .catch(() => {});
-    }
-  }, [sessions.length, selectedPhase?.phaseId]);
+    if (!selectedPhase?.phaseId) return;
+    getSessionPlMetrics(selectedPhase.phaseId)
+      .then(setPlMetrics)
+      .catch(() => {});
+    getClassification(selectedPhase.phaseId, null)
+      .then(setClassification)
+      .catch(() => {});
+  }, [sessions, selectedPhase?.phaseId]);
 
   useEffect(() => {
     if (bwRefreshKey > 0 && selectedPhase?.phaseId) {

@@ -112,11 +112,11 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
     try {
       const session = await createSession({ phaseId: Number(phaseId), sessionDate: date, sessionType: 'run' });
       const patch = {
-        distance_km: Number(distKm),
-        duration_seconds: Math.round(Number(durMin) * 60),
+        distanceKm: Number(distKm),
+        durationSeconds: Math.round(Number(durMin) * 60),
       };
-      if (avgHr) patch.avg_hr = Number(avgHr);
-      if (rpe)   patch.rpe    = Number(rpe);
+      if (avgHr) patch.avgHr = Number(avgHr);
+      if (rpe)   patch.rpe   = Number(rpe);
       await updateSession(session.sessionId, patch);
 
       // Link the run session to the Run catalog exercise so it has a real

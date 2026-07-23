@@ -271,6 +271,28 @@ def _kb_confirm() -> dict:
     ]]}
 
 
+def _maybe_name_action(cur, conn, user_id: int | None, chat_id: int, parts: list[str]) -> bool:
+    """Handle a bare '<exercise name> done' / '<name> skip' message.
+
+    Returns True only when the name resolves to one of the user's exercises;
+    otherwise False so the message can fall through to the burpee bot. This keeps
+    us from hijacking unrelated chatter that merely happens to end in 'done'.
+    """
+    if user_id is None or len(parts) < 2:
+        return False
+    action = parts[-1].lower()
+    if action not in ("done", "skip"):
+        return False
+    name = " ".join(parts[:-1]).strip()
+    if not name:
+        return False
+    ex = _get_ex_by_name(cur, user_id, name)
+    if not ex:
+        return False
+    _mark_today(cur, conn, user_id, chat_id, ex["id"], done=(action == "done"))
+    return True
+
+
 # ── Public: message router ───────────────────────────────────────────────────
 
 def maybe_handle_exercise(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
@@ -293,7 +315,10 @@ def maybe_handle_exercise(cur, conn, tg_id: int, chat_id: int, text: str) -> boo
     args = parts[1:]
 
     if word not in _EX_COMMANDS:
-        return False
+        # Natural-language "<exercise name> done" / "<name> skip" — log by name.
+        # Only consumed when the name matches an existing exercise; otherwise the
+        # message falls through to the burpee bot.
+        return _maybe_name_action(cur, conn, user_id, chat_id, parts)
 
     # `pause` collides with the burpee /pause (mute). Exercise pause always has a
     # target name; bare pause falls through to burpee.
@@ -401,6 +426,7 @@ def _cmd_help(chat_id: int) -> None:
         "exapp — open the web planner (calendar / log / stats)\n"
         "next [filters] — serve the next queue item (e.g. next knee barrack)\n"
         "done [actual] — mark the served item done\n"
+        "<name> done — log an exercise by name (e.g. squats done)\n"
         "skip — skip the served item for 1h\n"
         "overview — what's left to do today (with ✓/⏭ buttons)\n"
         "list — all exercises\n"

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useEffect } from 'react';
 import ExerciseEditor from './ExerciseEditor.jsx';
 import DayDetail from './DayDetail.jsx';
 import SlotSuggestion from './SlotSuggestion.jsx';
+import HoldButton from './HoldButton.jsx';
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -226,11 +227,12 @@ export default function ScheduleCalendar({
                     >
                       <span className="exq-chip-name">{o.name}</span>
                       <span className="exq-chip-actions">
+                        {/* Hold-to-activate so a stray tap can't complete/remove by accident. */}
                         {/* Only past/today can be completed — you can't have done a future day. */}
                         {o.status !== 'done' && o.date <= todayIso && (
-                          <button className="exq-chip-btn" title="Mark done" onPointerDown={e => e.stopPropagation()} onClick={() => onComplete(o.id)}>✓</button>
+                          <HoldButton className="exq-chip-btn" title="Hold to mark done" onActivate={() => onComplete(o.id)}>✓</HoldButton>
                         )}
-                        <button className="exq-chip-btn" title="Remove" onPointerDown={e => e.stopPropagation()} onClick={() => onRemove(o.id)}>✕</button>
+                        <HoldButton className="exq-chip-btn" title="Hold to remove" onActivate={() => onRemove(o.id)}>✕</HoldButton>
                       </span>
                     </div>
                   ))}

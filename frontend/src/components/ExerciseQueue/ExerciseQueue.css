@@ -219,11 +219,18 @@
 /* Actions sit on their own row below the name, so they never squeeze it. */
 .exq-chip-actions { display: flex; justify-content: flex-end; gap: 4px; }
 .exq-chip-btn {
+  position: relative; overflow: hidden;
   background: rgba(255,255,255,.22); border: none; color: inherit; cursor: pointer;
   border-radius: 4px; width: 24px; height: 20px; line-height: 1; font-size: 12px; padding: 0;
-  touch-action: manipulation;
+  touch-action: none; user-select: none; -webkit-touch-callout: none;
 }
 .exq-chip-btn:hover { background: rgba(255,255,255,.4); }
+/* Press-and-hold: a left-to-right fill charges over the hold duration. */
+.exq-chip-btn::after {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 0;
+  background: rgba(255,255,255,.45); pointer-events: none;
+}
+.exq-chip-btn--holding::after { width: 100%; transition: width var(--hold-ms, 500ms) linear; }
 
 /* Floating drag ghost (follows the pointer/finger) */
 .exq-ghost {

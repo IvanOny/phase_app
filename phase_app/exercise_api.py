@@ -586,6 +586,14 @@ class ExerciseQueueApi:
                                  "rationale": result.get("rationale", ""),
                                  "exerciseId": ex["id"], "name": ex["name"]})
 
+    def coach_context(self, qp: dict[str, str]) -> ApiResponse:
+        """Debug: return the exact snapshot string injected into the coach's
+        system prompt, so it can be eyeballed."""
+        uid = self._uid(qp)
+        if uid is None:
+            return ApiResponse(401, {"error": "unauthorized"})
+        return ApiResponse(200, {"context": self._training_context(uid)})
+
     # ── Coach chat ──────────────────────────────────────────────────────────
     def chat(self, body: dict, qp: dict[str, str]) -> ApiResponse:
         """Conversational coach grounded in the athlete's real logs across all
@@ -616,6 +624,9 @@ class ExerciseQueueApi:
             "You are not a medical professional; for pain or injury, advise seeing one.\n\n"
             "=== SNAPSHOT ===\n" + self._training_context(uid)
         )
+        # When debug is on, record every step of the tool loop for inspection.
+        debug = bool((body or {}).get("debug"))
+        trace: list = [{"step": "system_prompt", "content": system}] if debug else None
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=api_key)
@@ -624,17 +635,31 @@ class ExerciseQueueApi:
                     model="claude-sonnet-4-6", max_tokens=1024, system=system,
                     tools=_COACH_TOOLS, messages=convo,
                 )
+                if debug:
+                    for b in resp.content:
+                        if b.type == "text" and b.text.strip():
+                            trace.append({"step": "reasoning", "content": b.text})
+                        elif b.type == "tool_use":
+                            trace.append({"step": "tool_call", "name": b.name, "input": b.input or {}})
                 if resp.stop_reason != "tool_use":
                     reply = "".join(b.text for b in resp.content if b.type == "text")
-                    return ApiResponse(200, {"reply": reply})
+                    out = {"reply": reply}
+                    if debug:
+                        out["trace"] = trace
+                    return ApiResponse(200, out)
                 convo.append({"role": "assistant", "content": resp.content})
                 results = []
                 for b in resp.content:
                     if b.type == "tool_use":
-                        results.append({"type": "tool_result", "tool_use_id": b.id,
-                                        "content": self._run_coach_tool(uid, b.name, b.input or {})})
+                        content = self._run_coach_tool(uid, b.name, b.input or {})
+                        results.append({"type": "tool_result", "tool_use_id": b.id, "content": content})
+                        if debug:
+                            trace.append({"step": "tool_result", "name": b.name, "content": content})
                 convo.append({"role": "user", "content": results})
-            return ApiResponse(200, {"reply": "Sorry — that needed too many lookups. Try narrowing the question."})
+            out = {"reply": "Sorry — that needed too many lookups. Try narrowing the question."}
+            if debug:
+                out["trace"] = trace
+            return ApiResponse(200, out)
         except Exception as exc:
             return ApiResponse(502, {"error": "upstream_error", "detail": str(exc)})
 

@@ -168,12 +168,20 @@ per-user token stored on `exercise_users.token`.
 - **Log** — recent completions from `exercise_history`.
 - **Stats** — per-exercise counts + totals.
 - **Coach** (`CoachChat.jsx` + `POST /v1/exq/chat`) — a conversational coach
-  grounded in the athlete's real logs. Stateless: the client sends the full
-  message history each turn and the server prepends a fresh training snapshot
-  (`_training_context`: recent phases, last ~15 sessions with best working set +
-  estimated e1RM per exercise, recent bodyweight, Movement Snacks + history) as
-  the system prompt, then calls Claude (`claude-sonnet-4-6`). Returns 503 if
-  `ANTHROPIC_API_KEY` is unset. No conversations are persisted yet.
+  grounded in the athlete's real logs across **all three domains**: phase-app
+  training, Movement Snacks, and the Burpee Challenge. Stateless: the client
+  sends the full message history each turn.
+  - **Snapshot + tools.** The system prompt always carries a compact
+    `_training_context` (recent phases, last ~15 sessions with best working set +
+    e1RM, bodyweight, snacks + history, a burpee one-liner) for instant answers to
+    simple questions. For depth, Claude calls **tools** (`_COACH_TOOLS`): 
+    `get_training_sessions(from,to)`, `get_lift_progress(lift)`, `get_bodyweight`,
+    `get_movement_snack_history(days)`, `get_burpee_stats`. The server runs the
+    tool loop (cap 6 round-trips) and returns the final text.
+  - **Cross-domain link.** Burpee lives under `telegram_bot_users.participant_name`;
+    the coach reaches it by joining `exercise_users.telegram_user_id` →
+    `telegram_bot_users` (`_burpee_participant`). Phase-app data is global.
+  - Returns 503 if `ANTHROPIC_API_KEY` is unset. Conversations aren't persisted.
 
 ### Drag behaviour (toggle in the calendar toolbar, remembered in localStorage)
 

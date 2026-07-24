@@ -24,6 +24,45 @@ from phase_app.api import ApiResponse
 from phase_app.exercise_due import first_due, interval_of
 
 
+# Tools the coach chat can call to reach beyond the always-present snapshot.
+_COACH_TOOLS = [
+    {
+        "name": "get_training_sessions",
+        "description": "Phase-app barbell training sessions in a date range, with the best "
+                       "working set and estimated e1RM per exercise. Dates are YYYY-MM-DD.",
+        "input_schema": {"type": "object", "properties": {
+            "from_date": {"type": "string", "description": "YYYY-MM-DD"},
+            "to_date": {"type": "string", "description": "YYYY-MM-DD"}},
+            "required": ["from_date", "to_date"]},
+    },
+    {
+        "name": "get_lift_progress",
+        "description": "Full-history top-set estimated e1RM over time for one main lift.",
+        "input_schema": {"type": "object", "properties": {
+            "lift": {"type": "string", "enum": ["squat", "bench", "deadlift"]}},
+            "required": ["lift"]},
+    },
+    {
+        "name": "get_bodyweight",
+        "description": "Recent bodyweight log entries (kg with dates).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_movement_snack_history",
+        "description": "Movement Snacks (accessory/mobility) completions in the last N days, "
+                       "with per-exercise counts.",
+        "input_schema": {"type": "object", "properties": {
+            "days": {"type": "integer", "description": "look-back window in days"}}},
+    },
+    {
+        "name": "get_burpee_stats",
+        "description": "Burpee Challenge stats: totals, workout count, best day, current streak, "
+                       "monthly breakdown, and recent daily reps.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+]
+
+
 class ExerciseQueueApi:
     def __init__(self, conn):
         self.conn = conn
@@ -549,18 +588,19 @@ class ExerciseQueueApi:
 
     # ── Coach chat ──────────────────────────────────────────────────────────
     def chat(self, body: dict, qp: dict[str, str]) -> ApiResponse:
-        """Conversational coach grounded in the athlete's real logs (phase-app
-        training + Movement Snacks). Stateless: the client sends the full message
-        history each turn; the server prepends a fresh data snapshot as the system
-        prompt."""
+        """Conversational coach grounded in the athlete's real logs across all
+        three domains — phase-app training, Movement Snacks, and the Burpee
+        Challenge. A compact snapshot is always in the system prompt (fast answers
+        to simple questions); tools let Claude pull deeper/wider data on demand.
+        Stateless: the client sends the full message history each turn."""
         uid = self._uid(qp)
         if uid is None:
             return ApiResponse(401, {"error": "unauthorized"})
         raw_msgs = (body or {}).get("messages") or []
-        messages = [{"role": m["role"], "content": m["content"]}
-                    for m in raw_msgs
-                    if m.get("role") in ("user", "assistant") and str(m.get("content", "")).strip()]
-        if not messages:
+        convo = [{"role": m["role"], "content": m["content"]}
+                 for m in raw_msgs
+                 if m.get("role") in ("user", "assistant") and str(m.get("content", "")).strip()]
+        if not convo:
             return ApiResponse(400, {"error": "validation_error", "detail": "messages required"})
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
@@ -568,23 +608,191 @@ class ExerciseQueueApi:
 
         system = (
             "You are a knowledgeable, no-nonsense strength & conditioning coach chatting "
-            "with the athlete whose training data appears below. Ground every answer in "
-            "this data — cite specific numbers, lifts and dates from it. If it doesn't "
-            "contain what's asked, say so plainly instead of inventing figures. Be concise "
-            "and practical. e1RM is estimated as load*(1+reps/30). You are not a medical "
-            "professional; for pain or injury, advise seeing one.\n\n"
-            "=== ATHLETE TRAINING DATA ===\n" + self._training_context(uid)
+            "with the athlete whose data appears below. Ground every answer in real data — "
+            "cite specific numbers, lifts and dates. A recent SNAPSHOT is included; for "
+            "anything it doesn't cover (older history, full trends, detailed burpee stats) "
+            "call a tool rather than guessing or saying you can't. If a tool returns nothing, "
+            "say so plainly. Be concise and practical. e1RM is estimated as load*(1+reps/30). "
+            "You are not a medical professional; for pain or injury, advise seeing one.\n\n"
+            "=== SNAPSHOT ===\n" + self._training_context(uid)
         )
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=api_key)
-            msg = client.messages.create(
-                model="claude-sonnet-4-6", max_tokens=1024, system=system, messages=messages,
-            )
-            reply = msg.content[0].text
+            for _ in range(6):  # cap tool round-trips
+                resp = client.messages.create(
+                    model="claude-sonnet-4-6", max_tokens=1024, system=system,
+                    tools=_COACH_TOOLS, messages=convo,
+                )
+                if resp.stop_reason != "tool_use":
+                    reply = "".join(b.text for b in resp.content if b.type == "text")
+                    return ApiResponse(200, {"reply": reply})
+                convo.append({"role": "assistant", "content": resp.content})
+                results = []
+                for b in resp.content:
+                    if b.type == "tool_use":
+                        results.append({"type": "tool_result", "tool_use_id": b.id,
+                                        "content": self._run_coach_tool(uid, b.name, b.input or {})})
+                convo.append({"role": "user", "content": results})
+            return ApiResponse(200, {"reply": "Sorry — that needed too many lookups. Try narrowing the question."})
         except Exception as exc:
             return ApiResponse(502, {"error": "upstream_error", "detail": str(exc)})
-        return ApiResponse(200, {"reply": reply})
+
+    # ── Coach tools ─────────────────────────────────────────────────────────
+    def _run_coach_tool(self, uid: int, name: str, inp: dict) -> str:
+        cur = self.conn.cursor()
+        try:
+            if name == "get_training_sessions":
+                return self._tool_sessions(cur, inp.get("from_date", ""), inp.get("to_date", ""))
+            if name == "get_lift_progress":
+                return self._tool_lift_progress(cur, inp.get("lift", ""))
+            if name == "get_bodyweight":
+                return self._tool_bodyweight(cur)
+            if name == "get_movement_snack_history":
+                return self._tool_snack_history(cur, uid, int(inp.get("days", 30)))
+            if name == "get_burpee_stats":
+                return self._tool_burpee(cur, uid)
+        except Exception as exc:
+            return f"(tool error: {exc})"
+        return "(unknown tool)"
+
+    def _tool_sessions(self, cur, from_date: str, to_date: str) -> str:
+        cur.execute(
+            "SELECT s.session_date, s.session_type, e.exercise_name, es.load_kg, es.reps "
+            "FROM sessions s "
+            "JOIN session_exercises se ON se.session_id = s.session_id "
+            "JOIN exercises e ON e.exercise_id = se.exercise_id "
+            "JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id "
+            "WHERE s.session_date BETWEEN %s AND %s AND COALESCE(s.is_planned, FALSE) = FALSE "
+            "  AND COALESCE(es.is_working_set, 1) = 1 "
+            "ORDER BY s.session_date DESC, s.session_id, e.exercise_name",
+            (str(from_date), str(to_date)),
+        )
+        sessions: dict = {}
+        order: list = []
+        for r in cur.fetchall():
+            key = (r["session_date"], r["session_type"])
+            if key not in sessions:
+                sessions[key] = {}
+                order.append(key)
+            load = float(r["load_kg"]) if r["load_kg"] is not None else 0.0
+            reps = r["reps"] or 0
+            e1rm = round(load * (1 + reps / 30.0)) if load and reps else 0
+            cur_best = sessions[key].get(r["exercise_name"])
+            if cur_best is None or e1rm > cur_best[2]:
+                sessions[key][r["exercise_name"]] = (load, reps, e1rm)
+        if not order:
+            return f"No sessions between {from_date} and {to_date}."
+        out = []
+        for key in order[:50]:
+            d, t = key
+            parts = [f"{n} {l:g}×{rp} (e1RM~{e})" for n, (l, rp, e) in sessions[key].items() if l and rp]
+            out.append(f"{d} [{t}]: " + "; ".join(parts))
+        return "\n".join(out)
+
+    _LIFT_FLAG = {"squat": "is_squat", "bench": "is_barbell_bench_press", "deadlift": "is_deadlift"}
+
+    def _tool_lift_progress(self, cur, lift: str) -> str:
+        flag = self._LIFT_FLAG.get(lift)
+        if not flag:
+            return "lift must be squat, bench or deadlift."
+        cur.execute(
+            f"SELECT s.session_date, "
+            f"       MAX(ROUND((es.load_kg * (1 + es.reps / 30.0))::numeric)) AS e1rm "
+            f"FROM sessions s "
+            f"JOIN session_exercises se ON se.session_id = s.session_id "
+            f"JOIN exercises e ON e.exercise_id = se.exercise_id "
+            f"JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id "
+            f"WHERE e.{flag} = 1 AND COALESCE(es.is_top_set, 0) = 1 "
+            f"  AND COALESCE(s.is_planned, FALSE) = FALSE AND es.load_kg > 0 AND es.reps > 0 "
+            f"GROUP BY s.session_date ORDER BY s.session_date",
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return f"No top-set {lift} data logged."
+        pts = [f"{r['session_date']}: {r['e1rm']}kg" for r in rows]
+        return f"{lift} top-set e1RM over time:\n" + "\n".join(pts)
+
+    def _tool_bodyweight(self, cur) -> str:
+        cur.execute("SELECT logged_date, weight_kg FROM bodyweight_log ORDER BY logged_date DESC LIMIT 30")
+        rows = cur.fetchall()
+        if not rows:
+            return "No bodyweight logged."
+        return "Bodyweight (newest first): " + ", ".join(
+            f"{float(r['weight_kg']):g}kg ({r['logged_date']})" for r in rows)
+
+    def _tool_snack_history(self, cur, uid: int, days: int) -> str:
+        days = max(1, min(days, 365))
+        cur.execute(
+            "SELECT e.name, COUNT(*) AS n, MAX(h.done_at) AS last "
+            "FROM exercise_history h LEFT JOIN exercise_items e ON e.id = h.exercise_id "
+            "WHERE h.user_id = %s AND h.done_at >= NOW() - (%s || ' days')::interval "
+            "GROUP BY e.name ORDER BY n DESC",
+            (uid, days),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return f"No Movement Snack completions in the last {days} days."
+        return f"Movement Snack completions, last {days} days:\n" + "\n".join(
+            f"- {r['name'] or '(removed)'}: {r['n']}× (last {r['last'].date()})" for r in rows)
+
+    def _burpee_participant(self, cur, uid: int):
+        cur.execute(
+            "SELECT b.participant_name FROM exercise_users u "
+            "JOIN telegram_bot_users b ON b.telegram_user_id = u.telegram_user_id "
+            "WHERE u.id = %s",
+            (uid,),
+        )
+        row = cur.fetchone()
+        return row["participant_name"] if row else None
+
+    def _tool_burpee(self, cur, uid: int) -> str:
+        name = self._burpee_participant(cur, uid)
+        if not name:
+            return "No Burpee Challenge participant is linked to this account."
+        cur.execute(
+            "SELECT entry_date, reps FROM burpee_entries WHERE participant = %s ORDER BY entry_date DESC",
+            (name,),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return f"{name} has no burpee entries yet."
+
+        def as_date(v):
+            return v if hasattr(v, "toordinal") else _date.fromisoformat(str(v)[:10])
+
+        entries = [(as_date(r["entry_date"]), int(r["reps"])) for r in rows]  # newest first
+        total = sum(rp for _, rp in entries)
+        count = len(entries)
+        best = max(entries, key=lambda x: x[1])
+        # current streak
+        streak = 0
+        expected = _date.today()
+        if entries[0][0] < expected - timedelta(days=1):
+            streak = 0
+        else:
+            expected = entries[0][0]
+            for d, _rp in entries:
+                if d == expected:
+                    streak += 1
+                    expected -= timedelta(days=1)
+                elif d < expected:
+                    break
+        # monthly totals (last 4)
+        months: dict = {}
+        for d, rp in entries:
+            months.setdefault(d.strftime("%Y-%m"), 0)
+            months[d.strftime("%Y-%m")] += rp
+        month_lines = [f"{m}: {t} reps" for m, t in sorted(months.items(), reverse=True)[:4]]
+        recent = ", ".join(f"{d.isoformat()}: {rp}" for d, rp in entries[:10])
+        return (
+            f"Burpee Challenge — {name}\n"
+            f"- total: {total} reps over {count} workouts (avg {round(total / count)})\n"
+            f"- best day: {best[1]} reps on {best[0].isoformat()}\n"
+            f"- current streak: {streak} days\n"
+            f"- by month: " + "; ".join(month_lines) + "\n"
+            f"- recent: {recent}"
+        )
 
     def _training_context(self, uid: int) -> str:
         cur = self.conn.cursor()
@@ -674,6 +882,19 @@ class ExerciseQueueApi:
         if hist:
             lines.append("\nMOVEMENT SNACK HISTORY (recent): " +
                          ", ".join(f"{r['name'] or '(removed)'} {r['done_at'].date()}" for r in hist))
+
+        # Burpee Challenge — one-liner for context; use get_burpee_stats for depth.
+        name = self._burpee_participant(cur, uid)
+        if name:
+            cur.execute(
+                "SELECT COUNT(*) AS n, COALESCE(SUM(reps), 0) AS total, MAX(entry_date) AS last "
+                "FROM burpee_entries WHERE participant = %s",
+                (name,),
+            )
+            b = cur.fetchone()
+            if b and b["n"]:
+                lines.append(f"\nBURPEE CHALLENGE ({name}): {b['total']} reps over {b['n']} "
+                             f"workouts, last {b['last']}. (call get_burpee_stats for streak/months)")
 
         return "\n".join(lines)
 

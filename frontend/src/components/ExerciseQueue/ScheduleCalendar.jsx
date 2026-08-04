@@ -2,7 +2,6 @@ import { useMemo, useRef, useState, useEffect } from 'react';
 import ExerciseEditor from './ExerciseEditor.jsx';
 import DayDetail from './DayDetail.jsx';
 import SlotSuggestion from './SlotSuggestion.jsx';
-import HoldButton from './HoldButton.jsx';
 
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -40,16 +39,29 @@ export default function ScheduleCalendar({
     if (!dragging) return;
     function move(e) {
       const x = e.clientX, y = e.clientY;
+      const st = dragState.current;
+      // Only treat it as a drag once the pointer clears a small threshold —
+      // below that it's a tap, which opens the day sheet instead.
+      if (!st.moved && Math.hypot(x - st.startX, y - st.startY) > 6) {
+        st.moved = true;
+        setGhost({ name: st.payload?.name, x, y });   // ghost appears only on a real drag
+      }
+      if (!st.moved) return;
       const el = document.elementFromPoint(x, y);
       const day = el && el.closest('[data-date]');
       const hd = day ? day.getAttribute('data-date') : null;
-      dragState.current.hoverDate = hd;
+      st.hoverDate = hd;
       setHoverDate(hd);
       setGhost(g => (g ? { ...g, x, y } : g));
     }
     function up() {
-      const { payload, hoverDate: hd } = dragState.current;
-      if (payload && hd) onDropOnDay(payload, hd);
+      const { payload, hoverDate: hd, moved } = dragState.current;
+      if (moved) {
+        if (payload && hd) onDropOnDay(payload, hd);
+      } else if (payload?.date) {
+        // A tap on a chip — open that day's sheet, where actions are deliberate.
+        setDetailDate(payload.date);
+      }
       setDragging(false);
     }
     window.addEventListener('pointermove', move);
@@ -61,14 +73,13 @@ export default function ScheduleCalendar({
       window.removeEventListener('pointercancel', up);
       setGhost(null);
       setHoverDate(null);
-      dragState.current = { payload: null, hoverDate: null };
+      dragState.current = { payload: null, hoverDate: null, startX: 0, startY: 0, moved: false };
     };
   }, [dragging, onDropOnDay]);
 
   function startDrag(payload, e) {
     e.preventDefault();
-    dragState.current = { payload, hoverDate: null };
-    setGhost({ name: payload.name, x: e.clientX, y: e.clientY });
+    dragState.current = { payload, hoverDate: null, startX: e.clientX, startY: e.clientY, moved: false };
     setDragging(true);
   }
 
@@ -218,6 +229,9 @@ export default function ScheduleCalendar({
               >
                 <button className="exq-day-num" onClick={() => setDetailDate(ds)} title="Open day">{d.getDate()}</button>
                 <div className="exq-day-items">
+                  {/* Chips are display-only: drag to move, tap to open the day sheet.
+                      Done/Remove live there, where the buttons are big and labelled
+                      and can't be hit by a stray tap in a narrow cell. */}
                   {cell.occ.map(o => (
                     <div
                       key={`o${o.id}`}
@@ -225,15 +239,7 @@ export default function ScheduleCalendar({
                       title={o.description || o.name}
                       onPointerDown={e => startDrag({ kind: 'occurrence', id: o.id, exerciseId: o.exerciseId, date: o.date, name: o.name }, e)}
                     >
-                      <span className="exq-chip-name">{o.name}</span>
-                      <span className="exq-chip-actions">
-                        {/* Hold-to-activate so a stray tap can't complete/remove by accident. */}
-                        {/* Only past/today can be completed — you can't have done a future day. */}
-                        {o.status !== 'done' && o.date <= todayIso && (
-                          <HoldButton className="exq-chip-btn" title="Hold to mark done" onActivate={() => onComplete(o.id)}>✓</HoldButton>
-                        )}
-                        <HoldButton className="exq-chip-btn" title="Hold to remove" onActivate={() => onRemove(o.id)}>✕</HoldButton>
-                      </span>
+                      <span className="exq-chip-name">{o.status === 'done' ? '✓ ' : ''}{o.name}</span>
                     </div>
                   ))}
                   {cell.sug.map(s => (

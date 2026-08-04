@@ -1,10 +1,10 @@
 import { useRef, useState } from 'react';
 
 // A button that fires only after a deliberate press-and-hold, so a stray tap
-// in the calendar grid can't complete or delete an occurrence by accident.
-// Shows a left-to-right "charging" fill (see .exq-chip-btn--holding) for the
-// hold duration; cancels on early release or if the pointer leaves the button.
-const HOLD_MS = 500;
+// can't trigger a destructive action by accident. Shows a left-to-right
+// "charging" fill (see .exq-hold--charging) for the hold duration; cancels on
+// early release or if the pointer leaves the button.
+const HOLD_MS = 700;
 
 export default function HoldButton({ className = '', title, onActivate, children }) {
   const timer = useRef(null);
@@ -33,7 +33,7 @@ export default function HoldButton({ className = '', title, onActivate, children
   return (
     <button
       type="button"
-      className={`${className}${holding ? ' exq-chip-btn--holding' : ''}`}
+      className={`exq-hold ${className}${holding ? ' exq-hold--charging' : ''}`}
       title={title}
       style={{ '--hold-ms': `${HOLD_MS}ms` }}
       onPointerDown={start}

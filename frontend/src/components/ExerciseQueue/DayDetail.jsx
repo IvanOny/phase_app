@@ -1,5 +1,8 @@
+import HoldButton from './HoldButton.jsx';
+
 // Full-width sheet for one day — the roomy alternative to cramped grid cells.
-// Committed occurrences with Done/Remove, plus cadence suggestions with Add.
+// This is where actions live: the grid chips are display-only so a stray tap
+// there can't complete or delete anything. Remove is hold-to-confirm.
 export default function DayDetail({ dateLabel, isPast, occ, sug, onComplete, onRemove, onCommit, onClose }) {
   const empty = occ.length === 0 && sug.length === 0;
   return (
@@ -22,7 +25,10 @@ export default function DayDetail({ dateLabel, isPast, occ, sug, onComplete, onR
               {o.status !== 'done' && isPast && (
                 <button className="exq-btn active" onClick={() => onComplete(o.id)}>Done</button>
               )}
-              <button className="exq-btn exq-btn--danger" onClick={() => onRemove(o.id)}>Remove</button>
+              {/* Destructive — needs a deliberate press-and-hold. */}
+              <HoldButton className="exq-btn exq-btn--danger" title="Hold to remove" onActivate={() => onRemove(o.id)}>
+                Hold to remove
+              </HoldButton>
             </div>
           </div>
         ))}

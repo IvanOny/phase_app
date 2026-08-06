@@ -443,7 +443,7 @@ def _cmd_help(chat_id: int) -> None:
         "done [actual] — mark the served item done\n"
         "<name> done — log an exercise by name (e.g. squats done)\n"
         "skip — skip the served item for 1h\n"
-        "overview — what's left to do today (with ✓/⏭ buttons)\n"
+        "overview — today's plan with ✓/⏭ buttons (same as the 19:00 report)\n"
         "list — all exercises\n"
         "edit <name> — change a field\n"
         "pause/park/activate <name> — status\n"
@@ -556,76 +556,16 @@ def _cmd_skip(cur, conn, user_id: int, chat_id: int) -> None:
 
 
 def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
-    """What's still left to do TODAY — the companion to the evening plan.
-
-    Anything already marked done/skipped today (from here or the web calendar)
-    drops off, so the list shrinks as the day goes on.
-    """
+    """Same view as the evening daily report, on demand — today's items with
+    ✓/⏭, tomorrow's preview and the queue. Shares _daily_report so both stay
+    identical and both edit themselves in place as you tap."""
     tz = _user_tz(cur, user_id)
     today = datetime.now(tz).date()
-
-    # Today's calendar rows tell us what's committed and what's already handled.
-    cur.execute(
-        "SELECT s.exercise_id, s.status, e.name, e.schedule_type, "
-        "       e.repeat_interval_days, e.acq_interval_days "
-        "FROM exercise_schedule s JOIN exercise_items e ON e.id = s.exercise_id "
-        "WHERE s.user_id = %s AND s.scheduled_date = %s ORDER BY e.name",
-        (user_id, today),
-    )
-    today_rows = cur.fetchall()
-    handled = {r["exercise_id"] for r in today_rows if r["status"] in ("done", "skipped")}
-    scheduled = [r for r in today_rows if r["status"] == "planned"]
-    scheduled_ids = {r["exercise_id"] for r in scheduled}
-
-    cur.execute(
-        "SELECT * FROM exercise_items WHERE user_id = %s AND status = 'active' "
-        "AND schedule_type IN ('fixed', 'acquisition')",
-        (user_id,),
-    )
-    due = [e for e in cur.fetchall()
-           if e["id"] not in handled and e["id"] not in scheduled_ids
-           and _next_due_date(e, tz, today) == today]
-
-    cur.execute(
-        "SELECT id, name, load_tag FROM exercise_items "
-        "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
-        "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
-        "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC",
-        (user_id,),
-    )
-    queue = [r for r in cur.fetchall() if r["id"] not in handled]
-
-    if not scheduled and not due and not queue:
+    text, kb, has_content = _daily_report(cur, user_id, tz, today)
+    if not has_content:
         _send(chat_id, "✅ Nothing left today.")
         return
-
-    # One list — whether an item is committed or still cadence-derived doesn't
-    # change what you do about it. The cadence shows up as an inline hint.
-    todo: list[tuple[int, str]] = []  # gets ✓/⏭ buttons
-    lines = ["📋 Left today\n"]
-    for r in scheduled:
-        hint = f"   (every {interval_of(r)}d)" if interval_of(r) else ""
-        lines.append(f"• {r['name']}{hint}")
-        todo.append((r["exercise_id"], r["name"]))
-    for e in due:
-        hint = f"   (every {interval_of(e)}d)" if interval_of(e) else ""
-        lines.append(f"• {e['name']}{hint}")
-        todo.append((e["id"], e["name"]))
-    if todo:
-        lines.append("")
-    if queue:
-        lines.append("Queue (serve with `next`)")
-        for i, r in enumerate(queue, 1):
-            load = f" · {r['load_tag']}" if r["load_tag"] else ""
-            lines.append(f"{i}. {r['name']}{load}")
-
-    kb = None
-    if todo:
-        kb = {"inline_keyboard": [[
-            {"text": f"✓ {name}", "callback_data": f"ex:tdone:{ex_id}"},
-            {"text": "⏭", "callback_data": f"ex:tskip:{ex_id}"},
-        ] for ex_id, name in todo[:8]]}
-    _send(chat_id, "\n".join(lines), reply_markup=kb)
+    _send(chat_id, text, reply_markup=kb)
 
 
 def _drop_premature_auto(cur, user_id: int, ex_id: int, tz) -> None:

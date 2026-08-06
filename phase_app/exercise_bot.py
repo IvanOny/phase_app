@@ -372,11 +372,26 @@ def handle_exercise_callback(cur, conn, tg_id: int, chat_id: int, msg_id: int, d
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         _cmd_skip(cur, conn, user_id, chat_id)
         return
-    if body.startswith("tdone:"):
-        _mark_today(cur, conn, user_id, chat_id, int(body[len("tdone:"):]), done=True)
-        return
-    if body.startswith("tskip:"):
-        _mark_today(cur, conn, user_id, chat_id, int(body[len("tskip:"):]), done=False)
+    if body.startswith("tdone:") or body.startswith("tskip:"):
+        # "tdone:<id>" (overview, acts on today) or "tdone:<id>:<YYYY-MM-DD>"
+        # (daily report — the date keeps a stale button honest, and tells us to
+        # redraw that report in place instead of sending a confirmation).
+        parts = body.split(":")
+        ex_id = int(parts[1])
+        day = None
+        if len(parts) > 2:
+            try:
+                day = date.fromisoformat(parts[2])
+            except ValueError:
+                day = None
+        _mark_today(cur, conn, user_id, chat_id, ex_id,
+                    done=parts[0] == "tdone", for_date=day, quiet=day is not None)
+        if day is not None:
+            text, kb, _ = _daily_report(cur, user_id, _user_tz(cur, user_id), day)
+            _tg("editMessageText", {
+                "chat_id": chat_id, "message_id": msg_id,
+                "text": text, "reply_markup": kb or {},
+            })
         return
     if body.startswith("park:"):
         name = body[len("park:"):]
@@ -668,30 +683,49 @@ def _lock_in_tomorrow(cur, user_id: int, tz) -> None:
             )
 
 
-def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool) -> None:
-    """Mark a scheduled / cadence-due exercise done or skipped for today.
+def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool,
+                for_date=None, quiet: bool = False) -> None:
+    """Mark a scheduled / cadence-due exercise done or skipped for a given day.
 
     Records it on the calendar (exercise_schedule) so the web planner and the
-    bot agree, and so `overview` stops listing it.
+    bot agree, and so it stops being listed. `for_date` comes from the button's
+    callback data, so pressing a button on yesterday's report still applies to
+    the day that report was about.
     """
     cur.execute("SELECT * FROM exercise_items WHERE id = %s AND user_id = %s", (ex_id, user_id))
     ex = cur.fetchone()
     if not ex:
-        _send(chat_id, "That exercise no longer exists.")
+        if not quiet:
+            _send(chat_id, "That exercise no longer exists.")
         return
     tz = _user_tz(cur, user_id)
-    today = datetime.now(tz).date()
+    day = for_date or datetime.now(tz).date()
     cur.execute(
         "INSERT INTO exercise_schedule (user_id, exercise_id, scheduled_date, origin, status) "
         "VALUES (%s, %s, %s, 'manual', %s) "
         "ON CONFLICT (exercise_id, scheduled_date) DO UPDATE SET status = EXCLUDED.status",
-        (user_id, ex_id, today, "done" if done else "skipped"),
+        (user_id, ex_id, day, "done" if done else "skipped"),
     )
 
     if not done:
+        # Skip forfeits this cycle: push the next occurrence a full interval out
+        # rather than letting it reappear tomorrow.
+        iv = interval_of(ex)
+        if iv:
+            nxt = day + timedelta(days=iv)
+            cur.execute("UPDATE exercise_items SET anchor_date = %s WHERE id = %s", (nxt, ex_id))
+            # Drop any already-materialised rows inside the new gap.
+            cur.execute(
+                "DELETE FROM exercise_schedule WHERE user_id = %s AND exercise_id = %s "
+                "AND origin = 'auto' AND status = 'planned' "
+                "AND scheduled_date > %s AND scheduled_date < %s",
+                (user_id, ex_id, day, nxt),
+            )
         conn.commit()
-        _send(chat_id, f"⏭ {ex['name']} — skipped for today.")
-        _log(f"⏭ Skipped today\n• {ex['name']}")
+        if not quiet:
+            when = f" — next in {iv}d" if iv else ""
+            _send(chat_id, f"⏭ {ex['name']} — skipped{when}.")
+        _log(f"⏭ Skipped\n• {ex['name']}")
         return
 
     cur.execute(
@@ -719,7 +753,8 @@ def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool) -
             msg += f"\n📈 Acquisition {done_n}/{target}"
     _drop_premature_auto(cur, user_id, ex_id, tz)
     conn.commit()
-    _send(chat_id, msg)
+    if not quiet:
+        _send(chat_id, msg)
     _log(f"🏋️ Exercise done\n• {ex['name']}")
 
 
@@ -1161,76 +1196,106 @@ def _apply_edit_value(cur, conn, user_id: int, chat_id: int, ex_id: int, field: 
     return True
 
 
-# ── Daily overview (called from the cron endpoint) ───────────────────────────
+# ── Daily report (cron + self-editing buttons) ───────────────────────────────
+
+def _collect_day(cur, user_id: int, tz, day):
+    """Everything on `day`: committed calendar rows plus cadence-due items that
+    have no row yet. Each entry carries its status so the report can show
+    progress (✓ / ⏭ / pending)."""
+    cur.execute(
+        "SELECT s.exercise_id AS id, s.status, e.name FROM exercise_schedule s "
+        "JOIN exercise_items e ON e.id = s.exercise_id "
+        "WHERE s.user_id = %s AND s.scheduled_date = %s",
+        (user_id, day),
+    )
+    items = {r["id"]: {"id": r["id"], "name": r["name"], "status": r["status"]} for r in cur.fetchall()}
+
+    cur.execute(
+        "SELECT * FROM exercise_items WHERE user_id = %s AND status = 'active' "
+        "AND schedule_type IN ('fixed', 'acquisition')",
+        (user_id,),
+    )
+    for e in cur.fetchall():
+        if e["id"] in items:
+            continue  # a committed row wins over its own suggestion
+        if _next_due_date(e, tz, day) == day:
+            items[e["id"]] = {"id": e["id"], "name": e["name"], "status": "planned"}
+    return sorted(items.values(), key=lambda x: x["name"].lower())
+
+
+def _queue_items(cur, user_id: int, handled_ids: set):
+    cur.execute(
+        "SELECT id, name, load_tag FROM exercise_items "
+        "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
+        "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
+        "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC LIMIT 10",
+        (user_id,),
+    )
+    return [r for r in cur.fetchall() if r["id"] not in handled_ids]
+
+
+def _daily_report(cur, user_id: int, tz, day):
+    """(text, keyboard, has_content) for the daily report. Rebuilt after every
+    button press so the message edits itself in place."""
+    today_items = _collect_day(cur, user_id, tz, day)
+    tomorrow_items = _collect_day(cur, user_id, tz, day + timedelta(days=1))
+    handled = {i["id"] for i in today_items if i["status"] in ("done", "skipped")}
+    queue = _queue_items(cur, user_id, handled)
+
+    done_n = sum(1 for i in today_items if i["status"] == "done")
+    pending = [i for i in today_items if i["status"] == "planned"]
+
+    lines = [f"🗓 Daily report — {day.strftime('%a %d %b')}", ""]
+    if today_items:
+        lines.append(f"✅ TODAY — {done_n}/{len(today_items)} done")
+        for i in today_items:
+            mark = {"done": "✓", "skipped": "⏭"}.get(i["status"], "•")
+            lines.append(f"{mark} {i['name']}")
+        lines.append("")
+    if tomorrow_items:
+        lines.append("📌 TOMORROW")
+        lines.append(" · ".join(i["name"] for i in tomorrow_items))
+        lines.append("")
+    if queue:
+        lines.append(f"📋 QUEUE ({len(queue)})")
+        lines.append(" · ".join(f"{q['name']}" for q in queue))
+    if today_items and not pending:
+        lines.append("")
+        lines.append("🎉 All clear for today.")
+
+    rows = []
+    for i in pending:                                    # ✓ / ⏭ per pending item
+        rows.append([
+            {"text": f"✓ {i['name']}", "callback_data": f"ex:tdone:{i['id']}:{day}"},
+            {"text": "⏭", "callback_data": f"ex:tskip:{i['id']}:{day}"},
+        ])
+    row = []
+    for q in queue:                                      # ✓ only, two per row
+        row.append({"text": f"✓ {q['name']}", "callback_data": f"ex:tdone:{q['id']}:{day}"})
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+
+    has_content = bool(today_items or tomorrow_items or queue)
+    return "\n".join(lines), ({"inline_keyboard": rows} if rows else None), has_content
+
 
 def send_exercise_overview(conn) -> None:
-    """Send each active exercise user an evening preview of TOMORROW's plan.
+    """Evening daily report: close out today, preview tomorrow, tick off queue work.
     Wired into /api/cron/radar, which fires at 17:00 UTC = 19:00 Europe/Berlin."""
     cur = conn.cursor()
     cur.execute("SELECT id, telegram_user_id, chat_id FROM exercise_users")
-    users = cur.fetchall()
-    for u in users:
+    for u in cur.fetchall():
         user_id = u["id"]
         chat_id = u["chat_id"] or u["telegram_user_id"]
         tz = _user_tz(cur, user_id)
-
-        # Sent in the evening, so it previews TOMORROW — a plan for "today"
-        # arriving at 19:00 is too late to act on. Lock tomorrow in first: up to
-        # now it was fluid, from here it's the committed programme.
+        # Lock tomorrow in first: up to now it was fluid, from here it's committed.
         _lock_in_tomorrow(cur, user_id, tz)
-        target = datetime.now(tz).date() + timedelta(days=1)
-        cur.execute(
-            "SELECT s.exercise_id, e.name FROM exercise_schedule s "
-            "JOIN exercise_items e ON e.id = s.exercise_id "
-            "WHERE s.user_id = %s AND s.scheduled_date = %s AND s.status = 'planned' "
-            "ORDER BY e.name",
-            (user_id, target),
-        )
-        scheduled = cur.fetchall()
-        scheduled_ids = {r["exercise_id"] for r in scheduled}
-
-        cur.execute(
-            "SELECT * FROM exercise_items WHERE user_id = %s AND status = 'active' "
-            "AND schedule_type IN ('fixed', 'acquisition')",
-            (user_id,),
-        )
-        # A committed placement wins over its cadence suggestion, same as the calendar.
-        # Still-pending items collapse onto `target`, so they roll into tomorrow.
-        due = [e for e in cur.fetchall()
-               if _next_due_date(e, tz, target) == target and e["id"] not in scheduled_ids]
-
-        cur.execute(
-            "SELECT name, load_tag FROM exercise_items "
-            "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
-            "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
-            "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC LIMIT 10",
-            (user_id,),
-        )
-        queue = cur.fetchall()
-
-        if not due and not queue and not scheduled:
+        today = datetime.now(tz).date()
+        text, kb, has_content = _daily_report(cur, user_id, tz, today)
+        if not has_content:
             continue
-
-        lines = ["🗓 Tomorrow's plan\n"]
-        if scheduled:
-            lines.append("📌 Scheduled tomorrow")
-            for r in scheduled:
-                lines.append(f"• {r['name']}")
-            lines.append("")
-        if due:
-            lines.append("Tier 2 — due tomorrow")
-            for e in due:
-                if e["schedule_type"] == "acquisition":
-                    tag = f"   [Active pin — {e['acq_sessions_done']}/{e['acq_target_sessions']}]"
-                    lines.append(f"• {e['name']}{tag}")
-                else:
-                    lines.append(f"• {e['name']}   (every {e['repeat_interval_days']}d)")
-            lines.append("")
-        if queue:
-            lines.append("Queue preview (snapshot — real order set by `next`)")
-            for i, r in enumerate(queue, 1):
-                load = f" · {r['load_tag']}" if r["load_tag"] else ""
-                lines.append(f"{i}. {r['name']}{load}")
-
-        _send(chat_id, "\n".join(lines))
+        _send(chat_id, text, reply_markup=kb)
     conn.commit()

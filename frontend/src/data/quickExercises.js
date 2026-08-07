@@ -13,8 +13,8 @@ export const DEFAULT_QUICK_EXERCISES = [
   { label: 'Barbell Bench Press', sessionType: 'heavy_bench', flags: { isBarbellBenchPress: true }, matchFlag: 'isBarbellBenchPress', type: 'strength' },
   { label: 'Barbell Squat',       sessionType: 'squat',       flags: { isSquat: true },             matchFlag: 'isSquat',             type: 'strength' },
   { label: 'Barbell Deadlift',    sessionType: 'deadlift',    flags: { isDeadlift: true },          matchFlag: 'isDeadlift',          type: 'strength' },
-  { label: 'Pull',                sessionType: 'pull',        flags: { isBodyweight: true },                                          type: 'bodyweight' },
-  { label: 'Weighted Pull-ups',   sessionType: 'pull',        flags: {},                                                              type: 'strength' },
+  { label: 'Pull-up',             sessionType: 'pull',        flags: { isBodyweight: true },                                          type: 'bodyweight' },
+  { label: 'Weighted Pull-up',    sessionType: 'pull',        flags: {},                                                              type: 'strength' },
   { label: 'Run',                 sessionType: 'run',         flags: { isRun: true },               matchFlag: 'isRun',               type: 'run' },
 ];
 

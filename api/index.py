@@ -87,35 +87,39 @@ def move_bot():
     return jsonify({"ok": True}), 200
 
 
-@app.route("/api/cron/move", methods=["GET", "POST"])
-def cron_move():
-    """Morning Move jobs: yesterday's ⚡ tallies, radar, monthly summaries."""
+def _run_daily_jobs(conn) -> None:
+    """Every scheduled job for every bot, in one place.
+
+    Vercel Hobby caps the number of cron jobs, so all three products share a
+    single daily trigger (/api/cron/move, 06:00 UTC = 08:00 Europe/Berlin).
+    Each job carries its own cron_log dedup guard, so re-running is harmless.
+    """
+    from phase_app.bot import (
+        process_radar_candidates, send_daily_report, check_milestones, send_monthly_summaries,
+    )
+    from phase_app.exercise_bot import send_exercise_overview
     from phase_app.move_bot import (
         send_move_zap_reports, process_move_radar, send_move_monthly_summaries,
     )
-    import traceback
-    try:
-        conn = _get_api().conn
-        send_move_zap_reports(conn)
-        process_move_radar(conn)
-        send_move_monthly_summaries(conn)
-    except Exception:
-        traceback.print_exc()
-        return jsonify({"ok": False}), 500
-    return jsonify({"ok": True}), 200
+    # Burpee
+    process_radar_candidates(conn)
+    send_daily_report(conn)
+    check_milestones(conn)
+    send_monthly_summaries(conn)
+    # Movement Snacks
+    send_exercise_overview(conn)
+    # Move
+    send_move_zap_reports(conn)
+    process_move_radar(conn)
+    send_move_monthly_summaries(conn)
 
 
-@app.route("/api/cron/radar", methods=["GET", "POST"])
-def cron_radar():
-    from phase_app.bot import process_radar_candidates, send_daily_report, check_milestones, send_monthly_summaries
-    from phase_app.exercise_bot import send_exercise_overview
+@app.route("/api/cron/move", methods=["GET", "POST"])
+@app.route("/api/cron/radar", methods=["GET", "POST"])   # legacy alias / manual trigger
+def cron_daily():
     import traceback
     try:
-        process_radar_candidates(_get_api().conn)
-        send_daily_report(_get_api().conn)
-        check_milestones(_get_api().conn)
-        send_monthly_summaries(_get_api().conn)
-        send_exercise_overview(_get_api().conn)
+        _run_daily_jobs(_get_api().conn)
     except Exception:
         traceback.print_exc()
         return jsonify({"ok": False}), 500

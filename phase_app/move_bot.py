@@ -27,6 +27,8 @@ from datetime import date, datetime, timedelta, timezone
 
 _TOKEN = os.environ.get("MOVE_BOT_TOKEN", "")
 _API = f"https://api.telegram.org/bot{_TOKEN}"
+# Activity goes to the same log channel as the burpee bot (Бурчик лог).
+# MOVE_LOG_CHAT_ID only exists to split them later if that's ever wanted.
 _LOG_CHAT_ID = os.environ.get("MOVE_LOG_CHAT_ID", "") or os.environ.get("LOG_CHAT_ID", "")
 
 _STATE_TIMEOUT_MINUTES = 10
@@ -171,13 +173,14 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Consecutive days are counted and shown when you log\n"
               "• Milestones at {miles} days\n"
               "• On the 1st of each month you get a summary: days moved, consistency, "
-              "longest streak and ⚡ received\n\n"
+              "longest streak and ⚡ received\n"
+              "• /summary — every month you've recorded, any time\n\n"
               "⏸️ QUIET — /pause\n"
               "• Mute everything for a day, a week or a month. Resume any time.\n\n"
               "COMMANDS\n"
               "/start — register · /rename — change your name\n"
               "/move — your crew · /radar — strangers' moves\n"
-              "/log <text> — log without media\n"
+              "/log <text> — log without media · /summary — your months\n"
               "/pause — mute · /info — this list",
         "uk": "🏃 Move\n{tagline}\n\n"
               "Один рух на день — будь-який. Прогулянка, плавання, штанга, розтяжка, танці.\n"
@@ -204,13 +207,14 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Дні поспіль рахуються й показуються при записі\n"
               "• Віхи на {miles} днях\n"
               "• 1-го числа щомісяця — підсумок: днів у русі, регулярність, "
-              "найдовша серія та отримані ⚡\n\n"
+              "найдовша серія та отримані ⚡\n"
+              "• /summary — усі ваші місяці, будь-коли\n\n"
               "⏸️ ТИША — /pause\n"
               "• Вимкнути все на день, тиждень чи місяць. Відновити будь-коли.\n\n"
               "КОМАНДИ\n"
               "/start — реєстрація · /rename — змінити ім'я\n"
               "/move — ваше коло · /radar — рухи незнайомців\n"
-              "/log <текст> — запис без медіа\n"
+              "/log <текст> — запис без медіа · /summary — ваші місяці\n"
               "/pause — тиша · /info — цей список",
         "de": "🏃 Move\n{tagline}\n\n"
               "Eine Bewegung pro Tag — was auch immer. Gehen, Schwimmen, Heben, Dehnen, Tanzen.\n"
@@ -237,13 +241,14 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Aufeinanderfolgende Tage werden gezählt und beim Erfassen angezeigt\n"
               "• Meilensteine bei {miles} Tagen\n"
               "• Am 1. jedes Monats: Zusammenfassung mit bewegten Tagen, Konstanz, "
-              "längster Serie und erhaltenen ⚡\n\n"
+              "längster Serie und erhaltenen ⚡\n"
+              "• /summary — alle deine Monate, jederzeit\n\n"
               "⏸️ RUHE — /pause\n"
               "• Alles für einen Tag, eine Woche oder einen Monat stummschalten. Jederzeit fortsetzen.\n\n"
               "BEFEHLE\n"
               "/start — registrieren · /rename — Namen ändern\n"
               "/move — deine Crew · /radar — fremde Bewegungen\n"
-              "/log <Text> — ohne Medien erfassen\n"
+              "/log <Text> — ohne Medien erfassen · /summary — deine Monate\n"
               "/pause — stumm · /info — diese Liste",
     },
     "ask_name": {"en": "What would you like to be called?", "uk": "Як вас називати?", "de": "Wie möchtest du genannt werden?"},
@@ -323,6 +328,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     "summary_days": {"en": "🏃 Days moved: {count} of {total} ({pct}%)", "uk": "🏃 Днів у русі: {count} з {total} ({pct}%)", "de": "🏃 Bewegte Tage: {count} von {total} ({pct}%)"},
     "summary_streak": {"en": "🔥 Longest streak: {days} days", "uk": "🔥 Найдовша серія: {days} днів", "de": "🔥 Längste Serie: {days} Tage"},
     "summary_zaps": {"en": "⚡ Lightnings received: {n}", "uk": "⚡ Отримано блискавок: {n}", "de": "⚡ Erhaltene Blitze: {n}"},
+    "summary_all_header": {"en": "📊 Your months", "uk": "📊 Ваші місяці", "de": "📊 Deine Monate"},
+    "summary_none": {"en": "No moves recorded yet.", "uk": "Ще немає записаних рухів.", "de": "Noch keine Bewegungen erfasst."},
 }
 
 
@@ -686,10 +693,85 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         (tg_id, tname),
     )
     conn.commit()
+    me = _user(cur, tg_id)
+    _log(f"🤝 Move: crew +\n• {me['participant_name'] if me else tg_id} → {tname}")
     _send(chat_id, _t("crew_added", lang, name=tname), reply_markup={"inline_keyboard": [[
         {"text": _t("kb_yes", lang), "callback_data": f"mv:crew:notify:{tname}"},
         {"text": _t("kb_no", lang), "callback_data": "mv:crew:cancel"},
     ]]})
+
+
+def _month_stats(cur, tg_id: int, start: date, end: date) -> dict | None:
+    """Days moved / consistency / longest streak / ⚡ for one month."""
+    import calendar
+    cur.execute(
+        "SELECT entry_date FROM move_entries WHERE telegram_user_id = %s "
+        "AND entry_date >= %s AND entry_date <= %s ORDER BY entry_date",
+        (tg_id, start, end),
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return None
+    days = [r["entry_date"] if hasattr(r["entry_date"], "toordinal")
+            else date.fromisoformat(str(r["entry_date"])[:10]) for r in rows]
+    longest = run = 1
+    for i in range(1, len(days)):
+        run = run + 1 if (days[i] - days[i - 1]).days == 1 else 1
+        longest = max(longest, run)
+    cur.execute(
+        "SELECT COUNT(*) AS n FROM move_reactions r JOIN move_entries e ON e.id = r.entry_id "
+        "WHERE e.telegram_user_id = %s AND e.entry_date >= %s AND e.entry_date <= %s",
+        (tg_id, start, end),
+    )
+    total_days = calendar.monthrange(start.year, start.month)[1]
+    return {
+        "count": len(days),
+        "total": total_days,
+        "pct": round(len(days) / total_days * 100),
+        "longest": longest,
+        "zaps": cur.fetchone()["n"] or 0,
+    }
+
+
+def _cmd_summary(cur, tg_id: int, chat_id: int, lang: str) -> None:
+    """Every month on record, newest first — computed from entries, so it works
+    retroactively rather than only for months a report was sent for."""
+    cur.execute(
+        "SELECT MIN(entry_date) AS first, MAX(entry_date) AS last FROM move_entries "
+        "WHERE telegram_user_id = %s",
+        (tg_id,),
+    )
+    span = cur.fetchone()
+    if not span or not span["first"]:
+        _send(chat_id, _t("summary_none", lang))
+        return
+
+    def as_date(v):
+        return v if hasattr(v, "toordinal") else date.fromisoformat(str(v)[:10])
+
+    first, last = as_date(span["first"]), as_date(span["last"])
+    months = []
+    cursor_m = date(last.year, last.month, 1)
+    floor_m = date(first.year, first.month, 1)
+    while cursor_m >= floor_m and len(months) < 24:
+        nxt = date(cursor_m.year + (cursor_m.month == 12), (cursor_m.month % 12) + 1, 1)
+        months.append((cursor_m, nxt - timedelta(days=1)))
+        cursor_m = date(cursor_m.year - (cursor_m.month == 1),
+                        12 if cursor_m.month == 1 else cursor_m.month - 1, 1)
+
+    lines = [_t("summary_all_header", lang), ""]
+    for m_start, m_end in months:
+        st = _month_stats(cur, tg_id, m_start, m_end)
+        if not st:
+            continue
+        month = _MONTHS.get(lang, _MONTHS["en"])[m_start.month]
+        lines.append(f"📅 {month} {m_start.year}")
+        lines.append(_t("summary_days", lang, count=st["count"], total=st["total"], pct=st["pct"]))
+        lines.append(_t("summary_streak", lang, days=st["longest"]))
+        if st["zaps"]:
+            lines.append(_t("summary_zaps", lang, n=st["zaps"]))
+        lines.append("")
+    _send(chat_id, "\n".join(lines).strip())
 
 
 _RADAR_FREQS = ("daily", "weekly", "monthly", "never")
@@ -784,6 +866,8 @@ def handle_move_webhook(body: dict, conn) -> None:
         conn.commit()
         key = "welcome" if state == "await_name" else "renamed"
         _send(chat_id, _t(key, lang, name=text.strip()), reply_markup=_main_kb(lang))
+        _log(("👋 Move: registered\n• " if state == "await_name" else "✏️ Move: renamed\n• ")
+             + text.strip())
         return
 
     # 3) commands
@@ -816,6 +900,9 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word == "pause":
         _cmd_pause(cur, tg_id, chat_id, lang)
+        return
+    if word == "summary":
+        _cmd_summary(cur, tg_id, chat_id, lang)
         return
     if word == "log":
         if not args:
@@ -867,6 +954,15 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _answer(cq["id"], _t("zap_sent" if fresh else "zap_already", lang))
         if fresh:
             _refresh_zaps(cur, entry_id)
+            me = _user(cur, tg_id)
+            cur.execute(
+                "SELECT u.participant_name FROM move_entries e "
+                "JOIN move_users u ON u.telegram_user_id = e.telegram_user_id WHERE e.id = %s",
+                (entry_id,),
+            )
+            to = cur.fetchone()
+            _log(f"⚡ Move: lightning\n• {me['participant_name'] if me else tg_id}"
+                 f" → {to['participant_name'] if to else '?'}")
         return
 
     if body.startswith("crew:"):
@@ -889,6 +985,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                         (tg_id, name))
             conn.commit()
             _send(chat_id, _t("crew_removed", lang, name=name))
+            me = _user(cur, tg_id)
+            _log(f"🗑 Move: crew −\n• {me['participant_name'] if me else tg_id} ✗ {name}")
             return
         if action == "unmute":
             cur.execute("DELETE FROM move_mute WHERE telegram_user_id = %s AND LOWER(muted_name) = LOWER(%s)",
@@ -1047,6 +1145,7 @@ def process_move_radar(conn) -> None:
                 (rid,),
             )
             conn.commit()
+            _log(f"📡 Move: radar\n• {cand['participant_name']} → {u['participant_name']}")
             break
     conn.commit()
 

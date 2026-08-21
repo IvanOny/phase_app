@@ -588,24 +588,21 @@ def _drop_premature_auto(cur, user_id: int, ex_id: int, tz) -> None:
     )
 
 
-def _lock_in_tomorrow(cur, user_id: int, tz) -> None:
-    """Turn tomorrow's cadence suggestions into committed rows.
+def _lock_in(cur, user_id: int, tz, day) -> None:
+    """Turn `day`'s cadence suggestions into committed rows.
 
-    Runs with the 19:00 plan: up to that point tomorrow is still fluid (dashed)
+    Runs with the morning report: until it fires the day is still fluid (dashed)
     and can be rearranged freely; afterwards it's the day's actual programme.
     Rows are origin='auto' so they stay distinguishable from hand-placed ones,
     and they remain draggable — this is a commitment, not a lock.
 
-    Also closes the books on days gone by: anything still 'planned' before today
+    Also closes the books on days gone by: anything still 'planned' before `day`
     becomes 'skipped', so history is honest and old chips don't pile up.
     """
-    today = datetime.now(tz).date()
-    tomorrow = today + timedelta(days=1)
-
     cur.execute(
         "UPDATE exercise_schedule SET status = 'skipped' "
         "WHERE user_id = %s AND status = 'planned' AND scheduled_date < %s",
-        (user_id, today),
+        (user_id, day),
     )
 
     cur.execute(
@@ -614,12 +611,12 @@ def _lock_in_tomorrow(cur, user_id: int, tz) -> None:
         (user_id,),
     )
     for e in cur.fetchall():
-        if _next_due_date(e, tz, tomorrow) == tomorrow:
+        if _next_due_date(e, tz, day) == day:
             cur.execute(
                 "INSERT INTO exercise_schedule (user_id, exercise_id, scheduled_date, origin, status) "
                 "VALUES (%s, %s, %s, 'auto', 'planned') "
                 "ON CONFLICT (exercise_id, scheduled_date) DO NOTHING",
-                (user_id, e["id"], tomorrow),
+                (user_id, e["id"], day),
             )
 
 
@@ -1223,17 +1220,17 @@ def _daily_report(cur, user_id: int, tz, day):
 
 
 def send_exercise_overview(conn) -> None:
-    """Evening daily report: close out today, preview tomorrow, tick off queue work.
-    Wired into /api/cron/radar, which fires at 17:00 UTC = 19:00 Europe/Berlin."""
+    """Morning daily report: today's plan with ✓/⏭, tomorrow previewed, queue to tick off.
+    Wired into the shared daily cron at 06:00 UTC = 08:00 Europe/Berlin."""
     cur = conn.cursor()
     cur.execute("SELECT id, telegram_user_id, chat_id FROM exercise_users")
     for u in cur.fetchall():
         user_id = u["id"]
         chat_id = u["chat_id"] or u["telegram_user_id"]
         tz = _user_tz(cur, user_id)
-        # Lock tomorrow in first: up to now it was fluid, from here it's committed.
-        _lock_in_tomorrow(cur, user_id, tz)
+        # Lock today in first: up to now it was fluid, from here it's committed.
         today = datetime.now(tz).date()
+        _lock_in(cur, user_id, tz, today)
         text, kb, has_content = _daily_report(cur, user_id, tz, today)
         if not has_content:
             continue

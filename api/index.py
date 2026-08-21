@@ -73,6 +73,38 @@ def telegram_bot():
     return jsonify({"ok": True}), 200
 
 
+@app.route("/api/move", methods=["POST"])
+def move_bot():
+    secret = os.environ.get("MOVE_BOT_SECRET", "")
+    if secret and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
+        return jsonify({"error": "unauthorized"}), 403
+    from phase_app.move_bot import handle_move_webhook
+    import traceback
+    try:
+        handle_move_webhook(request.get_json(force=True) or {}, _get_api().conn)
+    except Exception:
+        traceback.print_exc()
+    return jsonify({"ok": True}), 200
+
+
+@app.route("/api/cron/move", methods=["GET", "POST"])
+def cron_move():
+    """Morning Move jobs: yesterday's ⚡ tallies, radar, monthly summaries."""
+    from phase_app.move_bot import (
+        send_move_zap_reports, process_move_radar, send_move_monthly_summaries,
+    )
+    import traceback
+    try:
+        conn = _get_api().conn
+        send_move_zap_reports(conn)
+        process_move_radar(conn)
+        send_move_monthly_summaries(conn)
+    except Exception:
+        traceback.print_exc()
+        return jsonify({"ok": False}), 500
+    return jsonify({"ok": True}), 200
+
+
 @app.route("/api/cron/radar", methods=["GET", "POST"])
 def cron_radar():
     from phase_app.bot import process_radar_candidates, send_daily_report, check_milestones, send_monthly_summaries

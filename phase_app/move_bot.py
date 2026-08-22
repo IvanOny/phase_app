@@ -80,6 +80,18 @@ def _answer(callback_id: str, text: str = "") -> None:
     _api_call("answerCallbackQuery", {"callback_query_id": callback_id, "text": text})
 
 
+_BOT_USERNAME: str | None = None
+
+
+def _bot_username() -> str:
+    """Cached getMe, so invite links can be built without another env var."""
+    global _BOT_USERNAME
+    if _BOT_USERNAME is None:
+        me = _api_call("getMe", {}) or {}
+        _BOT_USERNAME = me.get("username") or os.environ.get("MOVE_BOT_USERNAME", "")
+    return _BOT_USERNAME
+
+
 def _log(text: str) -> None:
     if not _LOG_CHAT_ID:
         return
@@ -164,7 +176,9 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Each morning you get a note of how many ⚡ yesterday's move collected\n\n"
               "🤝 YOUR CREW — /move\n"
               "• Type a name to add them; they see every move you log, and you see theirs\n"
-              "• Type a name already in your crew to mute (1 day / 1 week) or remove them\n\n"
+              "• Type a name already in your crew to mute (1 day / 1 week) or remove them\n"
+              "• /invite gives you a personal link — anyone who taps it is connected to you "
+              "automatically, new or already registered\n\n"
               "📡 RADAR — /radar\n"
               "• Get a move from someone outside your crew — daily, weekly, monthly or off\n"
               "• The same stranger won't reach you twice within {rdays} days\n"
@@ -179,7 +193,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Mute everything for a day, a week or a month. Resume any time.\n\n"
               "COMMANDS\n"
               "/start — register · /rename — change your name\n"
-              "/move — your crew · /radar — strangers' moves\n"
+              "/move — your crew · /invite — invite link\n"
+              "/radar — strangers' moves\n"
               "/log <text> — log without media · /summary — your months\n"
               "/pause — mute · /info — this list",
         "uk": "🏃 Move\n{tagline}\n\n"
@@ -198,7 +213,9 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Щоранку ви дізнаєтесь, скільки ⚡ зібрав учорашній рух\n\n"
               "🤝 ВАШЕ КОЛО — /move\n"
               "• Напишіть ім'я, щоб додати; вони бачитимуть кожен ваш рух, а ви їхні\n"
-              "• Напишіть ім'я з кола, щоб приглушити (1 день / 1 тиждень) або прибрати\n\n"
+              "• Напишіть ім'я з кола, щоб приглушити (1 день / 1 тиждень) або прибрати\n"
+              "• /invite дає особисте посилання — кожен, хто його відкриє, автоматично "
+              "з'єднується з вами, новий чи вже зареєстрований\n\n"
               "📡 РАДАР — /radar\n"
               "• Отримуйте рух від когось поза вашим колом — щодня, щотижня, щомісяця або вимкнено\n"
               "• Той самий незнайомець не потрапить до вас двічі протягом {rdays} днів\n"
@@ -213,7 +230,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Вимкнути все на день, тиждень чи місяць. Відновити будь-коли.\n\n"
               "КОМАНДИ\n"
               "/start — реєстрація · /rename — змінити ім'я\n"
-              "/move — ваше коло · /radar — рухи незнайомців\n"
+              "/move — ваше коло · /invite — посилання-запрошення\n"
+              "/radar — рухи незнайомців\n"
               "/log <текст> — запис без медіа · /summary — ваші місяці\n"
               "/pause — тиша · /info — цей список",
         "de": "🏃 Move\n{tagline}\n\n"
@@ -232,7 +250,9 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Jeden Morgen erfährst du, wie viele ⚡ die gestrige Bewegung bekommen hat\n\n"
               "🤝 DEINE CREW — /move\n"
               "• Gib einen Namen ein zum Hinzufügen; sie sehen jede deiner Bewegungen und du ihre\n"
-              "• Gib einen Namen aus der Crew ein, um stumm zu schalten (1 Tag / 1 Woche) oder zu entfernen\n\n"
+              "• Gib einen Namen aus der Crew ein, um stumm zu schalten (1 Tag / 1 Woche) oder zu entfernen\n"
+              "• /invite gibt dir einen persönlichen Link — wer ihn antippt, wird automatisch "
+              "mit dir verbunden, neu oder schon registriert\n\n"
               "📡 RADAR — /radar\n"
               "• Bekomm eine Bewegung von außerhalb deiner Crew — täglich, wöchentlich, monatlich oder aus\n"
               "• Dieselbe fremde Person erreicht dich nicht zweimal innerhalb von {rdays} Tagen\n"
@@ -247,7 +267,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Alles für einen Tag, eine Woche oder einen Monat stummschalten. Jederzeit fortsetzen.\n\n"
               "BEFEHLE\n"
               "/start — registrieren · /rename — Namen ändern\n"
-              "/move — deine Crew · /radar — fremde Bewegungen\n"
+              "/move — deine Crew · /invite — Einladungslink\n"
+              "/radar — fremde Bewegungen\n"
               "/log <Text> — ohne Medien erfassen · /summary — deine Monate\n"
               "/pause — stumm · /info — diese Liste",
     },
@@ -328,6 +349,32 @@ _STRINGS: dict[str, dict[str, str]] = {
     "summary_days": {"en": "🏃 Days moved: {count} of {total} ({pct}%)", "uk": "🏃 Днів у русі: {count} з {total} ({pct}%)", "de": "🏃 Bewegte Tage: {count} von {total} ({pct}%)"},
     "summary_streak": {"en": "🔥 Longest streak: {days} days", "uk": "🔥 Найдовша серія: {days} днів", "de": "🔥 Längste Serie: {days} Tage"},
     "summary_zaps": {"en": "⚡ Lightnings received: {n}", "uk": "⚡ Отримано блискавок: {n}", "de": "⚡ Erhaltene Blitze: {n}"},
+    "invite_text": {
+        "en": "🔗 Share this link with anyone you'd like to move with:\n\n{link}\n\n"
+              "When they tap it, you'll be added to each other's crew automatically — "
+              "whether they're new here or already registered.",
+        "uk": "🔗 Надішліть це посилання тому, з ким хочете рухатись разом:\n\n{link}\n\n"
+              "Коли вони його відкриють, ви автоматично потрапите в кола одне одного — "
+              "незалежно від того, нові вони тут чи вже зареєстровані.",
+        "de": "🔗 Teile diesen Link mit allen, mit denen du dich bewegen möchtest:\n\n{link}\n\n"
+              "Wenn sie ihn antippen, landet ihr automatisch in der Crew des anderen — "
+              "egal ob neu hier oder schon registriert.",
+    },
+    "invite_connected": {
+        "en": "🤝 You and {name} are now moving together!",
+        "uk": "🤝 Тепер ви з {name} рухаєтесь разом!",
+        "de": "🤝 Du und {name} bewegt euch jetzt zusammen!",
+    },
+    "invite_already": {
+        "en": "You're already moving with {name} 🤝",
+        "uk": "Ви вже рухаєтесь з {name} 🤝",
+        "de": "Du bewegst dich schon mit {name} 🤝",
+    },
+    "invite_self": {
+        "en": "That's your own invite link 🙂 Share it with someone else.",
+        "uk": "Це ваше власне посилання 🙂 Надішліть його комусь іншому.",
+        "de": "Das ist dein eigener Link 🙂 Teile ihn mit jemand anderem.",
+    },
     "summary_all_header": {"en": "📊 Your months", "uk": "📊 Ваші місяці", "de": "📊 Deine Monate"},
     "summary_none": {"en": "No moves recorded yet.", "uk": "Ще немає записаних рухів.", "de": "Noch keine Bewegungen erfasst."},
 }
@@ -626,18 +673,35 @@ def _check_milestone(cur, conn, user, streak: int) -> None:
 
 # ── commands ─────────────────────────────────────────────────────────────────
 
-def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
+def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = "") -> None:
+    """`/start`, optionally with an `inv_<id>` deep-link payload.
+
+    Already registered? We don't re-register — but we still honour the invite and
+    connect the two, which is the useful thing to do with a tapped link.
+    """
+    inviter_id = None
+    if payload.startswith("inv_"):
+        try:
+            inviter_id = int(payload[4:])
+        except ValueError:
+            inviter_id = None
+
     u = _user(cur, tg_id)
     if u and u["participant_name"]:
-        _send(chat_id, _t("already_registered", lang, name=u["participant_name"]),
-              reply_markup=_main_kb(lang))
+        if inviter_id is not None:
+            _apply_invite(cur, conn, tg_id, chat_id, lang, inviter_id)
+        else:
+            _send(chat_id, _t("already_registered", lang, name=u["participant_name"]),
+                  reply_markup=_main_kb(lang))
         return
+
     cur.execute(
         "INSERT INTO move_users (telegram_user_id, chat_id, language_code) VALUES (%s, %s, %s) "
         "ON CONFLICT (telegram_user_id) DO UPDATE SET chat_id = EXCLUDED.chat_id",
         (tg_id, chat_id, lang),
     )
-    _set_state(cur, tg_id, "await_name")
+    # Carry the inviter through the name prompt; applied once they're registered.
+    _set_state(cur, tg_id, f"await_name:{inviter_id}" if inviter_id is not None else "await_name")
     conn.commit()
     _send(chat_id, _t("start_body", lang, tagline=_t("tagline", lang)))
 
@@ -699,6 +763,53 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         {"text": _t("kb_yes", lang), "callback_data": f"mv:crew:notify:{tname}"},
         {"text": _t("kb_no", lang), "callback_data": "mv:crew:cancel"},
     ]]})
+
+
+def _connect(cur, conn, a_id: int, b_id: int) -> str:
+    """Put two people in each other's crew. Returns 'linked', 'already' or 'bad'."""
+    a, b = _user(cur, a_id), _user(cur, b_id)
+    if not a or not b or not a["participant_name"] or not b["participant_name"]:
+        return "bad"
+    cur.execute(
+        "SELECT 1 FROM move_crew WHERE telegram_user_id = %s AND LOWER(crew_name) = LOWER(%s)",
+        (a_id, b["participant_name"]),
+    )
+    already = cur.fetchone() is not None
+    for me, other in ((a_id, b["participant_name"]), (b_id, a["participant_name"])):
+        cur.execute(
+            "INSERT INTO move_crew (telegram_user_id, crew_name) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING",
+            (me, other),
+        )
+    conn.commit()
+    return "already" if already else "linked"
+
+
+def _cmd_invite(cur, tg_id: int, chat_id: int, lang: str) -> None:
+    link = f"https://t.me/{_bot_username()}?start=inv_{tg_id}"
+    _send(chat_id, _t("invite_text", lang, link=link))
+
+
+def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: int) -> None:
+    """Wire up a deep-link invite once both sides are registered."""
+    if inviter_id == tg_id:
+        _send(chat_id, _t("invite_self", lang))
+        return
+    inviter = _user(cur, inviter_id)
+    if not inviter or not inviter["participant_name"]:
+        return                                    # stale or unregistered inviter — ignore
+    result = _connect(cur, conn, tg_id, inviter_id)
+    if result == "bad":
+        return
+    me = _user(cur, tg_id)
+    if result == "already":
+        _send(chat_id, _t("invite_already", lang, name=inviter["participant_name"]))
+        return
+    _send(chat_id, _t("invite_connected", lang, name=inviter["participant_name"]))
+    _send(inviter["chat_id"] or inviter_id,
+          _t("invite_connected", _norm_lang(inviter["language_code"]),
+             name=me["participant_name"]))
+    _log(f"🔗 Move: invite\n• {inviter['participant_name']} ↔ {me['participant_name']}")
 
 
 def _month_stats(cur, tg_id: int, start: date, end: date) -> dict | None:
@@ -851,7 +962,9 @@ def handle_move_webhook(body: dict, conn) -> None:
 
     # 2) conversation state (name entry)
     state = _get_state(cur, tg_id)
-    if state in ("await_name", "await_rename") and not text.startswith("/"):
+    # "await_name" may carry a pending inviter as "await_name:<id>".
+    base_state = (state or "").split(":")[0]
+    if base_state in ("await_name", "await_rename") and not text.startswith("/"):
         if not _valid_name(text):
             _send(chat_id, _t("letters_only", lang))
             return
@@ -864,10 +977,16 @@ def handle_move_webhook(body: dict, conn) -> None:
         )
         _clear_state(cur, tg_id)
         conn.commit()
-        key = "welcome" if state == "await_name" else "renamed"
+        key = "welcome" if base_state == "await_name" else "renamed"
         _send(chat_id, _t(key, lang, name=text.strip()), reply_markup=_main_kb(lang))
-        _log(("👋 Move: registered\n• " if state == "await_name" else "✏️ Move: renamed\n• ")
+        _log(("👋 Move: registered\n• " if base_state == "await_name" else "✏️ Move: renamed\n• ")
              + text.strip())
+        # A deep-link invite waited for the name; connect them now.
+        if base_state == "await_name" and ":" in (state or ""):
+            try:
+                _apply_invite(cur, conn, tg_id, chat_id, lang, int(state.split(":", 1)[1]))
+            except ValueError:
+                pass
         return
 
     # 3) commands
@@ -876,7 +995,7 @@ def handle_move_webhook(body: dict, conn) -> None:
     args = text[len(head):].strip()
 
     if word == "start":
-        _cmd_start(cur, conn, tg_id, chat_id, lang)
+        _cmd_start(cur, conn, tg_id, chat_id, lang, payload=args)
         conn.commit()
         return
     if not (u and u["participant_name"]):
@@ -903,6 +1022,9 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word == "summary":
         _cmd_summary(cur, tg_id, chat_id, lang)
+        return
+    if word == "invite":
+        _cmd_invite(cur, tg_id, chat_id, lang)
         return
     if word == "log":
         if not args:

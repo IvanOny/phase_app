@@ -749,10 +749,10 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
         return False
     invited = _get_state(cur, tg_id) == "await_comment"
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds() / 60
-    if not invited and (e["comment"] or age > _COMMENT_WINDOW_MINUTES):
+    if not invited and age > _COMMENT_WINDOW_MINUTES:
         return False
 
-    # A further comment is appended rather than silently dropped.
+    # Each comment is delivered on its own, but the record keeps them all.
     merged = f"{e['comment']}\n{text}" if e["comment"] else text
     cur.execute("UPDATE move_entries SET comment = %s WHERE id = %s", (merged, e["id"]))
     _clear_state(cur, tg_id)

@@ -293,7 +293,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     "comment_added": {"en": "💬 Comment added.", "uk": "💬 Коментар додано.", "de": "💬 Kommentar hinzugefügt."},
     "log_usage": {"en": "Usage: /log <what you did>", "uk": "Використання: /log <що ви зробили>", "de": "Verwendung: /log <was du gemacht hast>"},
     "crew_move": {"en": "{name} moved today", "uk": "{name} рухався сьогодні", "de": "{name} hat sich heute bewegt"},
-    "zap_btn": {"en": "⚡ {n}", "uk": "⚡ {n}", "de": "⚡ {n}"},
+    "zap_btn": {"en": "⚡", "uk": "⚡", "de": "⚡"},
+    "zap_btn_sent": {"en": "⚡ sent ✓", "uk": "⚡ надіслано ✓", "de": "⚡ gesendet ✓"},
     "zap_sent": {"en": "⚡ sent!", "uk": "⚡ надіслано!", "de": "⚡ gesendet!"},
     "zap_already": {"en": "You already sent a ⚡", "uk": "Ви вже надіслали ⚡", "de": "Du hast schon ein ⚡ gesendet"},
     "zap_own": {"en": "That's your own move 🙂", "uk": "Це ваш власний рух 🙂", "de": "Das ist deine eigene Bewegung 🙂"},
@@ -306,7 +307,19 @@ _STRINGS: dict[str, dict[str, str]] = {
     "crew_nobody": {"en": "nobody yet", "uk": "поки нікого", "de": "noch niemand"},
     "crew_not_found": {"en": "No one named \"{name}\". Try again or send /move.", "uk": "Нікого з ім'ям «{name}». Спробуйте ще або надішліть /move.", "de": "Niemand namens „{name}“. Versuch es erneut oder sende /move."},
     "crew_added": {"en": "Added {name} 🤝\n\nLet {name} know?", "uk": "{name} додано 🤝\n\nПовідомити {name}?", "de": "{name} hinzugefügt 🤝\n\n{name} benachrichtigen?"},
-    "crew_added_you": {"en": "🤝 {name} added you to their crew!", "uk": "🤝 {name} додав(-ла) вас до свого кола!", "de": "🤝 {name} hat dich zur Crew hinzugefügt!"},
+    "crew_added_you": {
+        "en": "🤝 {name} added you to their crew — you'll see their moves.\n\n"
+              "Add {name} back so they see yours?",
+        "uk": "🤝 {name} додав(-ла) вас до свого кола — ви бачитимете їхні рухи.\n\n"
+              "Додати {name} у відповідь, щоб вони бачили ваші?",
+        "de": "🤝 {name} hat dich zur Crew hinzugefügt — du siehst ihre Bewegungen.\n\n"
+              "{name} zurück hinzufügen, damit sie deine sehen?",
+    },
+    "crew_added_back": {
+        "en": "🤝 Added {name} — you're now moving together.",
+        "uk": "🤝 {name} додано — тепер ви рухаєтесь разом.",
+        "de": "🤝 {name} hinzugefügt — ihr bewegt euch jetzt zusammen.",
+    },
     "crew_in_list": {"en": "{name} is in your crew{status}. What now?", "uk": "{name} у вашому колі{status}. Що далі?", "de": "{name} ist in deiner Crew{status}. Was nun?"},
     "crew_muted_until": {"en": " (muted until {until})", "uk": " (без звуку до {until})", "de": " (stumm bis {until})"},
     "crew_removed": {"en": "Removed {name}.", "uk": "{name} прибрано.", "de": "{name} entfernt."},
@@ -564,20 +577,27 @@ def _zap_count(cur, entry_id: int) -> int:
     return cur.fetchone()["n"] or 0
 
 
-def _zap_kb(entry_id: int, n: int, lang: str = "en") -> dict:
+def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en") -> dict:
+    """No running total — a move isn't a popularity contest. You only see whether
+    *you* cheered; the author gets the tally next morning."""
     return {"inline_keyboard": [[
-        {"text": _t("zap_btn", lang, n=n or ""), "callback_data": f"mv:zap:{entry_id}"}
+        {"text": _t("zap_btn_sent" if sent else "zap_btn", lang),
+         "callback_data": f"mv:zap:{entry_id}"}
     ]]}
 
 
-def _refresh_zaps(cur, entry_id: int) -> None:
-    """Keep the counter in sync on every forwarded copy."""
-    n = _zap_count(cur, entry_id)
-    cur.execute("SELECT chat_id, message_id FROM move_forwards WHERE entry_id = %s", (entry_id,))
+def _mark_zapped(cur, entry_id: int, reactor_tg_id: int) -> None:
+    """Tick the button on the reactor's own copy only — each recipient has their
+    own forwarded message, so nobody else's view changes."""
+    cur.execute(
+        "SELECT chat_id, message_id FROM move_forwards "
+        "WHERE entry_id = %s AND recipient_tg_id = %s",
+        (entry_id, reactor_tg_id),
+    )
     for f in cur.fetchall():
         _api_call("editMessageReplyMarkup", {
             "chat_id": f["chat_id"], "message_id": f["message_id"],
-            "reply_markup": _zap_kb(entry_id, n),
+            "reply_markup": _zap_kb(entry_id, sent=True),
         })
 
 
@@ -595,7 +615,7 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
         header = _t("crew_move", rlang, name=sender)
         if media:
             from_chat, msg_id = media
-            res = _copy(from_chat, msg_id, chat_id, reply_markup=_zap_kb(entry_id, 0, rlang))
+            res = _copy(from_chat, msg_id, chat_id, reply_markup=_zap_kb(entry_id, lang=rlang))
             if res and res.get("message_id"):
                 cur.execute(
                     "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
@@ -605,7 +625,7 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
             _send(chat_id, header)
         else:
             res = _send(chat_id, f"{header}\n{text_body or ''}".strip(),
-                        reply_markup=_zap_kb(entry_id, 0, rlang))
+                        reply_markup=_zap_kb(entry_id, lang=rlang))
             if res and res.get("message_id"):
                 cur.execute(
                     "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
@@ -1114,7 +1134,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         conn.commit()
         _answer(cq["id"], _t("zap_sent" if fresh else "zap_already", lang))
         if fresh:
-            _refresh_zaps(cur, entry_id)
+            _mark_zapped(cur, entry_id, tg_id)
             me = _user(cur, tg_id)
             cur.execute(
                 "SELECT u.participant_name FROM move_entries e "
@@ -1168,9 +1188,27 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             t = _by_name(cur, name)
             me = _user(cur, tg_id)
             if t and me:
+                tlang = _norm_lang(t["language_code"])
+                mine = me["participant_name"]
+                # Crew is directional, so offer the reciprocal add — otherwise
+                # their moves reach you but yours reach nobody.
                 _send(t["chat_id"] or t["telegram_user_id"],
-                      _t("crew_added_you", _norm_lang(t["language_code"]),
-                         name=me["participant_name"]))
+                      _t("crew_added_you", tlang, name=mine),
+                      reply_markup={"inline_keyboard": [[
+                          {"text": _t("kb_yes", tlang), "callback_data": f"mv:crew:addback:{mine}"},
+                          {"text": _t("kb_no", tlang), "callback_data": "mv:crew:cancel"},
+                      ]]})
+            return
+        if action == "addback":
+            cur.execute(
+                "INSERT INTO move_crew (telegram_user_id, crew_name) VALUES (%s, %s) "
+                "ON CONFLICT DO NOTHING",
+                (tg_id, name),
+            )
+            conn.commit()
+            _send(chat_id, _t("crew_added_back", lang, name=name))
+            me = _user(cur, tg_id)
+            _log(f"🤝 Move: crew +\n• {me['participant_name'] if me else tg_id} → {name}")
             return
         if action == "remove":
             cur.execute("DELETE FROM move_crew WHERE telegram_user_id = %s AND LOWER(crew_name) = LOWER(%s)",
@@ -1322,9 +1360,13 @@ def process_move_radar(conn) -> None:
 
             lang = _norm_lang(u["language_code"])
             chat_id = u["chat_id"] or rid
-            kb = _zap_kb(cand["id"], _zap_count(cur, cand["id"]), lang)
+            kb = _zap_kb(cand["id"], lang=lang)
             if cand["message_id"]:
-                _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb)
+                # The author may have deleted the original — copyMessage then
+                # fails, so move on to another candidate rather than sending a
+                # bare "someone moved" with nothing attached.
+                if not _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb):
+                    continue
             else:
                 _send(chat_id, cand["text_body"] or "", reply_markup=kb)
             _send(chat_id, _t("radar_received", lang))

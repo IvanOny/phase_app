@@ -330,7 +330,12 @@ _STRINGS: dict[str, dict[str, str]] = {
     "radar_set": {"en": "📡 Radar: {label}.", "uk": "📡 Радар: {label}.", "de": "📡 Radar: {label}."},
     "radar_share_on": {"en": "📡 Share my moves: ON ✅", "uk": "📡 Ділитися моїми рухами: УВІМК ✅", "de": "📡 Meine Bewegungen teilen: AN ✅"},
     "radar_share_off": {"en": "📡 Share my moves: OFF 🚫", "uk": "📡 Ділитися моїми рухами: ВИМК 🚫", "de": "📡 Meine Bewegungen teilen: AUS 🚫"},
-    "radar_received": {"en": "📡 {name} moved today — from outside your crew.", "uk": "📡 {name} рухався сьогодні — з-поза вашого кола.", "de": "📡 {name} hat sich heute bewegt — außerhalb deiner Crew."},
+    # Anonymous on purpose: radar shares the move, never who made it.
+    "radar_received": {
+        "en": "📡 Someone outside your crew moved today.",
+        "uk": "📡 Хтось поза вашим колом рухався сьогодні.",
+        "de": "📡 Jemand außerhalb deiner Crew hat sich heute bewegt.",
+    },
     # ── pause ──
     "pause_menu": {"en": "⏸️ Pause everything — no moves from your crew, no radar.\n\nPause for:", "uk": "⏸️ Призупинити все — жодних рухів від кола, жодного радару.\n\nПризупинити на:", "de": "⏸️ Alles pausieren — keine Bewegungen der Crew, kein Radar.\n\nPausieren für:"},
     "pause_active": {"en": "⏸️ Paused until {until}.\n\nExtend or resume:", "uk": "⏸️ Призупинено до {until}.\n\nПродовжити або відновити:", "de": "⏸️ Pausiert bis {until}.\n\nVerlängern oder fortsetzen:"},
@@ -360,6 +365,11 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Wenn sie ihn antippen, landet ihr automatisch in der Crew des anderen — "
               "egal ob neu hier oder schon registriert.",
     },
+    "invite_line": {
+        "en": "🔗 Your invite link — share it to connect instantly:\n{link}",
+        "uk": "🔗 Ваше посилання-запрошення — надішліть, щоб одразу з'єднатись:\n{link}",
+        "de": "🔗 Dein Einladungslink — teile ihn, um euch sofort zu verbinden:\n{link}",
+    },
     "invite_connected": {
         "en": "🤝 You and {name} are now moving together!",
         "uk": "🤝 Тепер ви з {name} рухаєтесь разом!",
@@ -378,6 +388,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     "summary_all_header": {"en": "📊 Your months", "uk": "📊 Ваші місяці", "de": "📊 Deine Monate"},
     "summary_none": {"en": "No moves recorded yet.", "uk": "Ще немає записаних рухів.", "de": "Noch keine Bewegungen erfasst."},
 }
+
+
+# Shown before we know their language, so it carries all three.
+_LANG_PROMPT = "🌍 Choose your language\nОберіть мову\nSprache wählen"
+
+
+def _kb_lang() -> dict:
+    return {"inline_keyboard": [[
+        {"text": "English", "callback_data": "mv:lang:en"},
+        {"text": "Українська", "callback_data": "mv:lang:uk"},
+        {"text": "Deutsch", "callback_data": "mv:lang:de"},
+    ]]}
 
 
 def _main_kb(lang: str = "en") -> dict:
@@ -700,25 +722,29 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
         "ON CONFLICT (telegram_user_id) DO UPDATE SET chat_id = EXCLUDED.chat_id",
         (tg_id, chat_id, lang),
     )
-    # Carry the inviter through the name prompt; applied once they're registered.
-    _set_state(cur, tg_id, f"await_name:{inviter_id}" if inviter_id is not None else "await_name")
+    # Language first, then the name. Any inviter rides along in the state key.
+    _set_state(cur, tg_id, f"await_lang:{inviter_id}" if inviter_id is not None else "await_lang")
     conn.commit()
-    _send(chat_id, _t("start_body", lang, tagline=_t("tagline", lang)))
+    _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
 
 
-def _cmd_info(chat_id: int, lang: str) -> None:
-    _send(chat_id, _t("info_body", lang,
-                      tagline=_t("tagline", lang),
-                      mins=_COMMENT_WINDOW_MINUTES,
-                      rdays=_RADAR_REPEAT_DAYS,
-                      miles="/".join(str(m) for m in _MILESTONES)),
-          reply_markup=_main_kb(lang))
+def _invite_line(tg_id: int, lang: str) -> str:
+    return _t("invite_line", lang, link=f"https://t.me/{_bot_username()}?start=inv_{tg_id}")
+
+
+def _cmd_info(tg_id: int, chat_id: int, lang: str) -> None:
+    body = _t("info_body", lang,
+              tagline=_t("tagline", lang),
+              mins=_COMMENT_WINDOW_MINUTES,
+              rdays=_RADAR_REPEAT_DAYS,
+              miles="/".join(str(m) for m in _MILESTONES))
+    _send(chat_id, f"{body}\n\n{_invite_line(tg_id, lang)}", reply_markup=_main_kb(lang))
 
 
 def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     names = [n for n in _crew_names(cur, tg_id) if n != "__all__"]
     crew = ", ".join(names) or _t("crew_nobody", lang)
-    _send(chat_id, _t("crew_menu", lang, crew=crew))
+    _send(chat_id, f"{_t('crew_menu', lang, crew=crew)}\n\n{_invite_line(tg_id, lang)}")
 
 
 def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str) -> None:
@@ -1002,7 +1028,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         _send(chat_id, _t("register_first", lang))
         return
     if word in ("info", "help"):
-        _cmd_info(chat_id, lang)
+        _cmd_info(tg_id, chat_id, lang)
         return
     if word == "rename":
         _set_state(cur, tg_id, "await_rename")
@@ -1085,6 +1111,22 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             to = cur.fetchone()
             _log(f"⚡ Move: lightning\n• {me['participant_name'] if me else tg_id}"
                  f" → {to['participant_name'] if to else '?'}")
+        return
+
+    if body.startswith("lang:"):
+        code = body[len("lang:"):]
+        if code not in _SUPPORTED_LANGS:
+            return
+        # Keep any pending inviter from the /start payload.
+        state = _get_state(cur, tg_id) or ""
+        pending = state.split(":", 1)[1] if ":" in state else None
+        cur.execute("UPDATE move_users SET language_code = %s WHERE telegram_user_id = %s",
+                    (code, tg_id))
+        _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
+        conn.commit()
+        _api_call("editMessageReplyMarkup",
+                  {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)))
         return
 
     if body.startswith("crew:"):
@@ -1257,7 +1299,7 @@ def process_move_radar(conn) -> None:
                 _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb)
             else:
                 _send(chat_id, cand["text_body"] or "", reply_markup=kb)
-            _send(chat_id, _t("radar_received", lang, name=cand["participant_name"]))
+            _send(chat_id, _t("radar_received", lang))
             cur.execute(
                 "INSERT INTO move_radar_history (telegram_user_id, from_tg_id) VALUES (%s, %s)",
                 (rid, cand["from_id"]),

@@ -691,6 +691,10 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         (tg_id, today),
     )
     if cur.fetchone():
+        # We're inviting a comment here, so open the window — otherwise the
+        # prompt promises something _attach_comment would reject.
+        _set_state(cur, tg_id, "await_comment")
+        conn.commit()
         _send(chat_id, _t("already_logged", lang))
         return
 
@@ -720,27 +724,38 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
               reply_markup=undo_kb)
     else:
         _send(chat_id, _t("logged", lang, streak=suffix), reply_markup=undo_kb)
+    # Invite a comment: the next text is treated as one (state times out on its own).
+    _set_state(cur, tg_id, "await_comment")
+    conn.commit()
     _log(f"🏃 Move logged\n👤 {user['participant_name']}"
          + (f"\n📤 → {', '.join(names)}" if names else "\n📤 → nobody"))
     _check_milestone(cur, conn, user, streak)
 
 
 def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
-    """A text sent shortly after a move is its comment — delivered as a reply
-    under each forwarded copy so it reads as one post. True if it was used."""
+    """Attach a text to today's move and deliver it as a reply under each
+    forwarded copy, so it reads as one post. True if it was used.
+
+    Accepted either shortly after the move, or whenever the bot has just invited
+    a comment (`await_comment`) — otherwise the invitation would be a lie.
+    """
     cur.execute(
         "SELECT id, created_at, comment FROM move_entries "
         "WHERE telegram_user_id = %s AND entry_date = %s",
         (tg_id, date.today()),
     )
     e = cur.fetchone()
-    if not e or e["comment"]:
+    if not e:
         return False
+    invited = _get_state(cur, tg_id) == "await_comment"
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds() / 60
-    if age > _COMMENT_WINDOW_MINUTES:
+    if not invited and (e["comment"] or age > _COMMENT_WINDOW_MINUTES):
         return False
 
-    cur.execute("UPDATE move_entries SET comment = %s WHERE id = %s", (text, e["id"]))
+    # A further comment is appended rather than silently dropped.
+    merged = f"{e['comment']}\n{text}" if e["comment"] else text
+    cur.execute("UPDATE move_entries SET comment = %s WHERE id = %s", (merged, e["id"]))
+    _clear_state(cur, tg_id)
     cur.execute(
         "SELECT recipient_tg_id, chat_id, message_id FROM move_forwards WHERE entry_id = %s",
         (e["id"],),

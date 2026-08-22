@@ -296,7 +296,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     "logged_shared": {"en": "✓ Move logged{streak} → shared with {names}", "uk": "✓ Рух записано{streak} → надіслано: {names}", "de": "✓ Bewegung erfasst{streak} → geteilt mit {names}"},
     "streak_suffix": {"en": " · 🔥 {days}-day streak", "uk": " · 🔥 серія {days} дн.", "de": " · 🔥 {days}-Tage-Serie"},
     "already_logged": {"en": "You've already moved today ✓ — send a comment if you want to add something.", "uk": "Ви вже рухались сьогодні ✓ — надішліть коментар, якщо хочете щось додати.", "de": "Du hast dich heute schon bewegt ✓ — schick einen Kommentar, wenn du etwas ergänzen willst."},
-    "comment_added": {"en": "💬 Comment added.", "uk": "💬 Коментар додано.", "de": "💬 Kommentar hinzugefügt."},
+    "comment_added": {
+        "en": "💬 Added under your move — your crew can see it.",
+        "uk": "💬 Додано під ваш рух — ваше коло це бачить.",
+        "de": "💬 Unter deiner Bewegung ergänzt — deine Crew sieht es.",
+    },
+    "comment_saved_alone": {
+        "en": "💬 Saved with today's move. Nobody sees it yet — add someone with 🤝 Move with.",
+        "uk": "💬 Збережено разом із сьогоднішнім рухом. Поки ніхто не бачить — "
+              "додайте когось через 🤝 Рухатись з.",
+        "de": "💬 Bei der heutigen Bewegung gespeichert. Noch sieht es niemand — "
+              "füge jemanden über 🤝 Bewegen mit hinzu.",
+    },
     "log_usage": {"en": "Usage: /log <what you did>", "uk": "Використання: /log <що ви зробили>", "de": "Verwendung: /log <was du gemacht hast>"},
     "crew_move": {"en": "{name} moved today", "uk": "{name} рухався сьогодні", "de": "{name} hat sich heute bewegt"},
     "btn_undo": {"en": "🗑 Undo", "uk": "🗑 Скасувати", "de": "🗑 Rückgängig"},
@@ -755,22 +766,27 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     # Each comment is delivered on its own, but the record keeps them all.
     merged = f"{e['comment']}\n{text}" if e["comment"] else text
     cur.execute("UPDATE move_entries SET comment = %s WHERE id = %s", (merged, e["id"]))
-    _clear_state(cur, tg_id)
+    # Deliberately NOT clearing the state: the invitation stays open for its full
+    # 10 minutes so you can add several lines, instead of only ever one.
     cur.execute(
         "SELECT recipient_tg_id, chat_id, message_id FROM move_forwards WHERE entry_id = %s",
         (e["id"],),
     )
+    delivered = 0
     for f in cur.fetchall():
         res = _send(f["chat_id"], f"💬 {text}", reply_to=f["message_id"])
         # Track the reply too, so undo takes the comment with it.
         if res and res.get("message_id"):
+            delivered += 1
             cur.execute(
                 "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
                 "VALUES (%s, %s, %s, %s)",
                 (e["id"], f["recipient_tg_id"], f["chat_id"], res["message_id"]),
             )
     conn.commit()
-    _send(chat_id, _t("comment_added", _lang(cur, tg_id)))
+    # Say where it went — "added" alone invites the question "added where?"
+    lang = _lang(cur, tg_id)
+    _send(chat_id, _t("comment_added" if delivered else "comment_saved_alone", lang))
     return True
 
 

@@ -707,6 +707,7 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         _set_state(cur, tg_id, "await_comment")
         conn.commit()
         _send(chat_id, _t("already_logged", lang))
+        _log(f"🔁 Move: second attempt\n👤 {user['participant_name']}")
         return
 
     media_type = None
@@ -787,6 +788,9 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     # Say where it went — "added" alone invites the question "added where?"
     lang = _lang(cur, tg_id)
     _send(chat_id, _t("comment_added" if delivered else "comment_saved_alone", lang))
+    u = _user(cur, tg_id)
+    _log(f"💬 Move: comment\n👤 {u['participant_name'] if u else tg_id}: {text}"
+         f"\n📤 → {delivered}")
     return True
 
 
@@ -1262,6 +1266,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _api_call("editMessageReplyMarkup",
                       {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
             _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code))
+            _log(f"🌍 Move: language → {code}\n• {u['participant_name']}")
             return
         # Registration flow — keep any pending inviter from the /start payload.
         state = _get_state(cur, tg_id) or ""
@@ -1352,16 +1357,20 @@ def _handle_callback(cur, conn, cq: dict) -> None:
     if body.startswith("pause:"):
         what = body[len("pause:"):]
         _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        u = _user(cur, tg_id)
+        who = u["participant_name"] if u else tg_id
         if what == "resume":
             cur.execute("UPDATE move_users SET paused_until = NULL WHERE telegram_user_id = %s", (tg_id,))
             conn.commit()
             _send(chat_id, _t("pause_resumed", lang))
+            _log(f"▶️ Move: resumed\n• {who}")
             return
         days = {"1d": 1, "1w": 7, "1m": 30}.get(what, 1)
         until = datetime.now(timezone.utc) + timedelta(days=days)
         cur.execute("UPDATE move_users SET paused_until = %s WHERE telegram_user_id = %s", (until, tg_id))
         conn.commit()
         _send(chat_id, _t("pause_set", lang, until=until.strftime("%b %d")))
+        _log(f"⏸️ Move: paused {what}\n• {who}")
         return
 
 

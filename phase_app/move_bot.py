@@ -169,7 +169,9 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Want to say something? Send a text within {mins} minutes and it appears "
               "as a reply right under your move\n"
               "• No camera? Use /log <text> instead\n"
-              "• One move per day — the first one counts\n\n"
+              "• One move per day — the first one counts\n"
+              "• Changed your mind? /undo (or the 🗑 button) takes it back and deletes it "
+              "from your crew's chats too\n\n"
               "⚡ LIGHTNINGS\n"
               "• Tap ⚡ under someone's move to cheer them on — one per move\n"
               "• The counter on the button updates for everyone\n"
@@ -206,7 +208,9 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Хочете щось сказати? Надішліть текст протягом {mins} хвилин — він з'явиться "
               "відповіддю просто під вашим рухом\n"
               "• Немає камери? Скористайтесь /log <текст>\n"
-              "• Один рух на день — зараховується перший\n\n"
+              "• Один рух на день — зараховується перший\n"
+              "• Передумали? /undo (або кнопка 🗑) забирає рух назад і видаляє його "
+              "з чатів вашого кола\n\n"
               "⚡ БЛИСКАВКИ\n"
               "• Натисніть ⚡ під чиїмось рухом, щоб підтримати — одна на рух\n"
               "• Лічильник на кнопці оновлюється для всіх\n"
@@ -243,7 +247,9 @@ _STRINGS: dict[str, dict[str, str]] = {
               "• Willst du etwas sagen? Schick innerhalb von {mins} Minuten einen Text — er erscheint "
               "als Antwort direkt unter deiner Bewegung\n"
               "• Keine Kamera? Nutze /log <Text>\n"
-              "• Eine Bewegung pro Tag — die erste zählt\n\n"
+              "• Eine Bewegung pro Tag — die erste zählt\n"
+              "• Doch anders? /undo (oder der 🗑-Button) nimmt sie zurück und löscht sie "
+              "auch aus den Chats deiner Crew\n\n"
               "⚡ BLITZE\n"
               "• Tippe ⚡ unter einer Bewegung, um anzufeuern — einer pro Bewegung\n"
               "• Der Zähler auf dem Button aktualisiert sich für alle\n"
@@ -293,6 +299,17 @@ _STRINGS: dict[str, dict[str, str]] = {
     "comment_added": {"en": "💬 Comment added.", "uk": "💬 Коментар додано.", "de": "💬 Kommentar hinzugefügt."},
     "log_usage": {"en": "Usage: /log <what you did>", "uk": "Використання: /log <що ви зробили>", "de": "Verwendung: /log <was du gemacht hast>"},
     "crew_move": {"en": "{name} moved today", "uk": "{name} рухався сьогодні", "de": "{name} hat sich heute bewegt"},
+    "btn_undo": {"en": "🗑 Undo", "uk": "🗑 Скасувати", "de": "🗑 Rückgängig"},
+    "undo_done": {
+        "en": "🗑 Move removed — deleted from your crew's chats too.",
+        "uk": "🗑 Рух видалено — прибрано і з чатів вашого кола.",
+        "de": "🗑 Bewegung entfernt — auch aus den Chats deiner Crew gelöscht.",
+    },
+    "undo_none": {
+        "en": "Nothing to undo — you haven't logged a move today.",
+        "uk": "Нічого скасовувати — ви ще не записали рух сьогодні.",
+        "de": "Nichts rückgängig zu machen — du hast heute noch nichts erfasst.",
+    },
     "zap_btn": {"en": "⚡", "uk": "⚡", "de": "⚡"},
     "zap_btn_sent": {"en": "⚡ sent ✓", "uk": "⚡ надіслано ✓", "de": "⚡ gesendet ✓"},
     "zap_sent": {"en": "⚡ sent!", "uk": "⚡ надіслано!", "de": "⚡ gesendet!"},
@@ -586,6 +603,33 @@ def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en") -> dict:
     ]]}
 
 
+def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
+    """Take today's move back — delete every copy the bot placed in other chats,
+    then drop the entry. Telegram lets a bot delete its own messages for 48h,
+    which covers a same-day move; anything it can't delete is skipped silently.
+
+    Needs an explicit trigger: Telegram never tells a bot that the user deleted
+    their original message in a private chat.
+    """
+    cur.execute(
+        "SELECT id FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",
+        (tg_id, date.today()),
+    )
+    e = cur.fetchone()
+    if not e:
+        _send(chat_id, _t("undo_none", lang))
+        return
+    cur.execute("SELECT chat_id, message_id FROM move_forwards WHERE entry_id = %s", (e["id"],))
+    for f in cur.fetchall():
+        _api_call("deleteMessage", {"chat_id": f["chat_id"], "message_id": f["message_id"]})
+    # move_forwards / move_reactions cascade off the entry.
+    cur.execute("DELETE FROM move_entries WHERE id = %s", (e["id"],))
+    conn.commit()
+    _send(chat_id, _t("undo_done", lang), reply_markup=_main_kb(lang))
+    u = _user(cur, tg_id)
+    _log(f"🗑 Move: revoked\n• {u['participant_name'] if u else tg_id}")
+
+
 def _mark_zapped(cur, entry_id: int, reactor_tg_id: int) -> None:
     """Tick the button on the reactor's own copy only — each recipient has their
     own forwarded message, so nobody else's view changes."""
@@ -667,11 +711,15 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
 
     streak = _streak(cur, tg_id, today)
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
+    # Inline undo — the persistent reply keyboard stays regardless.
+    undo_kb = {"inline_keyboard": [[
+        {"text": _t("btn_undo", lang), "callback_data": "mv:undo"}
+    ]]}
     if names:
         _send(chat_id, _t("logged_shared", lang, streak=suffix, names=", ".join(names)),
-              reply_markup=_main_kb(lang))
+              reply_markup=undo_kb)
     else:
-        _send(chat_id, _t("logged", lang, streak=suffix), reply_markup=_main_kb(lang))
+        _send(chat_id, _t("logged", lang, streak=suffix), reply_markup=undo_kb)
     _log(f"🏃 Move logged\n👤 {user['participant_name']}"
          + (f"\n📤 → {', '.join(names)}" if names else "\n📤 → nobody"))
     _check_milestone(cur, conn, user, streak)
@@ -693,9 +741,19 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
         return False
 
     cur.execute("UPDATE move_entries SET comment = %s WHERE id = %s", (text, e["id"]))
-    cur.execute("SELECT chat_id, message_id FROM move_forwards WHERE entry_id = %s", (e["id"],))
+    cur.execute(
+        "SELECT recipient_tg_id, chat_id, message_id FROM move_forwards WHERE entry_id = %s",
+        (e["id"],),
+    )
     for f in cur.fetchall():
-        _send(f["chat_id"], f"💬 {text}", reply_to=f["message_id"])
+        res = _send(f["chat_id"], f"💬 {text}", reply_to=f["message_id"])
+        # Track the reply too, so undo takes the comment with it.
+        if res and res.get("message_id"):
+            cur.execute(
+                "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
+                "VALUES (%s, %s, %s, %s)",
+                (e["id"], f["recipient_tg_id"], f["chat_id"], res["message_id"]),
+            )
     conn.commit()
     _send(chat_id, _t("comment_added", _lang(cur, tg_id)))
     return True
@@ -1085,6 +1143,9 @@ def handle_move_webhook(body: dict, conn) -> None:
     if word in ("language", "lang"):
         _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
         return
+    if word in ("undo", "delete"):
+        _revoke(cur, conn, tg_id, chat_id, lang)
+        return
     if word == "log":
         if not args:
             _send(chat_id, _t("log_usage", lang))
@@ -1144,6 +1205,12 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             to = cur.fetchone()
             _log(f"⚡ Move: lightning\n• {me['participant_name'] if me else tg_id}"
                  f" → {to['participant_name'] if to else '?'}")
+        return
+
+    if body == "undo":
+        _api_call("editMessageReplyMarkup",
+                  {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        _revoke(cur, conn, tg_id, chat_id, lang)
         return
 
     if body == "langmenu":
@@ -1365,10 +1432,18 @@ def process_move_radar(conn) -> None:
                 # The author may have deleted the original — copyMessage then
                 # fails, so move on to another candidate rather than sending a
                 # bare "someone moved" with nothing attached.
-                if not _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb):
+                res = _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb)
+                if not res:
                     continue
             else:
-                _send(chat_id, cand["text_body"] or "", reply_markup=kb)
+                res = _send(chat_id, cand["text_body"] or "", reply_markup=kb)
+            # Track it so a later undo revokes the radar copy too.
+            if res and res.get("message_id"):
+                cur.execute(
+                    "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
+                    "VALUES (%s, %s, %s, %s)",
+                    (cand["id"], rid, chat_id, res["message_id"]),
+                )
             _send(chat_id, _t("radar_received", lang))
             cur.execute(
                 "INSERT INTO move_radar_history (telegram_user_id, from_tg_id) VALUES (%s, %s)",

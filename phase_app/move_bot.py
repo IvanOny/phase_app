@@ -365,6 +365,12 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Wenn sie ihn antippen, landet ihr automatisch in der Crew des anderen — "
               "egal ob neu hier oder schon registriert.",
     },
+    "btn_language": {"en": "🌍 Language", "uk": "🌍 Мова", "de": "🌍 Sprache"},
+    "lang_changed": {
+        "en": "🌍 Language set to English.",
+        "uk": "🌍 Мову змінено на українську.",
+        "de": "🌍 Sprache auf Deutsch gestellt.",
+    },
     "invite_line": {
         "en": "🔗 Your invite link — share it to connect instantly:\n{link}",
         "uk": "🔗 Ваше посилання-запрошення — надішліть, щоб одразу з'єднатись:\n{link}",
@@ -738,7 +744,11 @@ def _cmd_info(tg_id: int, chat_id: int, lang: str) -> None:
               mins=_COMMENT_WINDOW_MINUTES,
               rdays=_RADAR_REPEAT_DAYS,
               miles="/".join(str(m) for m in _MILESTONES))
-    _send(chat_id, f"{body}\n\n{_invite_line(tg_id, lang)}", reply_markup=_main_kb(lang))
+    # Inline button, not the reply keyboard — the persistent one stays put anyway.
+    _send(chat_id, f"{body}\n\n{_invite_line(tg_id, lang)}",
+          reply_markup={"inline_keyboard": [[
+              {"text": _t("btn_language", lang), "callback_data": "mv:langmenu"}
+          ]]})
 
 
 def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
@@ -1052,6 +1062,9 @@ def handle_move_webhook(body: dict, conn) -> None:
     if word == "invite":
         _cmd_invite(cur, tg_id, chat_id, lang)
         return
+    if word in ("language", "lang"):
+        _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
+        return
     if word == "log":
         if not args:
             _send(chat_id, _t("log_usage", lang))
@@ -1113,11 +1126,26 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                  f" → {to['participant_name'] if to else '?'}")
         return
 
+    if body == "langmenu":
+        _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
+        return
+
     if body.startswith("lang:"):
         code = body[len("lang:"):]
         if code not in _SUPPORTED_LANGS:
             return
-        # Keep any pending inviter from the /start payload.
+        u = _user(cur, tg_id)
+        if u and u["participant_name"]:
+            # Already registered — just switch. Resend the main keyboard so its
+            # localized button labels update too.
+            cur.execute("UPDATE move_users SET language_code = %s WHERE telegram_user_id = %s",
+                        (code, tg_id))
+            conn.commit()
+            _api_call("editMessageReplyMarkup",
+                      {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+            _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code))
+            return
+        # Registration flow — keep any pending inviter from the /start payload.
         state = _get_state(cur, tg_id) or ""
         pending = state.split(":", 1)[1] if ":" in state else None
         cur.execute("UPDATE move_users SET language_code = %s WHERE telegram_user_id = %s",

@@ -35,6 +35,8 @@ _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
 _UNDO_WINDOW_SECONDS = 10             # how long a move can still be taken back
 _RADAR_REPEAT_DAYS = 7                # same stranger can't reappear within a week
+_RADAR_PULL_MIN_POOL = 20             # "show me someone now" unlocks at this pool size
+_RADAR_FRESH_DAYS = 2                 # how far back radar looks for a move to show
 _MILESTONES = (7, 14, 30, 50, 100, 200, 365)
 _INVITE_PREFIX = "invitation_of_"
 _INVITE_SLUG_MAX = 24                 # 14 + 24 + 1 + 10 keeps us under Telegram's 64
@@ -392,23 +394,36 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "crew_nobody": {"en": "nobody yet", "uk": "поки нікого", "de": "noch niemand"},
     "crew_not_found": {"en": "No one named \"{name}\". Try again or send /move.", "uk": "Нікого з ім'ям «{name}». Спробуйте ще або надішліть /move.", "de": "Niemand namens „{name}“. Versuch es erneut oder sende /move."},
-    "crew_added": {"en": "Added {name} 🤝\n\nLet {name} know?", "uk": "{name} додано 🤝\n\nПовідомити {name}?", "de": "{name} hinzugefügt 🤝\n\n{name} benachrichtigen?"},
-    "crew_added_you": {
-        "en": "🤝 {name} added you to their crew — you'll see their moves.\n\n"
-              "Add {name} back so they see yours?",
-        "uk": "🤝 {name} — тепер ви в його колі, тож бачитимете рухи.\n\n"
-              "Додати {name} у відповідь, щоб вони бачили ваші?",
-        "de": "🤝 {name} hat dich zur Crew hinzugefügt — du siehst ihre Bewegungen.\n\n"
-              "{name} zurück hinzufügen, damit sie deine sehen?",
+    # Adding someone is a request, never a fait accompli: moves are photos and
+    # videos of people, so nobody's move travels anywhere they didn't agree to.
+    "crew_request_sent": {
+        "en": "🤝 Asked {name} to move with you.\n\nYou'll be connected once they accept.",
+        "uk": "🤝 Запит надіслано: {name}.\n\nВас з'єднає, щойно вони погодяться.",
+        "de": "🤝 {name} gefragt, ob ihr euch zusammen bewegt.\n\n"
+              "Ihr werdet verbunden, sobald sie zustimmen.",
     },
-    "crew_added_you_m": {
-        "uk": "🤝 {name} додав вас до свого кола — ви бачитимете його рухи.\n\n"
-              "Додати {name} у відповідь, щоб він бачив ваші?",
+    "crew_request": {
+        "en": "🤝 {name} wants to move with you.\n\n"
+              "Accept and you'll each see the other's moves.",
+        "uk": "🤝 {name} хоче рухатися разом з вами.\n\n"
+              "Погодьтесь — і ви бачитимете рухи одне одного.",
+        "de": "🤝 {name} möchte sich mit dir zusammen bewegen.\n\n"
+              "Nimm an, und ihr seht gegenseitig eure Bewegungen.",
     },
-    "crew_added_you_f": {
-        "uk": "🤝 {name} додала вас до свого кола — ви бачитимете її рухи.\n\n"
-              "Додати {name} у відповідь, щоб вона бачила ваші?",
+    # No gendered variants: "хоче" is present tense, which Ukrainian doesn't inflect
+    # for gender — unlike the past-tense phrasing used for a logged move.
+    "crew_request_accepted": {
+        "en": "🤝 {name} accepted — you're now moving together.",
+        "uk": "🤝 {name} погодилися — тепер ви рухаєтесь разом.",
+        "de": "🤝 {name} hat zugestimmt — ihr bewegt euch jetzt zusammen.",
     },
+    "crew_request_gone": {
+        "en": "That request is no longer valid.",
+        "uk": "Цей запит уже недійсний.",
+        "de": "Diese Anfrage gilt nicht mehr.",
+    },
+    "btn_accept": {"en": "🤝 Accept", "uk": "🤝 Погодитись", "de": "🤝 Annehmen"},
+    "btn_decline": {"en": "Not now", "uk": "Не зараз", "de": "Nicht jetzt"},
     "crew_added_back": {
         "en": "🤝 Added {name} — you're now moving together.",
         "uk": "🤝 {name} додано — тепер ви рухаєтесь разом.",
@@ -425,10 +440,46 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_remove": {"en": "🗑 Remove", "uk": "🗑 Прибрати", "de": "🗑 Entfernen"},
     "cancelled": {"en": "Cancelled.", "uk": "Скасовано.", "de": "Abgebrochen."},
     # ── radar ──
+    # Two separate questions, asked one after the other: receiving and sharing are
+    # independent choices, and one menu holding both made the toggle easy to miss.
     "radar_menu": {
-        "en": "📡 Radar shows you a move from someone outside your crew — and can show yours to them.\n\nReceiving: {current}\n\nHow often?",
-        "uk": "📡 Радар показує рух від когось поза вашим колом — і може показати ваш їм.\n\nОтримувати: {current}\n\nЯк часто?",
-        "de": "📡 Radar zeigt dir eine Bewegung von jemandem außerhalb deiner Crew — und kann deine zeigen.\n\nEmpfangen: {current}\n\nWie oft?",
+        "en": "📡 Radar shows you a move from someone outside your crew.\n\n"
+              "Receiving: {current}\n\nHow often?",
+        "uk": "📡 Радар показує рух від когось поза вашим колом.\n\n"
+              "Отримувати: {current}\n\nЯк часто?",
+        "de": "📡 Radar zeigt dir eine Bewegung von jemandem außerhalb deiner Crew.\n\n"
+              "Empfangen: {current}\n\nWie oft?",
+    },
+    "radar_share_menu": {
+        "en": "📡 And your own moves — may radar show them to people outside your crew?\n\n"
+              "Always anonymous: they see the move, never your name.\n\nNow: {current}",
+        "uk": "📡 А ваші власні рухи — чи може радар показувати їх людям поза вашим колом?\n\n"
+              "Завжди анонімно: вони бачать рух, але не ваше ім'я.\n\nЗараз: {current}",
+        "de": "📡 Und deine eigenen Bewegungen — darf Radar sie Leuten außerhalb deiner "
+              "Crew zeigen?\n\nImmer anonym: sie sehen die Bewegung, nie deinen Namen.\n\n"
+              "Jetzt: {current}",
+    },
+    "radar_state_on": {"en": "sharing ✅", "uk": "ділюся ✅", "de": "wird geteilt ✅"},
+    "radar_state_off": {"en": "private 🚫", "uk": "приватно 🚫", "de": "privat 🚫"},
+    "btn_share_yes": {"en": "Yes, share ✅", "uk": "Так, ділитися ✅", "de": "Ja, teilen ✅"},
+    "btn_share_no": {"en": "No, keep private 🚫", "uk": "Ні, лишити приватним 🚫",
+                     "de": "Nein, privat behalten 🚫"},
+    "radar_pull_btn": {"en": "👀 Show me someone now", "uk": "👀 Показати когось зараз",
+                       "de": "👀 Zeig mir jetzt jemanden"},
+    "radar_pull_none": {
+        "en": "📡 Nothing new right now — you've seen everyone who moved lately. "
+              "Try again tomorrow.",
+        "uk": "📡 Зараз нічого нового — ви вже бачили всіх, хто рухався останнім часом. "
+              "Спробуйте завтра.",
+        "de": "📡 Gerade nichts Neues — du hast alle gesehen, die sich zuletzt bewegt "
+              "haben. Versuch es morgen wieder.",
+    },
+    "radar_block_btn": {"en": "🚫 Not this person again", "uk": "🚫 Більше не показувати цю людину",
+                        "de": "🚫 Diese Person nicht mehr"},
+    "radar_blocked": {
+        "en": "🚫 Done — this person won't turn up in your radar again.",
+        "uk": "🚫 Готово — ця людина більше не з'явиться у вашому радарі.",
+        "de": "🚫 Erledigt — diese Person taucht in deinem Radar nicht mehr auf.",
     },
     "radar_daily": {"en": "Daily", "uk": "Щодня", "de": "Täglich"},
     "radar_weekly": {"en": "Weekly", "uk": "Щотижня", "de": "Wöchentlich"},
@@ -677,13 +728,19 @@ def _zap_count(cur, entry_id: int) -> int:
     return cur.fetchone()["n"] or 0
 
 
-def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en") -> dict:
+def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = False) -> dict:
     """No running total — a move isn't a popularity contest. You only see whether
-    *you* cheered; the author gets the tally next morning."""
-    return {"inline_keyboard": [[
-        {"text": _t("zap_btn_sent" if sent else "zap_btn", lang),
-         "callback_data": f"mv:zap:{entry_id}"}
-    ]]}
+    *you* cheered; the author gets the tally next morning.
+
+    A radar copy carries a second button: this came from a stranger, so the
+    viewer needs a way to never see them again.
+    """
+    rows = [[{"text": _t("zap_btn_sent" if sent else "zap_btn", lang),
+              "callback_data": f"mv:zap:{entry_id}"}]]
+    if radar:
+        rows.append([{"text": _t("radar_block_btn", lang),
+                      "callback_data": f"mv:rblock:{entry_id}"}])
+    return {"inline_keyboard": rows}
 
 
 def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None = None) -> bool:
@@ -725,17 +782,21 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
 def _mark_zapped(cur, entry_id: int, reactor_tg_id: int) -> None:
     """Tick the button on the reactor's own copy only — each recipient has their
     own forwarded message, so nobody else's view changes."""
-    # kind='move' only — the header and comment replies carry no ⚡ button, and
-    # putting one on them would show a second "sent ✓" under the comment.
+    # kind='move'/'radar' only — the header and comment replies carry no ⚡ button,
+    # and putting one on them would show a second "sent ✓" under the comment.
     cur.execute(
-        "SELECT chat_id, message_id FROM move_forwards "
-        "WHERE entry_id = %s AND recipient_tg_id = %s AND kind = 'move'",
+        "SELECT chat_id, message_id, kind FROM move_forwards "
+        "WHERE entry_id = %s AND recipient_tg_id = %s AND kind IN ('move', 'radar')",
         (entry_id, reactor_tg_id),
     )
+    lang = _lang(cur, reactor_tg_id)
     for f in cur.fetchall():
+        # Rebuild rather than patch: a radar copy must keep its block button, or
+        # cheering a stranger would quietly take away the way to stop seeing them.
         _api_call("editMessageReplyMarkup", {
             "chat_id": f["chat_id"], "message_id": f["message_id"],
-            "reply_markup": _zap_kb(entry_id, sent=True),
+            "reply_markup": _zap_kb(entry_id, sent=True, lang=lang,
+                                    radar=f["kind"] == "radar"),
         })
 
 
@@ -860,7 +921,7 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     if fresh:
         cur.execute(
             "SELECT recipient_tg_id, chat_id, message_id FROM move_forwards "
-            "WHERE entry_id = %s AND kind = 'move'",
+            "WHERE entry_id = %s AND kind IN ('move', 'radar')",
             (e["id"],),
         )
         targets = cur.fetchall()
@@ -1042,17 +1103,20 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         _send(chat_id, _t("crew_in_list", lang, name=tname, status=status),
               reply_markup={"inline_keyboard": rows})
         return
-    cur.execute(
-        "INSERT INTO move_crew (telegram_user_id, crew_name) VALUES (%s, %s) ON CONFLICT DO NOTHING",
-        (tg_id, tname),
-    )
-    conn.commit()
+    # Not added — asked. Nothing enters either crew until the other side accepts,
+    # and the accept wires up both directions at once.
     me = _user(cur, tg_id)
-    _log(f"🤝 Move: crew +\n• {me['participant_name'] if me else tg_id} → {tname}")
-    _send(chat_id, _t("crew_added", lang, name=tname), reply_markup={"inline_keyboard": [[
-        {"text": _t("kb_yes", lang), "callback_data": f"mv:crew:notify:{tname}"},
-        {"text": _t("kb_no", lang), "callback_data": "mv:crew:cancel"},
-    ]]})
+    myname = me["participant_name"] if me else str(tg_id)
+    _send(target["chat_id"] or target["telegram_user_id"],
+          _t("crew_request", _norm_lang(target["language_code"]), name=myname),
+          reply_markup={"inline_keyboard": [[
+              {"text": _t("btn_accept", _norm_lang(target["language_code"])),
+               "callback_data": f"mv:crew:accept:{myname}"},
+              {"text": _t("btn_decline", _norm_lang(target["language_code"])),
+               "callback_data": "mv:crew:decline"},
+          ]]})
+    _send(chat_id, _t("crew_request_sent", lang, name=tname))
+    _log(f"🤝 Move: crew request\n• {myname} → {tname}")
 
 
 def _connect(cur, conn, a_id: int, b_id: int) -> str:
@@ -1183,16 +1247,109 @@ def _radar_label(freq: str, lang: str) -> str:
     return _t("radar_off" if freq == "never" else f"radar_{freq}", lang)
 
 
+def _radar_pool_size(cur) -> int:
+    """How many people are willing to be shown to strangers."""
+    cur.execute("SELECT COUNT(*) AS n FROM move_users WHERE radar_send = TRUE")
+    return cur.fetchone()["n"] or 0
+
+
+def _radar_candidates(cur, rid: int) -> list:
+    """Every move this viewer is allowed to see right now, best-effort ordered.
+
+    More than one, because delivery can still fail on the author having deleted
+    their original — the caller walks the list until a copy lands.
+
+    Excludes their own crew, anyone they've blocked, and anyone they were shown
+    within _RADAR_REPEAT_DAYS. Random order, so two people asking on the same day
+    don't get the same stranger.
+    """
+    crew = {n.lower() for n in _crew_names(cur, rid)}
+    cur.execute(
+        "SELECT e.id, e.chat_id, e.message_id, e.text_body, "
+        "       u2.telegram_user_id AS from_id, u2.participant_name "
+        "FROM move_entries e JOIN move_users u2 ON u2.telegram_user_id = e.telegram_user_id "
+        "WHERE e.entry_date >= %s AND u2.radar_send = TRUE AND u2.telegram_user_id <> %s "
+        "  AND NOT EXISTS (SELECT 1 FROM move_radar_block b "
+        "                  WHERE b.telegram_user_id = %s AND b.blocked_tg_id = u2.telegram_user_id) "
+        "  AND NOT EXISTS (SELECT 1 FROM move_radar_history h "
+        "                  WHERE h.telegram_user_id = %s AND h.from_tg_id = u2.telegram_user_id "
+        "                    AND h.sent_at > NOW() - make_interval(days => %s)) "
+        "ORDER BY random() LIMIT 25",
+        (date.today() - timedelta(days=_RADAR_FRESH_DAYS), rid, rid, rid, _RADAR_REPEAT_DAYS),
+    )
+    return [c for c in cur.fetchall() if (c["participant_name"] or "").lower() not in crew]
+
+
+def _radar_show(cur, conn, rid: int, chat_id: int, lang: str,
+                touch_schedule: bool = True):
+    """Deliver the first candidate that actually sends. Returns it, or None."""
+    for cand in _radar_candidates(cur, rid):
+        if _radar_deliver(cur, conn, rid, chat_id, lang, cand, touch_schedule):
+            return cand
+    return None
+
+
+def _radar_deliver(cur, conn, rid: int, chat_id: int, lang: str, cand,
+                   touch_schedule: bool = True) -> bool:
+    """Copy one stranger's move into this viewer's chat. False if it couldn't be sent.
+
+    touch_schedule=False for a pull: asking to see someone now shouldn't push
+    back the daily drop they already subscribed to.
+    """
+    kb = _zap_kb(cand["id"], lang=lang, radar=True)
+    if cand["message_id"]:
+        # The author may have deleted the original — copyMessage then fails, so
+        # the caller should move on rather than send a bare "someone moved".
+        res = _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb)
+        if not res:
+            return False
+    else:
+        res = _send(chat_id, cand["text_body"] or "", reply_markup=kb)
+    # Track it so a later undo revokes the radar copy too. kind='radar' keeps the
+    # block button alive when the ⚡ is ticked.
+    if res and res.get("message_id"):
+        cur.execute(
+            "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id, kind) "
+            "VALUES (%s, %s, %s, %s, 'radar')",
+            (cand["id"], rid, chat_id, res["message_id"]),
+        )
+    _send(chat_id, _t("radar_received", lang))
+    cur.execute("INSERT INTO move_radar_history (telegram_user_id, from_tg_id) VALUES (%s, %s)",
+                (rid, cand["from_id"]))
+    if touch_schedule:
+        cur.execute("UPDATE move_users SET radar_last_received = NOW() WHERE telegram_user_id = %s",
+                    (rid,))
+    conn.commit()
+    return True
+
+
 def _cmd_radar(cur, tg_id: int, chat_id: int, lang: str) -> None:
+    """Two questions, asked separately: how often you receive, and whether you share."""
     u = _user(cur, tg_id)
     cur_freq = (u["radar_freq"] if u else "never") or "never"
     rows = [[{"text": ("✓ " if f == cur_freq else "") + _radar_label(f, lang),
               "callback_data": f"mv:radar:{f}"}] for f in _RADAR_FREQS]
-    on = bool(u and u["radar_send"])
-    rows.append([{"text": _t("radar_share_on" if on else "radar_share_off", lang),
-                  "callback_data": f"mv:radarsend:{'off' if on else 'on'}"}])
+    # A pull with nobody to pull from is a dead button, so it stays hidden until
+    # the pool is deep enough that "show me someone" usually finds someone.
+    if _radar_pool_size(cur) >= _RADAR_PULL_MIN_POOL:
+        rows.append([{"text": _t("radar_pull_btn", lang), "callback_data": "mv:radarnow"}])
     _send(chat_id, _t("radar_menu", lang, current=_radar_label(cur_freq, lang)),
           reply_markup={"inline_keyboard": rows})
+    _send_radar_share_menu(cur, tg_id, chat_id, lang)
+
+
+def _send_radar_share_menu(cur, tg_id: int, chat_id: int, lang: str) -> None:
+    u = _user(cur, tg_id)
+    on = bool(u and u["radar_send"])
+    _send(chat_id,
+          _t("radar_share_menu", lang,
+             current=_t("radar_state_on" if on else "radar_state_off", lang)),
+          reply_markup={"inline_keyboard": [[
+              {"text": ("✓ " if on else "") + _t("btn_share_yes", lang),
+               "callback_data": "mv:radarsend:on"},
+              {"text": ("✓ " if not on else "") + _t("btn_share_no", lang),
+               "callback_data": "mv:radarsend:off"},
+          ]]})
 
 
 def _cmd_pause(cur, tg_id: int, chat_id: int, lang: str) -> None:
@@ -1463,25 +1620,26 @@ def _handle_callback(cur, conn, cq: dict) -> None:
     if body.startswith("crew:"):
         sub = body[5:]
         _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        if sub == "cancel":
+        if sub in ("cancel", "decline"):
+            # A decline stays between the button and the person who pressed it —
+            # telling the asker they were turned down only invites a second ask.
             _send(chat_id, _t("cancelled", lang))
             return
         action, _, name = sub.partition(":")
-        if action == "notify":
-            t = _by_name(cur, name)
+        if action == "accept":
+            requester = _by_name(cur, name)
             me = _user(cur, tg_id)
-            if t and me:
-                tlang = _norm_lang(t["language_code"])
-                mine = me["participant_name"]
-                mygen = me["gender"] if "gender" in me else None
-                # Crew is directional, so offer the reciprocal add — otherwise
-                # their moves reach you but yours reach nobody.
-                _send(t["chat_id"] or t["telegram_user_id"],
-                      _tgen("crew_added_you", tlang, mygen, name=mine),
-                      reply_markup={"inline_keyboard": [[
-                          {"text": _t("kb_yes", tlang), "callback_data": f"mv:crew:addback:{mine}"},
-                          {"text": _t("kb_no", tlang), "callback_data": "mv:crew:cancel"},
-                      ]]})
+            if not requester or not me or requester["telegram_user_id"] == tg_id:
+                _send(chat_id, _t("crew_request_gone", lang))
+                return
+            if _connect(cur, conn, tg_id, requester["telegram_user_id"]) == "bad":
+                _send(chat_id, _t("crew_request_gone", lang))
+                return
+            _send(chat_id, _t("crew_added_back", lang, name=name))
+            _send(requester["chat_id"] or requester["telegram_user_id"],
+                  _t("crew_request_accepted", _norm_lang(requester["language_code"]),
+                     name=me["participant_name"]))
+            _log(f"🤝 Move: crew ↔\n• {name} ↔ {me['participant_name']}")
             return
         if action == "addback":
             cur.execute(
@@ -1517,6 +1675,43 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             )
             conn.commit()
             _send(chat_id, _t("crew_muted", lang, name=name, until=until.strftime("%b %d")))
+        return
+
+    if body == "radarnow":
+        # Guard again on press: the button may be sitting in a chat from before
+        # the pool shrank back under the threshold.
+        if _radar_pool_size(cur) < _RADAR_PULL_MIN_POOL:
+            _answer(cq["id"], _t("radar_pull_none", lang))
+            return
+        _answer(cq["id"])
+        if not _radar_show(cur, conn, tg_id, chat_id, lang, touch_schedule=False):
+            _send(chat_id, _t("radar_pull_none", lang))
+            return
+        u = _user(cur, tg_id)
+        _log(f"📡 Move: radar pull\n• → {u['participant_name'] if u else tg_id}")
+        return
+
+    if body.startswith("rblock:"):
+        entry_id = int(body[len("rblock:"):])
+        cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
+        owner = cur.fetchone()
+        if not owner:
+            # Entry undone since — nothing to block, and naming nobody keeps radar anonymous.
+            _answer(cq["id"], _t("crew_request_gone", lang))
+            return
+        cur.execute(
+            "INSERT INTO move_radar_block (telegram_user_id, blocked_tg_id) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING",
+            (tg_id, owner["telegram_user_id"]),
+        )
+        conn.commit()
+        # Drop both buttons: cheering a move you just muted makes no sense.
+        _api_call("editMessageReplyMarkup",
+                  {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        _answer(cq["id"])
+        _send(chat_id, _t("radar_blocked", lang))
+        u = _user(cur, tg_id)
+        _log(f"🚫 Move: radar block\n• {u['participant_name'] if u else tg_id} ✗ (anon)")
         return
 
     if body.startswith("radarsend:"):
@@ -1633,58 +1828,11 @@ def process_move_radar(conn) -> None:
         if not _radar_due(u["radar_freq"], u["radar_last_received"]):
             continue
 
-        crew = {n.lower() for n in _crew_names(cur, rid)}
-        cur.execute(
-            "SELECT e.id, e.chat_id, e.message_id, e.text_body, "
-            "       u2.telegram_user_id AS from_id, u2.participant_name "
-            "FROM move_entries e JOIN move_users u2 ON u2.telegram_user_id = e.telegram_user_id "
-            "WHERE e.entry_date >= %s AND u2.radar_send = TRUE AND u2.telegram_user_id <> %s "
-            "ORDER BY random() LIMIT 25",
-            (today - timedelta(days=2), rid),
-        )
-        for cand in cur.fetchall():
-            if (cand["participant_name"] or "").lower() in crew:
-                continue
-            cur.execute(
-                "SELECT 1 FROM move_radar_history WHERE telegram_user_id = %s AND from_tg_id = %s "
-                "AND sent_at > NOW() - make_interval(days => %s)",
-                (rid, cand["from_id"], _RADAR_REPEAT_DAYS),
-            )
-            if cur.fetchone():
-                continue
-
-            lang = _norm_lang(u["language_code"])
-            chat_id = u["chat_id"] or rid
-            kb = _zap_kb(cand["id"], lang=lang)
-            if cand["message_id"]:
-                # The author may have deleted the original — copyMessage then
-                # fails, so move on to another candidate rather than sending a
-                # bare "someone moved" with nothing attached.
-                res = _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb)
-                if not res:
-                    continue
-            else:
-                res = _send(chat_id, cand["text_body"] or "", reply_markup=kb)
-            # Track it so a later undo revokes the radar copy too.
-            if res and res.get("message_id"):
-                cur.execute(
-                    "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
-                    "VALUES (%s, %s, %s, %s)",
-                    (cand["id"], rid, chat_id, res["message_id"]),
-                )
-            _send(chat_id, _t("radar_received", lang))
-            cur.execute(
-                "INSERT INTO move_radar_history (telegram_user_id, from_tg_id) VALUES (%s, %s)",
-                (rid, cand["from_id"]),
-            )
-            cur.execute(
-                "UPDATE move_users SET radar_last_received = NOW() WHERE telegram_user_id = %s",
-                (rid,),
-            )
-            conn.commit()
+        lang = _norm_lang(u["language_code"])
+        cand = _radar_show(cur, conn, rid, u["chat_id"] or rid, lang)
+        if cand:
             _log(f"📡 Move: radar\n• {cand['participant_name']} → {u['participant_name']}")
             sent_any += 1
-            break
     conn.commit()
     _log(f"📡 Move: radar pass\n• candidates: {len(users)} · sent: {sent_any}")
 

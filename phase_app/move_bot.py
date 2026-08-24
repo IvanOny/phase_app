@@ -33,7 +33,7 @@ _LOG_CHAT_ID = os.environ.get("MOVE_LOG_CHAT_ID", "") or os.environ.get("LOG_CHA
 
 _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
-_UNDO_WINDOW_SECONDS = 5              # how long a move can still be taken back
+_UNDO_WINDOW_SECONDS = 10             # how long a move can still be taken back
 _RADAR_REPEAT_DAYS = 7                # same stranger can't reappear within a week
 _MILESTONES = (7, 14, 30, 50, 100, 200, 365)
 _MEDIA_KEYS = ("video_note", "video", "photo", "animation")
@@ -315,6 +315,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "💬 Added under your move — your crew can see it.",
         "uk": "💬 Додано під ваш рух — ваше коло це бачить.",
         "de": "💬 Unter deiner Bewegung ergänzt — deine Crew sieht es.",
+    },
+    "comment_saved_late": {
+        "en": "💬 Saved with today's move. Your crew isn't notified again this late.",
+        "uk": "💬 Збережено до сьогоднішнього руху. Ваше коло вже не сповіщаємо.",
+        "de": "💬 Bei der heutigen Bewegung gespeichert. Deine Crew wird jetzt nicht mehr benachrichtigt.",
     },
     "comment_saved_alone": {
         "en": "💬 Saved with today's move. Nobody sees it yet — add someone with 🤝 Move with.",
@@ -817,14 +822,21 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     cur.execute("UPDATE move_entries SET comment = %s WHERE id = %s", (merged, e["id"]))
     # Deliberately NOT clearing the state: the invitation stays open for its full
     # 10 minutes so you can add several lines, instead of only ever one.
-    # Reply under the move itself, not the header or an earlier comment.
-    cur.execute(
-        "SELECT recipient_tg_id, chat_id, message_id FROM move_forwards "
-        "WHERE entry_id = %s AND kind = 'move'",
-        (e["id"],),
-    )
+    # Only a comment on a still-fresh move goes out. Pinging the crew about a
+    # move they saw hours ago — e.g. after a rejected second bubble — is noise;
+    # the note is kept on the entry either way.
+    fresh = age <= _COMMENT_WINDOW_MINUTES
+    targets = []
+    if fresh:
+        cur.execute(
+            "SELECT recipient_tg_id, chat_id, message_id FROM move_forwards "
+            "WHERE entry_id = %s AND kind = 'move'",
+            (e["id"],),
+        )
+        targets = cur.fetchall()
+
     delivered = 0
-    for f in cur.fetchall():
+    for f in targets:
         res = _send(f["chat_id"], f"💬 {text}", reply_to=f["message_id"])
         # Track the reply too, so undo takes the comment with it.
         if res and res.get("message_id"):
@@ -837,7 +849,13 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     conn.commit()
     # Say where it went — "added" alone invites the question "added where?"
     lang = _lang(cur, tg_id)
-    _send(chat_id, _t("comment_added" if delivered else "comment_saved_alone", lang))
+    if delivered:
+        key = "comment_added"
+    elif fresh:
+        key = "comment_saved_alone"      # nobody in the crew yet
+    else:
+        key = "comment_saved_late"       # kept, but the crew isn't re-pinged
+    _send(chat_id, _t(key, lang))
     u = _user(cur, tg_id)
     _log(f"💬 Move: comment\n👤 {u['participant_name'] if u else tg_id}: {text}"
          f"\n📤 → {delivered}")

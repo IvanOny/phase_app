@@ -87,12 +87,17 @@ def move_bot():
     return jsonify({"ok": True}), 200
 
 
-def _run_daily_jobs(conn) -> None:
+def _run_daily_jobs(conn) -> dict:
     """Every scheduled job for every bot, in one place.
 
     Vercel Hobby caps the number of cron jobs, so all three products share a
     single daily trigger (/api/cron/move, 06:00 UTC = 08:00 Europe/Berlin).
     Each job carries its own cron_log dedup guard, so re-running is harmless.
+
+    Jobs are isolated: one failing must not stop the rest. They used to run
+    bare and in sequence, so an exception in an early job silently skipped
+    everything after it. A failed statement also leaves Postgres in an aborted
+    transaction, so we roll back before continuing or every later job dies too.
     """
     from phase_app.bot import (
         process_radar_candidates, send_daily_report, check_milestones, send_monthly_summaries,
@@ -101,17 +106,38 @@ def _run_daily_jobs(conn) -> None:
     from phase_app.move_bot import (
         send_move_zap_reports, process_move_radar, send_move_monthly_summaries,
     )
-    # Burpee
-    process_radar_candidates(conn)
-    send_daily_report(conn)
-    check_milestones(conn)
-    send_monthly_summaries(conn)
-    # Movement Snacks
-    send_exercise_overview(conn)
-    # Move
-    send_move_zap_reports(conn)
-    process_move_radar(conn)
-    send_move_monthly_summaries(conn)
+    import traceback
+
+    jobs = [
+        ("burpee_radar", process_radar_candidates),
+        ("burpee_report", send_daily_report),
+        ("burpee_milestones", check_milestones),
+        ("burpee_monthly", send_monthly_summaries),
+        ("snacks_overview", send_exercise_overview),
+        ("move_zaps", send_move_zap_reports),
+        ("move_radar", process_move_radar),
+        ("move_monthly", send_move_monthly_summaries),
+    ]
+    failed = []
+    for name, fn in jobs:
+        try:
+            fn(conn)
+        except Exception:
+            failed.append(name)
+            traceback.print_exc()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    if failed:
+        # Surface it in the log channel — a silently skipped job is how the Move
+        # zap report went missing while the burpee report arrived fine.
+        try:
+            from phase_app.bot import _log
+            _log("⚠️ Cron: job(s) failed\n• " + ", ".join(failed))
+        except Exception:
+            pass
+    return {"ok": not failed, "failed": failed}
 
 
 @app.route("/api/cron/move", methods=["GET", "POST"])
@@ -119,11 +145,13 @@ def _run_daily_jobs(conn) -> None:
 def cron_daily():
     import traceback
     try:
-        _run_daily_jobs(_get_api().conn)
+        result = _run_daily_jobs(_get_api().conn)
     except Exception:
         traceback.print_exc()
-        return jsonify({"ok": False}), 500
-    return jsonify({"ok": True}), 200
+        return jsonify({"ok": False, "failed": ["*"]}), 500
+    # 200 even with partial failures — the body names them, and Vercel retrying
+    # the whole batch would just re-skip everything via cron_log anyway.
+    return jsonify(result), 200
 
 
 @app.route("/", defaults={"path": ""}, methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])

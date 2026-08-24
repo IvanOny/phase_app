@@ -325,7 +325,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     "logged": {"en": "✓ Move logged{streak}", "uk": "✓ Рух записано{streak}", "de": "✓ Bewegung erfasst{streak}"},
     "logged_shared": {"en": "✓ Move logged{streak} → shared with {names}", "uk": "✓ Рух записано{streak} → надіслано: {names}", "de": "✓ Bewegung erfasst{streak} → geteilt mit {names}"},
     "streak_suffix": {"en": " · 🔥 {days}-day streak", "uk": " · 🔥 серія {days} дн.", "de": " · 🔥 {days}-Tage-Serie"},
-    "already_logged": {"en": "You've already moved today ✓ — send a comment if you want to add something.", "uk": "Ви вже рухались сьогодні ✓ — надішліть коментар, якщо хочете щось додати.", "de": "Du hast dich heute schon bewegt ✓ — schick einen Kommentar, wenn du etwas ergänzen willst."},
+    "already_logged": {
+        "en": "You've already moved today ✓ — only one move a day can be recorded.",
+        "uk": "Ви вже рухались сьогодні ✓ — Ви можете записати лише один рух дня.",
+        "de": "Du hast dich heute schon bewegt ✓ — pro Tag lässt sich nur eine Bewegung erfassen.",
+    },
     "comment_added": {
         "en": "💬 Added under your move — your crew can see it.",
         "uk": "💬 Додано під ваш рух — ваше коло це бачить.",
@@ -771,10 +775,9 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         (tg_id, today),
     )
     if cur.fetchone():
-        # We're inviting a comment here, so open the window — otherwise the
-        # prompt promises something _attach_comment would reject.
-        _set_state(cur, tg_id, "await_comment")
-        conn.commit()
+        # Deliberately no comment invitation here: the move it would attach to
+        # is hours old, so the note goes nowhere useful and the crew shouldn't
+        # be re-pinged. Comments belong to a move you *just* logged.
         _send(chat_id, _t("already_logged", lang))
         _log(f"🔁 Move: second attempt\n👤 {user['participant_name']}")
         return

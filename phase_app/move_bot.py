@@ -36,6 +36,17 @@ _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its com
 _UNDO_WINDOW_SECONDS = 10             # how long a move can still be taken back
 _RADAR_REPEAT_DAYS = 7                # same stranger can't reappear within a week
 _MILESTONES = (7, 14, 30, 50, 100, 200, 365)
+_INVITE_PREFIX = "invitation_of_"
+_INVITE_SLUG_MAX = 24                 # 14 + 24 + 1 + 10 keeps us under Telegram's 64
+# Enough Ukrainian/Russian and German to make a readable slug; the rest is dropped.
+_TRANSLIT = {
+    "а": "a", "б": "b", "в": "v", "г": "h", "ґ": "g", "д": "d", "е": "e", "є": "ie",
+    "ж": "zh", "з": "z", "и": "y", "і": "i", "ї": "i", "й": "i", "к": "k", "л": "l",
+    "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch", "ь": "",
+    "ю": "iu", "я": "ia", "ы": "y", "э": "e", "ё": "e", "ъ": "",
+    "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
+}
 _MEDIA_KEYS = ("video_note", "video", "photo", "animation")
 
 
@@ -902,17 +913,12 @@ def _check_milestone(cur, conn, user, streak: int) -> None:
 # ── commands ─────────────────────────────────────────────────────────────────
 
 def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = "") -> None:
-    """`/start`, optionally with an `inv_<id>` deep-link payload.
+    """`/start`, optionally with an `invitation_of_<name>_<id>` deep-link payload.
 
     Already registered? We don't re-register — but we still honour the invite and
     connect the two, which is the useful thing to do with a tapped link.
     """
-    inviter_id = None
-    if payload.startswith("inv_"):
-        try:
-            inviter_id = int(payload[4:])
-        except ValueError:
-            inviter_id = None
+    inviter_id = _inviter_from_payload(payload)
 
     u = _user(cur, tg_id)
     if u and u["participant_name"]:
@@ -934,11 +940,56 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
     _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
 
 
-def _invite_line(tg_id: int, lang: str) -> str:
-    return _t("invite_line", lang, link=f"https://t.me/{_bot_username()}?start=inv_{tg_id}")
+def _slug(name: str) -> str:
+    """Name → deep-link-safe slug. Telegram allows only A-Za-z0-9_- in a payload."""
+    out = []
+    for ch in (name or "").strip():
+        low = ch.lower()
+        if ch.isascii() and ch.isalnum():
+            out.append(ch)
+        elif low in _TRANSLIT:
+            t = _TRANSLIT[low]
+            out.append(t.capitalize() if t and ch != low else t)
+        elif ch in " -_":
+            out.append("_")
+    slug = "_".join(part for part in "".join(out).split("_") if part)
+    return slug[:_INVITE_SLUG_MAX].strip("_")
 
 
-def _cmd_info(tg_id: int, chat_id: int, lang: str) -> None:
+def _invite_link(tg_id: int, name: str | None = None) -> str:
+    """`invitation_of_Iv_Zhaba_<id>` — or plain `inv_<id>` if the name slugs to nothing."""
+    slug = _slug(name or "")
+    payload = f"{_INVITE_PREFIX}{slug}_{tg_id}" if slug else f"inv_{tg_id}"
+    return f"https://t.me/{_bot_username()}?start={payload}"
+
+
+def _inviter_from_payload(payload: str) -> int | None:
+    """Trailing digits are the inviter id; whatever precedes them is decoration.
+
+    Handles both the old `inv_<id>` links already sitting in people's chats and
+    the new `invitation_of_<name>_<id>` ones. The name is never trusted — it is
+    cosmetic, and spoofable by anyone who can type a URL, so the greeting still
+    reads the real name out of the database.
+    """
+    payload = payload.strip()
+    digits = ""
+    for ch in reversed(payload):
+        if not ch.isdigit():
+            break
+        digits = ch + digits
+    if not digits or digits == payload:
+        return None                       # no prefix at all — not one of our links
+    try:
+        return int(digits)
+    except ValueError:
+        return None
+
+
+def _invite_line(tg_id: int, lang: str, name: str | None = None) -> str:
+    return _t("invite_line", lang, link=_invite_link(tg_id, name))
+
+
+def _cmd_info(tg_id: int, chat_id: int, lang: str, name: str | None = None) -> None:
     body = _t("info_body", lang,
               tagline=_t("tagline", lang),
               mins=_COMMENT_WINDOW_MINUTES,
@@ -946,7 +997,7 @@ def _cmd_info(tg_id: int, chat_id: int, lang: str) -> None:
               undo=_UNDO_WINDOW_SECONDS,
               miles="/".join(str(m) for m in _MILESTONES))
     # Inline button, not the reply keyboard — the persistent one stays put anyway.
-    _send(chat_id, f"{body}\n\n{_invite_line(tg_id, lang)}",
+    _send(chat_id, f"{body}\n\n{_invite_line(tg_id, lang, name)}",
           reply_markup={"inline_keyboard": [[
               {"text": _t("btn_language", lang), "callback_data": "mv:langmenu"}
           ]]})
@@ -955,7 +1006,9 @@ def _cmd_info(tg_id: int, chat_id: int, lang: str) -> None:
 def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     names = [n for n in _crew_names(cur, tg_id) if n != "__all__"]
     crew = ", ".join(names) or _t("crew_nobody", lang)
-    _send(chat_id, f"{_t('crew_menu', lang, crew=crew)}\n\n{_invite_line(tg_id, lang)}")
+    me = _user(cur, tg_id)
+    _send(chat_id, f"{_t('crew_menu', lang, crew=crew)}\n\n"
+                   f"{_invite_line(tg_id, lang, me['participant_name'] if me else None)}")
 
 
 def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str) -> None:
@@ -1023,7 +1076,8 @@ def _connect(cur, conn, a_id: int, b_id: int) -> str:
 
 
 def _cmd_invite(cur, tg_id: int, chat_id: int, lang: str) -> None:
-    link = f"https://t.me/{_bot_username()}?start=inv_{tg_id}"
+    me = _user(cur, tg_id)
+    link = _invite_link(tg_id, me["participant_name"] if me else None)
     _send(chat_id, _t("invite_text", lang, link=link))
 
 
@@ -1239,7 +1293,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         _send(chat_id, _t("register_first", lang))
         return
     if word in ("info", "help"):
-        _cmd_info(tg_id, chat_id, lang)
+        _cmd_info(tg_id, chat_id, lang, u["participant_name"])
         return
     if word == "rename":
         _set_state(cur, tg_id, "await_rename")

@@ -70,7 +70,18 @@ def main(argv: list[str]) -> int:
         sys.exit("ERROR: DATABASE_URL is not set.\n"
                  "  PowerShell:  $env:DATABASE_URL = '<supabase connection string>'")
 
-    conn = get_connection()
+    try:
+        conn = get_connection()
+    except Exception as exc:                             # noqa: BLE001 — connection advice
+        hint = ""
+        if "could not translate host name" in str(exc) and ".supabase.co" in str(exc):
+            # db.<ref>.supabase.co is IPv6-only. Vercel has IPv6 so production is
+            # fine; most home networks don't, and the failure surfaces as a DNS
+            # error that reads like a typo.
+            hint = ("\n  That host is IPv6-only and this network has no IPv6.\n"
+                    "  Use the Session pooler string instead (Supabase -> Connect):\n"
+                    "    postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres")
+        sys.exit(f"ERROR: could not connect:\n  {exc}{hint}")
     try:
         for p in paths:
             with open(p, encoding="utf-8") as fh:

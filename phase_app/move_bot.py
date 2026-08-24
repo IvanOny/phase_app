@@ -121,6 +121,21 @@ def _t(key: str, lang: str = "en", **fmt) -> str:
     return template.format(**fmt) if fmt else template
 
 
+def _plural_form(n: int, lang: str) -> str:
+    """Which plural form a numeral takes: 'one' / 'few' / 'many'.
+
+    Ukrainian needs three (1 блискавка, 2-4 блискавки, 5+ блискавок), with the
+    usual 11-14 exception. English and German only distinguish one vs many.
+    """
+    if lang != "uk":
+        return "one" if n == 1 else "many"
+    if n % 10 == 1 and n % 100 != 11:
+        return "one"
+    if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        return "few"
+    return "many"
+
+
 def _tgen(key: str, lang: str, gender: str | None, **fmt) -> str:
     """Like _t, but prefers a gendered variant where one exists.
 
@@ -424,7 +439,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     "pause_resumed": {"en": "▶️ Resumed.", "uk": "▶️ Відновлено.", "de": "▶️ Fortgesetzt."},
     # ── reports ──
     "zap_report": {"en": "⚡ Yesterday your move got {n} {word}.", "uk": "⚡ Вчора ваш рух отримав {n} {word}.", "de": "⚡ Gestern hat deine Bewegung {n} {word} bekommen."},
-    "zap_word_one": {"en": "lightning", "uk": "блискавку", "de": "Blitz"},
+    "zap_word_one":  {"en": "lightning", "uk": "блискавку", "de": "Blitz"},
+    "zap_word_few":  {"en": "lightnings", "uk": "блискавки", "de": "Blitze"},
     "zap_word_many": {"en": "lightnings", "uk": "блискавок", "de": "Blitze"},
     "milestone": {"en": "🎉 {name}, {days} days in a row! Keep moving 💪", "uk": "🎉 {name}, {days} днів поспіль! Так тримати 💪", "de": "🎉 {name}, {days} Tage in Folge! Weiter so 💪"},
     "summary_header": {"en": "📅 {month} — {name}", "uk": "📅 {month} — {name}", "de": "📅 {month} — {name}"},
@@ -1511,14 +1527,19 @@ def send_move_zap_reports(conn) -> None:
         "WHERE e.entry_date = %s",
         (yesterday,),
     )
-    for r in cur.fetchall():
+    rows = cur.fetchall()
+    notified = 0
+    for r in rows:
         n = r["zaps"] or 0
         if not n:
-            continue
+            continue                      # no ⚡ — better silence than "you got 0"
         lang = _norm_lang(r["language_code"])
-        word = _t("zap_word_one" if n == 1 else "zap_word_many", lang)
+        word = _t(f"zap_word_{_plural_form(n, lang)}", lang)
         _send(r["chat_id"] or r["telegram_user_id"], _t("zap_report", lang, n=n, word=word))
+        notified += 1
     conn.commit()
+    # Always log, so a missing report can be told apart from a job that never ran.
+    _log(f"⚡ Move: zap report ({yesterday})\n• moves: {len(rows)} · notified: {notified}")
 
 
 def _radar_due(freq: str | None, last) -> bool:
@@ -1545,7 +1566,9 @@ def process_move_radar(conn) -> None:
         return
 
     cur.execute("SELECT * FROM move_users WHERE radar_freq IS NOT NULL AND radar_freq <> 'never'")
-    for u in cur.fetchall():
+    users = cur.fetchall()
+    sent_any = 0
+    for u in users:
         rid = u["telegram_user_id"]
         now = datetime.now(timezone.utc)
         if u["paused_until"] and u["paused_until"] > now:
@@ -1603,8 +1626,10 @@ def process_move_radar(conn) -> None:
             )
             conn.commit()
             _log(f"📡 Move: radar\n• {cand['participant_name']} → {u['participant_name']}")
+            sent_any += 1
             break
     conn.commit()
+    _log(f"📡 Move: radar pass\n• candidates: {len(users)} · sent: {sent_any}")
 
 
 def send_move_monthly_summaries(conn) -> None:

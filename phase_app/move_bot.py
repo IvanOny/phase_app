@@ -34,7 +34,10 @@ _LOG_CHAT_ID = os.environ.get("MOVE_LOG_CHAT_ID", "") or os.environ.get("LOG_CHA
 _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
 _UNDO_WINDOW_SECONDS = 10             # how long a move can still be taken back
-_RADAR_REPEAT_DAYS = 7                # same stranger can't reappear within a week
+# Same stranger can't reappear within a week. Env-tunable: while the pool is
+# small a hard 7 days runs everyone dry, so it can be dialled down and raised
+# again as the pool grows, without a code change.
+_RADAR_REPEAT_DAYS = int(os.environ.get("POOL_COOLDOWN_DAYS", "7"))
 _RADAR_PULL_MIN_POOL = 20             # "show me someone now" unlocks at this pool size
 _RADAR_FRESH_DAYS = 2                 # how far back radar looks for a move to show
 _MILESTONES = (7, 14, 30, 50, 100, 200, 365)
@@ -476,6 +479,17 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "radar_block_btn": {"en": "🚫 Not this person again", "uk": "🚫 Більше не показувати цю людину",
                         "de": "🚫 Diese Person nicht mehr"},
+    "radar_report_btn": {"en": "⚠️ Report", "uk": "⚠️ Поскаржитись", "de": "⚠️ Melden"},
+    "radar_reported": {
+        "en": "⚠️ Reported — a human will look at it. You won't see this person again either.",
+        "uk": "⚠️ Скаргу надіслано — її перегляне людина. Цю людину ви більше не побачите.",
+        "de": "⚠️ Gemeldet — ein Mensch schaut es sich an. Diese Person siehst du auch nicht mehr.",
+    },
+    "radar_reported_already": {
+        "en": "⚠️ You've already reported this one.",
+        "uk": "⚠️ Ви вже поскаржились на це.",
+        "de": "⚠️ Das hast du bereits gemeldet.",
+    },
     "radar_blocked": {
         "en": "🚫 Done — this person won't turn up in your radar again.",
         "uk": "🚫 Готово — ця людина більше не з'явиться у вашому радарі.",
@@ -738,8 +752,11 @@ def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = F
     rows = [[{"text": _t("zap_btn_sent" if sent else "zap_btn", lang),
               "callback_data": f"mv:zap:{entry_id}"}]]
     if radar:
-        rows.append([{"text": _t("radar_block_btn", lang),
-                      "callback_data": f"mv:rblock:{entry_id}"}])
+        # Block is "stop showing me this"; report is "someone should look at this".
+        rows.append([
+            {"text": _t("radar_block_btn", lang), "callback_data": f"mv:rblock:{entry_id}"},
+            {"text": _t("radar_report_btn", lang), "callback_data": f"mv:rreport:{entry_id}"},
+        ])
     return {"inline_keyboard": rows}
 
 
@@ -1712,6 +1729,53 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _send(chat_id, _t("radar_blocked", lang))
         u = _user(cur, tg_id)
         _log(f"🚫 Move: radar block\n• {u['participant_name'] if u else tg_id} ✗ (anon)")
+        return
+
+    if body.startswith("rreport:"):
+        entry_id = int(body[len("rreport:"):])
+        cur.execute(
+            "SELECT e.telegram_user_id, e.media_type, e.entry_date, u.participant_name "
+            "FROM move_entries e JOIN move_users u ON u.telegram_user_id = e.telegram_user_id "
+            "WHERE e.id = %s",
+            (entry_id,),
+        )
+        entry = cur.fetchone()
+        if not entry:
+            _answer(cq["id"], _t("crew_request_gone", lang))
+            return
+        cur.execute(
+            "INSERT INTO move_reports (entry_id, reporter_tg_id) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING RETURNING entry_id",
+            (entry_id, tg_id),
+        )
+        fresh = cur.fetchone() is not None
+        if not fresh:
+            conn.commit()
+            _answer(cq["id"], _t("radar_reported_already", lang))
+            return
+        # Reporting implies blocking: nobody who flags a move wants to be shown
+        # that person again while a human gets around to it.
+        cur.execute(
+            "INSERT INTO move_radar_block (telegram_user_id, blocked_tg_id) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING",
+            (tg_id, entry["telegram_user_id"]),
+        )
+        conn.commit()
+        _api_call("editMessageReplyMarkup",
+                  {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        _answer(cq["id"])
+        _send(chat_id, _t("radar_reported", lang))
+        me = _user(cur, tg_id)
+        cur.execute("SELECT COUNT(*) AS n FROM move_reports WHERE entry_id = %s", (entry_id,))
+        total = cur.fetchone()["n"] or 0
+        # Named on purpose: the log channel is the moderators' view, and they
+        # can't act on "someone reported someone". Radar stays anonymous to the
+        # viewer — this is the one place identity is spelled out.
+        _log(f"⚠️ Move: REPORT\n"
+             f"• entry #{entry_id} ({entry['media_type'] or 'text'}, {entry['entry_date']})\n"
+             f"• author: {entry['participant_name']} (id {entry['telegram_user_id']})\n"
+             f"• reported by: {me['participant_name'] if me else tg_id} (id {tg_id})\n"
+             f"• reports on this entry: {total}")
         return
 
     if body.startswith("radarsend:"):

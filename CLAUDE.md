@@ -103,3 +103,16 @@ Backend dev server: `http://localhost:5001`
 
 `DATABASE_URL` — Supabase connection string
 
+`MOVE_BOT_TOKEN` — Move bot token
+`MOVE_LOG_CHAT_ID` / `LOG_CHAT_ID` — where Move's activity and ⚠️ reports are posted
+`POOL_COOLDOWN_DAYS` — days before radar may show you the same stranger again (default 7)
+
+## Running a migration
+
+```bash
+python scripts/run_migration.py 042
+```
+
+Takes one or more files — a path, a filename, or just the number (`042`) — each in its
+own transaction. `--dry-run` prints the SQL instead of applying it. There is no
+migration ledger — migrations are written to be re-runnable.

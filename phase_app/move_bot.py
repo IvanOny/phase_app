@@ -33,6 +33,7 @@ _LOG_CHAT_ID = os.environ.get("MOVE_LOG_CHAT_ID", "") or os.environ.get("LOG_CHA
 
 _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
+_UNDO_WINDOW_SECONDS = 5              # how long a move can still be taken back
 _RADAR_REPEAT_DAYS = 7                # same stranger can't reappear within a week
 _MILESTONES = (7, 14, 30, 50, 100, 200, 365)
 _MEDIA_KEYS = ("video_note", "video", "photo", "animation")
@@ -170,8 +171,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "as a reply right under your move\n"
               "• No camera? Use /log <text> instead\n"
               "• One move per day — the first one counts\n"
-              "• Changed your mind? /undo (or the 🗑 button) takes it back and deletes it "
-              "from your crew's chats too\n\n"
+              "• Changed your mind? The 🗑 button (or /undo) takes it back within {undo}s "
+              "and deletes it from your crew's chats too — after that it stands\n\n"
               "⚡ LIGHTNINGS\n"
               "• Tap ⚡ under someone's move to cheer them on — one per move\n"
               "• The counter on the button updates for everyone\n"
@@ -209,8 +210,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "відповіддю просто під вашим рухом\n"
               "• Немає камери? Скористайтесь /log <текст>\n"
               "• Один рух на день — зараховується перший\n"
-              "• Передумали? /undo (або кнопка 🗑) забирає рух назад і видаляє його "
-              "з чатів вашого кола\n\n"
+              "• Передумали? Кнопка 🗑 (або /undo) забирає рух назад протягом {undo} с "
+              "і видаляє його з чатів вашого кола — далі він лишається\n\n"
               "⚡ БЛИСКАВКИ\n"
               "• Натисніть ⚡ під чиїмось рухом, щоб підтримати — одна на рух\n"
               "• Лічильник на кнопці оновлюється для всіх\n"
@@ -248,8 +249,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "als Antwort direkt unter deiner Bewegung\n"
               "• Keine Kamera? Nutze /log <Text>\n"
               "• Eine Bewegung pro Tag — die erste zählt\n"
-              "• Doch anders? /undo (oder der 🗑-Button) nimmt sie zurück und löscht sie "
-              "auch aus den Chats deiner Crew\n\n"
+              "• Doch anders? Der 🗑-Button (oder /undo) nimmt sie innerhalb von {undo}s "
+              "zurück und löscht sie auch aus den Chats deiner Crew — danach bleibt sie\n\n"
               "⚡ BLITZE\n"
               "• Tippe ⚡ unter einer Bewegung, um anzufeuern — einer pro Bewegung\n"
               "• Der Zähler auf dem Button aktualisiert sich für alle\n"
@@ -315,6 +316,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "🗑 Move removed — deleted from your crew's chats too.",
         "uk": "🗑 Рух видалено — прибрано і з чатів вашого кола.",
         "de": "🗑 Bewegung entfernt — auch aus den Chats deiner Crew gelöscht.",
+    },
+    "undo_too_late": {
+        "en": "Too late — a move can only be taken back within {secs} seconds.",
+        "uk": "Запізно — рух можна скасувати лише протягом {secs} секунд.",
+        "de": "Zu spät — eine Bewegung lässt sich nur innerhalb von {secs} Sekunden zurücknehmen.",
     },
     "undo_none": {
         "en": "Nothing to undo — you haven't logged a move today.",
@@ -614,22 +620,30 @@ def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en") -> dict:
     ]]}
 
 
-def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
+def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None = None) -> bool:
     """Take today's move back — delete every copy the bot placed in other chats,
     then drop the entry. Telegram lets a bot delete its own messages for 48h,
     which covers a same-day move; anything it can't delete is skipped silently.
+
+    Only within _UNDO_WINDOW_SECONDS of logging: a move your crew has already
+    seen and cheered shouldn't be able to vanish. Returns False if refused.
 
     Needs an explicit trigger: Telegram never tells a bot that the user deleted
     their original message in a private chat.
     """
     cur.execute(
-        "SELECT id FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",
+        "SELECT id, created_at FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",
         (tg_id, date.today()),
     )
     e = cur.fetchone()
-    if not e:
+    # entry_id guards a stale button from an earlier day revoking today's move.
+    if not e or (entry_id is not None and e["id"] != entry_id):
         _send(chat_id, _t("undo_none", lang))
-        return
+        return False
+    age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds()
+    if age > _UNDO_WINDOW_SECONDS:
+        _send(chat_id, _t("undo_too_late", lang, secs=_UNDO_WINDOW_SECONDS))
+        return False
     cur.execute("SELECT chat_id, message_id FROM move_forwards WHERE entry_id = %s", (e["id"],))
     for f in cur.fetchall():
         _api_call("deleteMessage", {"chat_id": f["chat_id"], "message_id": f["message_id"]})
@@ -639,6 +653,7 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     _send(chat_id, _t("undo_done", lang), reply_markup=_main_kb(lang))
     u = _user(cur, tg_id)
     _log(f"🗑 Move: revoked\n• {u['participant_name'] if u else tg_id}")
+    return True
 
 
 def _mark_zapped(cur, entry_id: int, reactor_tg_id: int) -> None:
@@ -729,7 +744,7 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
     # Inline undo — the persistent reply keyboard stays regardless.
     undo_kb = {"inline_keyboard": [[
-        {"text": _t("btn_undo", lang), "callback_data": "mv:undo"}
+        {"text": _t("btn_undo", lang), "callback_data": f"mv:undo:{entry_id}"}
     ]]}
     if names:
         _send(chat_id, _t("logged_shared", lang, streak=suffix, names=", ".join(names)),
@@ -856,6 +871,7 @@ def _cmd_info(tg_id: int, chat_id: int, lang: str) -> None:
               tagline=_t("tagline", lang),
               mins=_COMMENT_WINDOW_MINUTES,
               rdays=_RADAR_REPEAT_DAYS,
+              undo=_UNDO_WINDOW_SECONDS,
               miles="/".join(str(m) for m in _MILESTONES))
     # Inline button, not the reply keyboard — the persistent one stays put anyway.
     _send(chat_id, f"{body}\n\n{_invite_line(tg_id, lang)}",
@@ -1242,10 +1258,18 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                  f" → {to['participant_name'] if to else '?'}")
         return
 
-    if body == "undo":
+    if body.startswith("undo"):
+        # Strip the button either way — once it's been pressed it's spent, and a
+        # lingering Undo that no longer works is worse than none.
         _api_call("editMessageReplyMarkup",
                   {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        _revoke(cur, conn, tg_id, chat_id, lang)
+        eid = None
+        if ":" in body:
+            try:
+                eid = int(body.split(":", 1)[1])
+            except ValueError:
+                eid = None
+        _revoke(cur, conn, tg_id, chat_id, lang, entry_id=eid)
         return
 
     if body == "langmenu":

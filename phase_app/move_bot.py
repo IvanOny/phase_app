@@ -121,6 +121,20 @@ def _t(key: str, lang: str = "en", **fmt) -> str:
     return template.format(**fmt) if fmt else template
 
 
+def _tgen(key: str, lang: str, gender: str | None, **fmt) -> str:
+    """Like _t, but prefers a gendered variant where one exists.
+
+    Ukrainian past-tense verbs agree with the subject ("рухався" / "рухалася"),
+    so describing a woman with the masculine form is simply wrong. Falls back to
+    the base key, which is phrased to work without knowing the gender.
+    """
+    if gender in ("m", "f"):
+        gkey = f"{key}_{gender}"
+        if gkey in _STRINGS and _STRINGS[gkey].get(lang):
+            return _t(gkey, lang, **fmt)
+    return _t(key, lang, **fmt)
+
+
 _STRINGS: dict[str, dict[str, str]] = {
     # ── keyboard ──
     "btn_move":  {"en": "🤝 Move with", "uk": "🤝 Рухатись з", "de": "🤝 Bewegen mit"},
@@ -310,7 +324,10 @@ _STRINGS: dict[str, dict[str, str]] = {
               "füge jemanden über 🤝 Bewegen mit hinzu.",
     },
     "log_usage": {"en": "Usage: /log <what you did>", "uk": "Використання: /log <що ви зробили>", "de": "Verwendung: /log <was du gemacht hast>"},
-    "crew_move": {"en": "{name} moved today", "uk": "{name} рухався сьогодні", "de": "{name} hat sich heute bewegt"},
+    # Base form is deliberately genderless in Ukrainian, for users we haven't asked.
+    "crew_move":   {"en": "{name} moved today", "uk": "{name} — рух сьогодні", "de": "{name} hat sich heute bewegt"},
+    "crew_move_m": {"uk": "{name} рухався сьогодні"},
+    "crew_move_f": {"uk": "{name} рухалася сьогодні"},
     "btn_undo": {"en": "🗑 Undo", "uk": "🗑 Скасувати", "de": "🗑 Rückgängig"},
     "undo_done": {
         "en": "🗑 Move removed — deleted from your crew's chats too.",
@@ -344,10 +361,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     "crew_added_you": {
         "en": "🤝 {name} added you to their crew — you'll see their moves.\n\n"
               "Add {name} back so they see yours?",
-        "uk": "🤝 {name} додав(-ла) вас до свого кола — ви бачитимете їхні рухи.\n\n"
+        "uk": "🤝 {name} — тепер ви в його колі, тож бачитимете рухи.\n\n"
               "Додати {name} у відповідь, щоб вони бачили ваші?",
         "de": "🤝 {name} hat dich zur Crew hinzugefügt — du siehst ihre Bewegungen.\n\n"
               "{name} zurück hinzufügen, damit sie deine sehen?",
+    },
+    "crew_added_you_m": {
+        "uk": "🤝 {name} додав вас до свого кола — ви бачитимете його рухи.\n\n"
+              "Додати {name} у відповідь, щоб він бачив ваші?",
+    },
+    "crew_added_you_f": {
+        "uk": "🤝 {name} додала вас до свого кола — ви бачитимете її рухи.\n\n"
+              "Додати {name} у відповідь, щоб вона бачила ваші?",
     },
     "crew_added_back": {
         "en": "🤝 Added {name} — you're now moving together.",
@@ -412,6 +437,11 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Wenn sie ihn antippen, landet ihr automatisch in der Crew des anderen — "
               "egal ob neu hier oder schon registriert.",
     },
+    # Only asked of Ukrainian speakers — the other two languages don't inflect here.
+    "ask_gender": {"uk": "Як про вас писати?", "en": "How should we refer to you?",
+                   "de": "Wie sollen wir über dich schreiben?"},
+    "gender_m": {"uk": "Він", "en": "He", "de": "Er"},
+    "gender_f": {"uk": "Вона", "en": "She", "de": "Sie"},
     "btn_language": {"en": "🌍 Language", "uk": "🌍 Мова", "de": "🌍 Sprache"},
     "lang_changed": {
         "en": "🌍 Language set to English.",
@@ -659,9 +689,11 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
 def _mark_zapped(cur, entry_id: int, reactor_tg_id: int) -> None:
     """Tick the button on the reactor's own copy only — each recipient has their
     own forwarded message, so nobody else's view changes."""
+    # kind='move' only — the header and comment replies carry no ⚡ button, and
+    # putting one on them would show a second "sent ✓" under the comment.
     cur.execute(
         "SELECT chat_id, message_id FROM move_forwards "
-        "WHERE entry_id = %s AND recipient_tg_id = %s",
+        "WHERE entry_id = %s AND recipient_tg_id = %s AND kind = 'move'",
         (entry_id, reactor_tg_id),
     )
     for f in cur.fetchall():
@@ -677,31 +709,32 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
     """Copy the move to each crew member, remembering where it landed so a late
     comment can be threaded under it. Returns the names it reached."""
     sender = user["participant_name"]
-    lang_of = {}
+    gender = user["gender"] if "gender" in user else None
     names = []
+
+    def track(rid, chat_id, res, kind):
+        if res and res.get("message_id"):
+            cur.execute(
+                "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id, kind) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (entry_id, rid, chat_id, res["message_id"], kind),
+            )
+
     for rid, chat_id, rname in _recipients(cur, user["telegram_user_id"], sender):
         rlang = _lang(cur, rid)
-        lang_of[rid] = rlang
-        header = _t("crew_move", rlang, name=sender)
+        header = _tgen("crew_move", rlang, gender, name=sender)
         if media:
             from_chat, msg_id = media
-            res = _copy(from_chat, msg_id, chat_id, reply_markup=_zap_kb(entry_id, lang=rlang))
-            if res and res.get("message_id"):
-                cur.execute(
-                    "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
-                    "VALUES (%s, %s, %s, %s)",
-                    (entry_id, rid, chat_id, res["message_id"]),
-                )
-            _send(chat_id, header)
+            track(rid, chat_id,
+                  _copy(from_chat, msg_id, chat_id, reply_markup=_zap_kb(entry_id, lang=rlang)),
+                  "move")
+            # Tracked too, so /undo takes the "X moved today" line with it.
+            track(rid, chat_id, _send(chat_id, header), "header")
         else:
-            res = _send(chat_id, f"{header}\n{text_body or ''}".strip(),
-                        reply_markup=_zap_kb(entry_id, lang=rlang))
-            if res and res.get("message_id"):
-                cur.execute(
-                    "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
-                    "VALUES (%s, %s, %s, %s)",
-                    (entry_id, rid, chat_id, res["message_id"]),
-                )
+            track(rid, chat_id,
+                  _send(chat_id, f"{header}\n{text_body or ''}".strip(),
+                        reply_markup=_zap_kb(entry_id, lang=rlang)),
+                  "move")
         names.append(rname)
     conn.commit()
     return names
@@ -784,8 +817,10 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     cur.execute("UPDATE move_entries SET comment = %s WHERE id = %s", (merged, e["id"]))
     # Deliberately NOT clearing the state: the invitation stays open for its full
     # 10 minutes so you can add several lines, instead of only ever one.
+    # Reply under the move itself, not the header or an earlier comment.
     cur.execute(
-        "SELECT recipient_tg_id, chat_id, message_id FROM move_forwards WHERE entry_id = %s",
+        "SELECT recipient_tg_id, chat_id, message_id FROM move_forwards "
+        "WHERE entry_id = %s AND kind = 'move'",
         (e["id"],),
     )
     delivered = 0
@@ -795,8 +830,8 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
         if res and res.get("message_id"):
             delivered += 1
             cur.execute(
-                "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id) "
-                "VALUES (%s, %s, %s, %s)",
+                "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id, kind) "
+                "VALUES (%s, %s, %s, %s, 'comment')",
                 (e["id"], f["recipient_tg_id"], f["chat_id"], res["message_id"]),
             )
     conn.commit()
@@ -1301,6 +1336,36 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         conn.commit()
         _api_call("editMessageReplyMarkup",
                   {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        # Ukrainian inflects the verb, so we need to know; EN/DE don't.
+        if code == "uk":
+            _set_state(cur, tg_id, f"await_gender:{pending}" if pending else "await_gender")
+            conn.commit()
+            _send(chat_id, _t("ask_gender", code), reply_markup={"inline_keyboard": [[
+                {"text": _t("gender_m", code), "callback_data": "mv:gender:m"},
+                {"text": _t("gender_f", code), "callback_data": "mv:gender:f"},
+            ]]})
+            return
+        _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)))
+        return
+
+    if body.startswith("gender:"):
+        g = body[len("gender:"):]
+        if g not in ("m", "f"):
+            return
+        state = _get_state(cur, tg_id) or ""
+        pending = state.split(":", 1)[1] if ":" in state else None
+        cur.execute("UPDATE move_users SET gender = %s WHERE telegram_user_id = %s", (g, tg_id))
+        u = _user(cur, tg_id)
+        code = _norm_lang(u["language_code"]) if u else "uk"
+        _api_call("editMessageReplyMarkup",
+                  {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        if u and u["participant_name"]:          # changing it later, not onboarding
+            _clear_state(cur, tg_id)
+            conn.commit()
+            _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code))
+            return
+        _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
+        conn.commit()
         _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)))
         return
 
@@ -1317,10 +1382,11 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             if t and me:
                 tlang = _norm_lang(t["language_code"])
                 mine = me["participant_name"]
+                mygen = me["gender"] if "gender" in me else None
                 # Crew is directional, so offer the reciprocal add — otherwise
                 # their moves reach you but yours reach nobody.
                 _send(t["chat_id"] or t["telegram_user_id"],
-                      _t("crew_added_you", tlang, name=mine),
+                      _tgen("crew_added_you", tlang, mygen, name=mine),
                       reply_markup={"inline_keyboard": [[
                           {"text": _t("kb_yes", tlang), "callback_data": f"mv:crew:addback:{mine}"},
                           {"text": _t("kb_no", tlang), "callback_data": "mv:crew:cancel"},

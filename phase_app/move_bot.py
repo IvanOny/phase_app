@@ -579,11 +579,14 @@ _LANG_PROMPT = "🌍 Choose your language\nОберіть мову\nSprache wäh
 
 
 def _kb_lang() -> dict:
-    return {"inline_keyboard": [[
-        {"text": "English", "callback_data": "mv:lang:en"},
-        {"text": "Українська", "callback_data": "mv:lang:uk"},
-        {"text": "Deutsch", "callback_data": "mv:lang:de"},
-    ]]}
+    # One per row: "Українська" is clipped when three share a row, and picking a
+    # language is a one-time action so the extra height costs nothing. No flags —
+    # a flag names a country, not a language.
+    return {"inline_keyboard": [
+        [{"text": "English", "callback_data": "mv:lang:en"}],
+        [{"text": "Українська", "callback_data": "mv:lang:uk"}],
+        [{"text": "Deutsch", "callback_data": "mv:lang:de"}],
+    ]}
 
 
 def _main_kb(lang: str = "en") -> dict:
@@ -759,10 +762,11 @@ def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = F
               "callback_data": f"mv:zap:{entry_id}"}]]
     if radar:
         # Block is "stop showing me this"; report is "someone should look at this".
-        rows.append([
-            {"text": _t("radar_block_btn", lang), "callback_data": f"mv:rblock:{entry_id}"},
-            {"text": _t("radar_report_btn", lang), "callback_data": f"mv:rreport:{entry_id}"},
-        ])
+        # One per row — sharing a row clips the block label, which is a sentence.
+        rows.append([{"text": _t("radar_block_btn", lang),
+                      "callback_data": f"mv:rblock:{entry_id}"}])
+        rows.append([{"text": _t("radar_report_btn", lang),
+                      "callback_data": f"mv:rreport:{entry_id}"}])
     return {"inline_keyboard": rows}
 
 

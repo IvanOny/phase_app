@@ -802,27 +802,6 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     return True
 
 
-def _mark_zapped(cur, entry_id: int, reactor_tg_id: int) -> None:
-    """Tick the button on the reactor's own copy only — each recipient has their
-    own forwarded message, so nobody else's view changes."""
-    # kind='move'/'radar' only — the header and comment replies carry no ⚡ button,
-    # and putting one on them would show a second "sent ✓" under the comment.
-    cur.execute(
-        "SELECT chat_id, message_id, kind FROM move_forwards "
-        "WHERE entry_id = %s AND recipient_tg_id = %s AND kind IN ('move', 'radar')",
-        (entry_id, reactor_tg_id),
-    )
-    lang = _lang(cur, reactor_tg_id)
-    for f in cur.fetchall():
-        # Rebuild rather than patch: a radar copy must keep its block button, or
-        # cheering a stranger would quietly take away the way to stop seeing them.
-        _api_call("editMessageReplyMarkup", {
-            "chat_id": f["chat_id"], "message_id": f["message_id"],
-            "reply_markup": _zap_kb(entry_id, sent=True, lang=lang,
-                                    radar=f["kind"] == "radar"),
-        })
-
-
 # ── logging a move ───────────────────────────────────────────────────────────
 
 def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str | None) -> list[str]:
@@ -1551,8 +1530,18 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         fresh = cur.fetchone() is not None
         conn.commit()
         _answer(cq["id"], _t("zap_sent" if fresh else "zap_already", lang))
+
+        # Tick the message that was actually pressed. We already know which one
+        # it is, so this needs no lookup and works even when move_forwards has no
+        # row for it. Done on every press, not just the first: if an earlier
+        # attempt failed to redraw, a second tap should still fix the button.
+        # Two keyboard rows means a radar copy, whose block/report row must survive.
+        existing = (cq["message"].get("reply_markup") or {}).get("inline_keyboard") or []
+        _api_call("editMessageReplyMarkup", {
+            "chat_id": chat_id, "message_id": msg_id,
+            "reply_markup": _zap_kb(entry_id, sent=True, lang=lang, radar=len(existing) > 1),
+        })
         if fresh:
-            _mark_zapped(cur, entry_id, tg_id)
             me = _user(cur, tg_id)
             cur.execute(
                 "SELECT u.participant_name FROM move_entries e "

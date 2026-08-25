@@ -415,7 +415,26 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": " (не показуємо до {until})",
         "de": " (ausgeblendet bis {until})",
     },
-    "crew_removed": {"en": "Removed {name}.", "uk": "{name} прибрано.", "de": "{name} entfernt."},
+    # Removal is symmetric and needs the other side's consent to undo, so it asks
+    # first — and says what "removing" now costs.
+    "crew_remove_confirm": {
+        "en": "Remove {name} from your crew?\n\n"
+              "The link goes both ways, so it disappears for both of you. To get it "
+              "back you'd have to send a request and wait for them to accept.",
+        "uk": "Прибрати {name} з кола?\n\n"
+              "Зв'язок взаємний, тож зникне з обох боків. Щоб повернути, доведеться "
+              "надіслати запит і дочекатися згоди.",
+        "de": "{name} aus deiner Crew entfernen?\n\n"
+              "Die Verbindung gilt in beide Richtungen und verschwindet für euch "
+              "beide. Zurückholen geht nur mit einer neuen Anfrage und ihrer Zustimmung.",
+    },
+    "btn_remove_yes": {"en": "🗑 Yes, remove", "uk": "🗑 Так, прибрати",
+                       "de": "🗑 Ja, entfernen"},
+    "crew_removed": {
+        "en": "🗑 {name} removed — the link is gone on both sides.",
+        "uk": "🗑 {name} прибрано — зв'язок зник з обох боків.",
+        "de": "🗑 {name} entfernt — die Verbindung ist auf beiden Seiten weg.",
+    },
     "crew_muted": {
         "en": "🙈 {name}: moves hidden until {until}.",
         "uk": "🙈 {name}: рухи не показуємо до {until}.",
@@ -1249,7 +1268,7 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         (tg_id, tname),
     )
     if cur.fetchone():
-        text, kb = _crew_member_view(cur, tg_id, tname, lang)
+        text, kb = _crew_member_view(cur, tg_id, target, lang)
         _send(chat_id, text, reply_markup=kb)
         return
     # Not added — asked. Nothing enters either crew until the other side accepts,
@@ -1260,7 +1279,7 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
           _t("crew_request", _norm_lang(target["language_code"]), name=myname),
           reply_markup={"inline_keyboard": [[
               {"text": _t("btn_accept", _norm_lang(target["language_code"])),
-               "callback_data": f"mv:crew:accept:{myname}"},
+               "callback_data": f"mv:crew:accept:{tg_id}"},
               {"text": _t("btn_decline", _norm_lang(target["language_code"])),
                "callback_data": "mv:crew:decline"},
           ]]})
@@ -1268,12 +1287,27 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
     _log(f"🤝 Move: crew request\n• {myname} → {tname}")
 
 
-def _crew_member_view(cur, tg_id: int, tname: str, lang: str) -> tuple[str, dict]:
+def _crew_target(cur, token: str):
+    """Resolve a crew callback's subject — a telegram id, or a name.
+
+    New buttons carry ids: callback_data is capped at 64 BYTES, Cyrillic costs
+    two per character, and _valid_name allows 32 characters — so "mv:crew:
+    mute1w:" plus a long Ukrainian name overruns the cap and Telegram rejects
+    the button. Names are still accepted so buttons sent before this change
+    keep working in people's chats.
+    """
+    if token.isdigit():
+        return _user(cur, int(token))
+    return _by_name(cur, token)
+
+
+def _crew_member_view(cur, tg_id: int, target, lang: str) -> tuple[str, dict]:
     """What you can do with someone already in your crew, rendered from state.
 
-    Carries a mute-until date, so it has to be redrawn after every action —
+    Carries a hidden-until date, so it has to be redrawn after every action —
     same reason the radar and pause menus are views rather than one-shot sends.
     """
+    tname, tid = target["participant_name"], target["telegram_user_id"]
     cur.execute(
         "SELECT muted_until FROM move_mute WHERE telegram_user_id = %s "
         "AND LOWER(muted_name) = LOWER(%s) AND muted_until > NOW()",
@@ -1283,14 +1317,42 @@ def _crew_member_view(cur, tg_id: int, tname: str, lang: str) -> tuple[str, dict
     status = _t("crew_muted_until", lang, until=_short_date(m["muted_until"])) if m else ""
     rows = []
     if m:
-        rows.append([{"text": _t("btn_unmute", lang), "callback_data": f"mv:crew:unmute:{tname}"}])
+        rows.append([{"text": _t("btn_unmute", lang), "callback_data": f"mv:crew:unmute:{tid}"}])
     rows.append([
-        {"text": _t("btn_mute_1d", lang), "callback_data": f"mv:crew:mute1d:{tname}"},
-        {"text": _t("btn_mute_1w", lang), "callback_data": f"mv:crew:mute1w:{tname}"},
+        {"text": _t("btn_mute_1d", lang), "callback_data": f"mv:crew:mute1d:{tid}"},
+        {"text": _t("btn_mute_1w", lang), "callback_data": f"mv:crew:mute1w:{tid}"},
     ])
-    rows.append([{"text": _t("btn_remove", lang), "callback_data": f"mv:crew:remove:{tname}"}])
+    rows.append([{"text": _t("btn_remove", lang), "callback_data": f"mv:crew:remove:{tid}"}])
     rows.append([{"text": _t("kb_cancel", lang), "callback_data": "mv:crew:cancel"}])
     return _t("crew_in_list", lang, name=tname, status=status), {"inline_keyboard": rows}
+
+
+def _crew_remove_confirm_view(target, lang: str) -> tuple[str, dict]:
+    tname, tid = target["participant_name"], target["telegram_user_id"]
+    return _t("crew_remove_confirm", lang, name=tname), {"inline_keyboard": [
+        [{"text": _t("btn_remove_yes", lang), "callback_data": f"mv:crew:removeok:{tid}"}],
+        [{"text": _t("kb_cancel", lang), "callback_data": f"mv:crew:back:{tid}"}],
+    ]}
+
+
+def _disconnect(cur, conn, tg_id: int, other_id: int, my_name: str, other_name: str) -> None:
+    """Undo a crew link in both directions.
+
+    The link is created by mutual consent, so it shouldn't be able to survive
+    half-alive: leaving their row behind means they keep sending to someone who
+    removed them, which nobody can see and nobody can explain. Mutes on either
+    side go too — they only describe a link that no longer exists.
+    """
+    for owner, name in ((tg_id, other_name), (other_id, my_name)):
+        cur.execute(
+            "DELETE FROM move_crew WHERE telegram_user_id = %s AND LOWER(crew_name) = LOWER(%s)",
+            (owner, name),
+        )
+        cur.execute(
+            "DELETE FROM move_mute WHERE telegram_user_id = %s AND LOWER(muted_name) = LOWER(%s)",
+            (owner, name),
+        )
+    conn.commit()
 
 
 def _connect(cur, conn, a_id: int, b_id: int) -> str:
@@ -1863,7 +1925,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # Only the actions that end the conversation drop their buttons. Mute and
         # unmute keep the menu open and redraw it below, so stripping here first
         # would remove the buttons and immediately put them back.
-        if not sub.startswith(("mute1d:", "mute1w:", "unmute:")):
+        if not sub.startswith(("mute1d:", "mute1w:", "unmute:", "remove:", "back:")):
             _api_call("editMessageReplyMarkup",
                       {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         if sub in ("cancel", "decline"):
@@ -1873,7 +1935,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             return
         action, _, name = sub.partition(":")
         if action == "accept":
-            requester = _by_name(cur, name)
+            requester = _crew_target(cur, name)
             me = _user(cur, tg_id)
             if not requester or not me or requester["telegram_user_id"] == tg_id:
                 _send(chat_id, _t("crew_request_gone", lang))
@@ -1881,11 +1943,12 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             if _connect(cur, conn, tg_id, requester["telegram_user_id"]) == "bad":
                 _send(chat_id, _t("crew_request_gone", lang))
                 return
-            _send(chat_id, _t("crew_added_back", lang, name=name))
+            rname = requester["participant_name"]
+            _send(chat_id, _t("crew_added_back", lang, name=rname))
             _send(requester["chat_id"] or requester["telegram_user_id"],
                   _t("crew_request_accepted", _norm_lang(requester["language_code"]),
                      name=me["participant_name"]))
-            _log(f"🤝 Move: crew ↔\n• {name} ↔ {me['participant_name']}")
+            _log(f"🤝 Move: crew ↔\n• {rname} ↔ {me['participant_name']}")
             return
         if action == "addback":
             cur.execute(
@@ -1898,34 +1961,54 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             me = _user(cur, tg_id)
             _log(f"🤝 Move: crew +\n• {me['participant_name'] if me else tg_id} → {name}")
             return
-        if action == "remove":
-            cur.execute("DELETE FROM move_crew WHERE telegram_user_id = %s AND LOWER(crew_name) = LOWER(%s)",
-                        (tg_id, name))
-            conn.commit()
-            _send(chat_id, _t("crew_removed", lang, name=name))
-            me = _user(cur, tg_id)
-            _log(f"🗑 Move: crew −\n• {me['participant_name'] if me else tg_id} ✗ {name}")
+        # Everything below acts on someone in your crew, addressed by id (or by
+        # name, for buttons sent before the switch).
+        target = _crew_target(cur, name)
+        if not target or not target["participant_name"]:
+            _send(chat_id, _t("crew_request_gone", lang))
             return
-        # Mute and unmute leave the person in your crew, so the menu stays open
-        # and is redrawn — its text carries the mute-until date, which would
-        # otherwise still read "muted until Sep 04" right after unmuting.
+        tname = target["participant_name"]
+
+        if action == "remove":
+            # Ask first — this is the one action here that needs the other
+            # person's agreement to undo.
+            _redraw(chat_id, msg_id, *_crew_remove_confirm_view(target, lang))
+            _answer(cq["id"])
+            return
+        if action == "back":
+            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, target, lang))
+            _answer(cq["id"])
+            return
+        if action == "removeok":
+            me = _user(cur, tg_id)
+            if not me:
+                _send(chat_id, _t("crew_request_gone", lang))
+                return
+            _disconnect(cur, conn, tg_id, target["telegram_user_id"],
+                        me["participant_name"], tname)
+            _send(chat_id, _t("crew_removed", lang, name=tname))
+            _log(f"🗑 Move: crew − (both ways)\n• {me['participant_name']} ✗ {tname}")
+            return
+        # Hiding leaves the person in your crew, so the menu stays open and is
+        # redrawn — its text carries the hidden-until date, which would otherwise
+        # still read "не показуємо до 01.09" right after showing them again.
         if action == "unmute":
             cur.execute("DELETE FROM move_mute WHERE telegram_user_id = %s AND LOWER(muted_name) = LOWER(%s)",
-                        (tg_id, name))
+                        (tg_id, tname))
             conn.commit()
-            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, name, lang))
-            _answer(cq["id"], _t("crew_unmuted", lang, name=name))
+            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, target, lang))
+            _answer(cq["id"], _t("crew_unmuted", lang, name=tname))
             return
         if action in ("mute1d", "mute1w"):
             until = datetime.now(timezone.utc) + timedelta(days=1 if action == "mute1d" else 7)
             cur.execute(
                 "INSERT INTO move_mute (telegram_user_id, muted_name, muted_until) VALUES (%s, %s, %s) "
                 "ON CONFLICT (telegram_user_id, muted_name) DO UPDATE SET muted_until = EXCLUDED.muted_until",
-                (tg_id, name, until),
+                (tg_id, tname, until),
             )
             conn.commit()
-            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, name, lang))
-            _answer(cq["id"], _t("crew_muted", lang, name=name, until=_short_date(until)))
+            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, target, lang))
+            _answer(cq["id"], _t("crew_muted", lang, name=tname, until=_short_date(until)))
         return
 
     if body == "radarnow":

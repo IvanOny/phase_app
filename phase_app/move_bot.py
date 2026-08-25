@@ -168,7 +168,7 @@ def _tgen(key: str, lang: str, gender: str | None, **fmt) -> str:
 
 _STRINGS: dict[str, dict[str, str]] = {
     # ── keyboard ──
-    "btn_move":  {"en": "🤝 Move with", "uk": "🤝 Рухатись з", "de": "🤝 Bewegen mit"},
+    "btn_move":  {"en": "🤝 Move with", "uk": "🤝 Рух разом", "de": "🤝 Bewegen mit"},
     "btn_radar": {"en": "📡 Radar", "uk": "📡 Радар", "de": "📡 Radar"},
     "btn_pause": {"en": "⏸️ Pause", "uk": "⏸️ Пауза", "de": "⏸️ Pause"},
     "btn_info":  {"en": "ℹ️ Info", "uk": "ℹ️ Інфо", "de": "ℹ️ Info"},
@@ -327,7 +327,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "ask_name": {"en": "What would you like to be called?", "uk": "Як вас називати?", "de": "Wie möchtest du genannt werden?"},
     "welcome": {
         "en": "Welcome, {name}! 👋\n\nNext: add your crew with 🤝 Move with.\nThey'll see every move you log — and you'll see theirs.",
-        "uk": "Вітаємо, {name}! 👋\n\nДалі: додайте своє коло через 🤝 Рухатись з.\nВони бачитимуть кожен ваш рух — а ви їхні.",
+        "uk": "Вітаємо, {name}! 👋\n\nДалі: додайте своє коло через 🤝 Рух разом.\nВони бачитимуть кожен ваш рух — а ви їхні.",
         "de": "Willkommen, {name}! 👋\n\nAls Nächstes: Füge deine Crew über 🤝 Bewegen mit hinzu.\nSie sehen jede deiner Bewegungen — und du ihre.",
     },
     "already_registered": {"en": "You're already registered as {name}.", "uk": "Ви вже зареєстровані як {name}.", "de": "Du bist bereits als {name} registriert."},
@@ -359,7 +359,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "comment_saved_alone": {
         "en": "💬 Saved with today's move. Nobody sees it yet — add someone with 🤝 Move with.",
         "uk": "💬 Збережено разом із сьогоднішнім рухом. Поки ніхто не бачить — "
-              "додайте когось через 🤝 Рухатись з.",
+              "додайте когось через 🤝 Рух разом.",
         "de": "💬 Bei der heutigen Bewegung gespeichert. Noch sieht es niemand — "
               "füge jemanden über 🤝 Bewegen mit hinzu.",
     },
@@ -597,8 +597,14 @@ def _main_kb(lang: str = "en") -> dict:
     }
 
 
+# Labels from earlier versions. A reply keyboard lives in the user's client until
+# it's re-sent, so a renamed button would otherwise stop working for everyone who
+# already has the old one.
+_LEGACY_BUTTONS = {"🤝 Рухатись з": "/move"}
+
+
 def _build_button_map() -> dict[str, str]:
-    m: dict[str, str] = {}
+    m: dict[str, str] = dict(_LEGACY_BUTTONS)
     for key, cmd in (("btn_move", "/move"), ("btn_radar", "/radar"),
                      ("btn_pause", "/pause"), ("btn_info", "/info")):
         for lang in _SUPPORTED_LANGS:

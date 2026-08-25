@@ -2101,6 +2101,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # under a later line saying it's off — two answers, one of them wrong.
         _redraw(chat_id, msg_id, *_radar_share_view(cur, tg_id, lang))
         _answer(cq["id"], _t("radar_share_on" if on else "radar_share_off", lang))
+        _log(f"📡 Move: radar share\n• {u['participant_name'] if u else tg_id}"
+             f" → {'yes' if on else 'no'}")
         return
 
     if body.startswith("radar:"):
@@ -2111,6 +2113,9 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         conn.commit()
         _redraw(chat_id, msg_id, *_radar_freq_view(cur, tg_id, lang))
         _answer(cq["id"], _t("radar_set", lang, label=_radar_label(freq, lang)))
+        u = _user(cur, tg_id)
+        _log(f"📡 Move: radar set\n• {u['participant_name'] if u else tg_id}"
+             f" → {_radar_label(freq, 'en')}")
         return
 
     if body.startswith("pause:"):

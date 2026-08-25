@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import unicodedata
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
@@ -361,7 +362,7 @@ _STRINGS: dict[str, dict[str, str]] = {
               "If they already are, you can mute their moves or remove them:",
         "uk": "Напиши ім'я учасника.\n"
               "Якщо цієї людини ще немає у твоєму колі — надішлемо їй запрошення.\n"
-              "Якщо вона вже у колі — зможеш приглушити її рухи або прибрати з кола:",
+              "Якщо вона вже у колі — зможеш сховати її рухи або прибрати з кола:",
         "de": "Gib den Namen einer Teilnehmerin oder eines Teilnehmers ein.\n"
               "Ist die Person noch nicht in deiner Crew, schicken wir ihr eine Einladung.\n"
               "Ist sie es schon, kannst du ihre Bewegungen stummschalten oder sie entfernen:",
@@ -407,13 +408,27 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "🤝 {name} hinzugefügt — ihr bewegt euch jetzt zusammen.",
     },
     "crew_in_list": {"en": "{name} is in your crew{status}. What now?", "uk": "{name} у твоєму колі{status}. Що далі?", "de": "{name} ist in deiner Crew{status}. Was nun?"},
-    "crew_muted_until": {"en": " (muted until {until})", "uk": " (без звуку до {until})", "de": " (stumm bis {until})"},
+    # Not "mute": nothing is silenced, their moves simply don't arrive until the
+    # date. "Без звуку" had people asking which sound the bot meant.
+    "crew_muted_until": {
+        "en": " (hidden until {until})",
+        "uk": " (не показуємо до {until})",
+        "de": " (ausgeblendet bis {until})",
+    },
     "crew_removed": {"en": "Removed {name}.", "uk": "{name} прибрано.", "de": "{name} entfernt."},
-    "crew_muted": {"en": "🔕 {name} muted until {until}.", "uk": "🔕 {name} без звуку до {until}.", "de": "🔕 {name} stumm bis {until}."},
-    "crew_unmuted": {"en": "▶️ {name} unmuted.", "uk": "▶️ Звук {name} увімкнено.", "de": "▶️ {name} nicht mehr stumm."},
-    "btn_unmute": {"en": "▶️ Unmute", "uk": "▶️ Увімкнути звук", "de": "▶️ Ton an"},
-    "btn_mute_1d": {"en": "🔕 1 day", "uk": "🔕 1 день", "de": "🔕 1 Tag"},
-    "btn_mute_1w": {"en": "🔕 1 week", "uk": "🔕 1 тиждень", "de": "🔕 1 Woche"},
+    "crew_muted": {
+        "en": "🙈 {name}: moves hidden until {until}.",
+        "uk": "🙈 {name}: рухи не показуємо до {until}.",
+        "de": "🙈 {name}: Bewegungen bis {until} ausgeblendet.",
+    },
+    "crew_unmuted": {
+        "en": "👀 {name}: moves are coming through again.",
+        "uk": "👀 {name}: рухи знову приходять.",
+        "de": "👀 {name}: Bewegungen kommen wieder an.",
+    },
+    "btn_unmute": {"en": "👀 Show again", "uk": "👀 Показувати знову", "de": "👀 Wieder anzeigen"},
+    "btn_mute_1d": {"en": "🙈 Hide 1 day", "uk": "🙈 Сховати на 1 день", "de": "🙈 1 Tag ausblenden"},
+    "btn_mute_1w": {"en": "🙈 Hide 1 week", "uk": "🙈 Сховати на 1 тиждень", "de": "🙈 1 Woche ausblenden"},
     "btn_remove": {"en": "🗑 Remove", "uk": "🗑 Прибрати", "de": "🗑 Entfernen"},
     "cancelled": {"en": "Cancelled.", "uk": "Скасовано.", "de": "Abgebrochen."},
     # ── radar ──
@@ -598,6 +613,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "Це твоє власне посилання 🙂 Надішли його комусь іншому.",
         "de": "Das ist dein eigener Link 🙂 Teile ihn mit jemand anderem.",
     },
+    "summary_hint": {
+        "en": "📅 /summary — all your months, any time.",
+        "uk": "📅 /summary — усі твої місяці, будь-коли.",
+        "de": "📅 /summary — alle deine Monate, jederzeit.",
+    },
     "summary_all_header": {"en": "📊 Your months", "uk": "📊 Твої місяці", "de": "📊 Deine Monate"},
     "summary_none": {"en": "No moves recorded yet.", "uk": "Ще немає записаних рухів.", "de": "Noch keine Bewegungen erfasst."},
 }
@@ -668,9 +688,39 @@ def _lang(cur, tg_id: int) -> str:
     return _norm_lang(u["language_code"] if u else None)
 
 
+def _short_date(dt) -> str:
+    """01.09 — numeric on purpose.
+
+    strftime("%b %d") printed "Sep 01" inside Ukrainian and German sentences,
+    and _MONTHS only holds nominative names ("вересень"), which don't fit after
+    "до" (Ukrainian wants the genitive "вересня"). A numeric date sidesteps both
+    the translation and the grammar.
+    """
+    return dt.strftime("%d.%m")
+
+
+def _fold(s: str) -> str:
+    """Lowercase and strip accents, so "Master Yu" finds "Máster Yu"."""
+    decomposed = unicodedata.normalize("NFKD", s or "")
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold().strip()
+
+
 def _by_name(cur, name: str):
     cur.execute("SELECT * FROM move_users WHERE LOWER(participant_name) = LOWER(%s)", (name,))
-    return cur.fetchone()
+    hit = cur.fetchone()
+    if hit:
+        return hit
+    # Nobody types the diacritic. Without this, a name like "Máster Yu" can only
+    # be reached by someone who knows how to enter á — the person is effectively
+    # unaddressable, and the bot just says "no one by that name".
+    target = _fold(name)
+    if not target:
+        return None
+    cur.execute("SELECT * FROM move_users WHERE participant_name IS NOT NULL")
+    for row in cur.fetchall():
+        if _fold(row["participant_name"]) == target:
+            return row
+    return None
 
 
 def _get_state(cur, tg_id: int) -> str | None:
@@ -1184,9 +1234,13 @@ def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
 
 
 def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str) -> None:
-    """A name typed after /move: add it, or offer mute/remove if already there."""
+    """A name typed after /move: invite them, or offer hide/remove if already there."""
     target = _by_name(cur, name)
     if not target or target["telegram_user_id"] == tg_id:
+        # "Try again" has to mean it: the caller cleared the state before getting
+        # here, so without re-arming it the next name typed falls through to
+        # "send a video bubble" and the user has to reopen the menu.
+        _set_state(cur, tg_id, "await_crew")
         _send(chat_id, _t("crew_not_found", lang, name=name))
         return
     tname = target["participant_name"]
@@ -1226,7 +1280,7 @@ def _crew_member_view(cur, tg_id: int, tname: str, lang: str) -> tuple[str, dict
         (tg_id, tname),
     )
     m = cur.fetchone()
-    status = _t("crew_muted_until", lang, until=m["muted_until"].strftime("%b %d")) if m else ""
+    status = _t("crew_muted_until", lang, until=_short_date(m["muted_until"])) if m else ""
     rows = []
     if m:
         rows.append([{"text": _t("btn_unmute", lang), "callback_data": f"mv:crew:unmute:{tname}"}])
@@ -1491,7 +1545,7 @@ def _pause_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     ]
     if paused:
         rows.append([{"text": _t("pause_resume", lang), "callback_data": "mv:pause:resume"}])
-        text = _t("pause_active", lang, until=u["paused_until"].strftime("%b %d"))
+        text = _t("pause_active", lang, until=_short_date(u["paused_until"]))
     else:
         text = _t("pause_menu", lang)
     return text, {"inline_keyboard": rows}
@@ -1871,7 +1925,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             )
             conn.commit()
             _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, name, lang))
-            _answer(cq["id"], _t("crew_muted", lang, name=name, until=until.strftime("%b %d")))
+            _answer(cq["id"], _t("crew_muted", lang, name=name, until=_short_date(until)))
         return
 
     if body == "radarnow":
@@ -2063,7 +2117,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         cur.execute("UPDATE move_users SET paused_until = %s WHERE telegram_user_id = %s", (until, tg_id))
         conn.commit()
         _redraw(chat_id, msg_id, *_pause_view(cur, tg_id, lang))
-        _answer(cq["id"], _t("pause_set", lang, until=until.strftime("%b %d")))
+        _answer(cq["id"], _t("pause_set", lang, until=_short_date(until)))
         _log(f"⏸️ Move: paused {what}\n• {who}")
         return
 
@@ -2204,5 +2258,9 @@ def send_move_monthly_summaries(conn) -> None:
         ]
         if zaps:
             lines.append(_t("summary_zaps", lang, n=zaps))
+        # The only place /summary is named. It's not on the keyboard and not in
+        # the /move menu, and a monthly recap is exactly where "there's more of
+        # this" belongs.
+        lines += ["", _t("summary_hint", lang)]
         _send(u["chat_id"] or tg_id, "\n".join(lines))
     conn.commit()

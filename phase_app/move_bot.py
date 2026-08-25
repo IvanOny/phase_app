@@ -472,7 +472,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "🤝 Asked {name} to move with you.\n\nYou'll be connected once they accept.",
         "uk": "🤝 Запит надіслано: {name}.\n"
               "\n"
-              "З'єднаємо вас, щойно вони погодяться.",
+              "З'єднаємо, щойно вони погодяться.",
         "de": "🤝 {name} gefragt, ob ihr euch zusammen bewegt.\n\n"
               "Ihr werdet verbunden, sobald sie zustimmen.",
     },
@@ -481,7 +481,7 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Accept and you'll each see the other's moves.",
         "uk": "🤝 {name} хоче рухатися разом з тобою.\n"
               "\n"
-              "Погодься — і ви бачитимете рухи одне одного.",
+              "Погодься — і бачитимете рухи одне одного.",
         "de": "🤝 {name} möchte sich mit dir zusammen bewegen.\n\n"
               "Nimm an, und ihr seht gegenseitig eure Bewegungen.",
     },
@@ -489,7 +489,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     # for gender — unlike the past-tense phrasing used for a logged move.
     "crew_request_accepted": {
         "en": "🤝 {name} accepted — you're now moving together.",
-        "uk": "🤝 {name} погодилися — тепер ви рухаєтесь разом.",
+        "uk": "🤝 {name} погодилися — тепер рухаєтесь разом.",
         "de": "🤝 {name} hat zugestimmt — ihr bewegt euch jetzt zusammen.",
     },
     "crew_request_gone": {
@@ -501,7 +501,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_decline": {"en": "Not now", "uk": "Не зараз", "de": "Nicht jetzt"},
     "crew_added_back": {
         "en": "🤝 Added {name} — you're now moving together.",
-        "uk": "🤝 {name} додано — тепер ви рухаєтесь разом.",
+        "uk": "🤝 {name} додано — тепер рухаєтесь разом.",
         "de": "🤝 {name} hinzugefügt — ihr bewegt euch jetzt zusammen.",
     },
     "crew_in_list": {"en": "{name} is in your crew{status}. What now?", "uk": "{name} у твоєму колі{status}. Що далі?", "de": "{name} ist in deiner Crew{status}. Was nun?"},
@@ -659,7 +659,7 @@ _STRINGS: dict[str, dict[str, str]] = {
               "\n"
               "{link}\n"
               "\n"
-              "Коли вони його відкриють, ви автоматично потрапите в кола одне одного — незалежно від того, нові вони тут чи вже зареєстровані.",
+              "Коли вони його відкриють, ти автоматично потрапиш у їхнє коло, а вони — у твоє. Неважливо, нові вони тут чи вже зареєстровані.",
         "de": "🔗 Teile diesen Link mit allen, mit denen du dich bewegen möchtest:\n\n{link}\n\n"
               "Wenn sie ihn antippen, landet ihr automatisch in der Crew des anderen — "
               "egal ob neu hier oder schon registriert.",

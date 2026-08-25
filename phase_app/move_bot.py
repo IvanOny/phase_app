@@ -249,128 +249,39 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Zuerst: Wie möchtest du genannt werden?",
     },
     "info_body": {
-        "en": "🏃 Move\n{tagline}\n\n"
-              "One move a day — whatever it is. Walk, swim, lift, stretch, dance.\n"
-              "Nothing is measured or compared. What counts is showing up.\n\n"
-              "📹 LOGGING YOUR MOVE\n"
-              "• Send a round video bubble, a photo, a video or a GIF — that's your move of the day\n"
-              "• It goes to your crew straight away\n"
-              "• Want to say something? Send a text within {mins} minutes and it appears "
-              "as a reply right under your move\n"
-              "• No camera? Use /log <text> instead\n"
-              "• One move per day — the first one counts\n"
-              "• Changed your mind? The 🗑 button (or /undo) takes it back within {undo}s "
-              "and deletes it from your crew's chats too — after that it stands\n\n"
-              "⚡ LIGHTNINGS\n"
-              "• Tap ⚡ under someone's move to cheer them on — one per move\n"
-              "• The counter on the button updates for everyone\n"
-              "• Each morning you get a note of how many ⚡ yesterday's move collected\n\n"
-              "🤝 YOUR CREW — /move\n"
-              "• Type a name to add them; they see every move you log, and you see theirs\n"
-              "• Type a name already in your crew to mute (1 day / 1 week) or remove them\n"
-              "• /invite gives you a personal link — anyone who taps it is connected to you "
-              "automatically, new or already registered\n\n"
-              "📡 RADAR — /radar\n"
-              "• Get a move from someone outside your crew — daily, weekly, monthly or off\n"
-              "• The same stranger won't reach you twice within {rdays} days\n"
-              "• Separately, you choose whether your own moves may be shown to strangers\n\n"
-              "🔥 STREAKS\n"
-              "• Consecutive days are counted and shown when you log\n"
-              "• Milestones at {miles} days\n"
-              "• On the 1st of each month you get a summary: days moved, consistency, "
-              "longest streak and ⚡ received\n"
-              "• /summary — every month you've recorded, any time\n\n"
-              "⏸️ QUIET — /pause\n"
-              "• Mute everything for a day, a week or a month. Resume any time.\n\n"
-              "COMMANDS\n"
-              "/start — register · /rename — change your name\n"
-              "/move — your crew · /invite — invite link\n"
-              "/radar — strangers' moves\n"
-              "/log <text> — log without media · /summary — your months\n"
-              "/pause — mute · /info — this list",
+        "en": "🏃 Move\n"
+              "{tagline}\n"
+              "\n"
+              "One move a day — any kind. Nothing is measured or compared. What counts is showing up.\n"
+              "\n"
+              "📹 Send a video bubble, photo or GIF — that's your move. Text within {mins} min becomes its comment. No camera? /log <text>\n"
+              "⚡ Tap ⚡ under someone's move to cheer. Each morning you learn how many yours got.\n"
+              "🤝 /move — your crew. Type a name to invite someone, mute or remove. /invite gives you a personal link.\n"
+              "📡 /radar — one move from outside your crew, as often as you like. The same stranger won't return within {rdays} days.\n"
+              "🔥 Streaks count days in a row. Milestones at {miles}. /summary for your months.\n"
+              "⏸️ /pause — silence everything for a day, a week or a month.",
         "uk": "🏃 Move\n"
               "{tagline}\n"
               "\n"
-              "Один рух на день — будь-який. Прогулянка, плавання, штанга, розтяжка, танці.\n"
-              "Нічого не вимірюється й не порівнюється. Головне — з'явитися.\n"
+              "Один рух на день — будь-який. Нічого не вимірюється й не порівнюється. Головне — з'явитися.\n"
               "\n"
-              "📹 ЯК ЗАПИСАТИ РУХ\n"
-              "• Надішли кругле відео, фото, відео або GIF — це твій рух дня\n"
-              "• Він одразу йде до твого кола\n"
-              "• Хочеш щось сказати? Надішли текст протягом {mins} хвилин — він з'явиться відповіддю просто під твоїм рухом\n"
-              "• Немає камери? Скористайся /log <текст>\n"
-              "• Один рух на день — зараховується перший\n"
-              "• Хочеш забрати назад? Кнопка 🗑 (або /undo) працює протягом {undo} с і видаляє рух із чатів твого кола — далі він лишається\n"
+              "📹 Надішли кругле відео, фото або GIF — це твій рух. Текст протягом {mins} хв стане коментарем. Немає камери? /log <текст>\n"
+              "⚡ Тисни ⚡ під чужим рухом, щоб підтримати. Щоранку дізнаєшся, скільки зібрав твій.\n"
+              "🤝 /move — твоє коло. Напиши ім'я, щоб запросити, приглушити або прибрати. /invite дає особисте посилання.\n"
+              "📡 /radar — один рух з-поза твого кола, з обраною частотою. Той самий незнайомець не повернеться протягом {rdays} днів.\n"
+              "🔥 Серії рахують дні поспіль. Віхи на {miles}. /summary — твої місяці.\n"
+              "⏸️ /pause — тиша на день, тиждень чи місяць.",
+        "de": "🏃 Move\n"
+              "{tagline}\n"
               "\n"
-              "⚡ БЛИСКАВКИ\n"
-              "• Натисни ⚡ під чиїмось рухом, щоб підтримати — одна на рух\n"
-              "• Лічильник на кнопці оновлюється для всіх\n"
-              "• Щоранку ти дізнаєшся, скільки ⚡ зібрав учорашній рух\n"
+              "Eine Bewegung pro Tag — welche auch immer. Nichts wird gemessen oder verglichen. Es zählt, dass du auftauchst.\n"
               "\n"
-              "🤝 ТВОЄ КОЛО — /move\n"
-              "• Напиши ім'я, щоб додати; вони бачитимуть кожен твій рух, а ти їхні\n"
-              "• Напиши ім'я з кола, щоб приглушити (1 день / 1 тиждень) або прибрати\n"
-              "• /invite дає особисте посилання — кожен, хто його відкриє, автоматично з'єднується з тобою, новий чи вже зареєстрований\n"
-              "\n"
-              "📡 РАДАР — /radar\n"
-              "• Отримуй рух від когось поза твоїм колом — щодня, щотижня, щомісяця або вимкнено\n"
-              "• Той самий незнайомець не потрапить до тебе двічі протягом {rdays} днів\n"
-              "• Окремо ти обираєш, чи можна показувати твої рухи незнайомцям\n"
-              "\n"
-              "🔥 СЕРІЇ\n"
-              "• Дні поспіль рахуються й показуються при записі\n"
-              "• Віхи на {miles} днях\n"
-              "• 1-го числа щомісяця — підсумок: днів у русі, регулярність, найдовша серія та отримані ⚡\n"
-              "• /summary — усі твої місяці, будь-коли\n"
-              "\n"
-              "⏸️ ТИША — /pause\n"
-              "• Вимкнути все на день, тиждень чи місяць. Відновити будь-коли.\n"
-              "\n"
-              "КОМАНДИ\n"
-              "/start — реєстрація · /rename — змінити ім'я\n"
-              "/move — твоє коло · /invite — посилання-запрошення\n"
-              "/radar — рухи незнайомців\n"
-              "/log <текст> — запис без медіа · /summary — твої місяці\n"
-              "/pause — тиша · /info — цей список",
-        "de": "🏃 Move\n{tagline}\n\n"
-              "Eine Bewegung pro Tag — was auch immer. Gehen, Schwimmen, Heben, Dehnen, Tanzen.\n"
-              "Nichts wird gemessen oder verglichen. Es zählt, dass du auftauchst.\n\n"
-              "📹 BEWEGUNG ERFASSEN\n"
-              "• Schick ein rundes Video, ein Foto, ein Video oder ein GIF — das ist deine Bewegung des Tages\n"
-              "• Sie geht sofort an deine Crew\n"
-              "• Willst du etwas sagen? Schick innerhalb von {mins} Minuten einen Text — er erscheint "
-              "als Antwort direkt unter deiner Bewegung\n"
-              "• Keine Kamera? Nutze /log <Text>\n"
-              "• Eine Bewegung pro Tag — die erste zählt\n"
-              "• Doch anders? Der 🗑-Button (oder /undo) nimmt sie innerhalb von {undo}s "
-              "zurück und löscht sie auch aus den Chats deiner Crew — danach bleibt sie\n\n"
-              "⚡ BLITZE\n"
-              "• Tippe ⚡ unter einer Bewegung, um anzufeuern — einer pro Bewegung\n"
-              "• Der Zähler auf dem Button aktualisiert sich für alle\n"
-              "• Jeden Morgen erfährst du, wie viele ⚡ die gestrige Bewegung bekommen hat\n\n"
-              "🤝 DEINE CREW — /move\n"
-              "• Gib einen Namen ein zum Hinzufügen; sie sehen jede deiner Bewegungen und du ihre\n"
-              "• Gib einen Namen aus der Crew ein, um stumm zu schalten (1 Tag / 1 Woche) oder zu entfernen\n"
-              "• /invite gibt dir einen persönlichen Link — wer ihn antippt, wird automatisch "
-              "mit dir verbunden, neu oder schon registriert\n\n"
-              "📡 RADAR — /radar\n"
-              "• Bekomm eine Bewegung von außerhalb deiner Crew — täglich, wöchentlich, monatlich oder aus\n"
-              "• Dieselbe fremde Person erreicht dich nicht zweimal innerhalb von {rdays} Tagen\n"
-              "• Separat entscheidest du, ob deine Bewegungen Fremden gezeigt werden dürfen\n\n"
-              "🔥 SERIEN\n"
-              "• Aufeinanderfolgende Tage werden gezählt und beim Erfassen angezeigt\n"
-              "• Meilensteine bei {miles} Tagen\n"
-              "• Am 1. jedes Monats: Zusammenfassung mit bewegten Tagen, Konstanz, "
-              "längster Serie und erhaltenen ⚡\n"
-              "• /summary — alle deine Monate, jederzeit\n\n"
-              "⏸️ RUHE — /pause\n"
-              "• Alles für einen Tag, eine Woche oder einen Monat stummschalten. Jederzeit fortsetzen.\n\n"
-              "BEFEHLE\n"
-              "/start — registrieren · /rename — Namen ändern\n"
-              "/move — deine Crew · /invite — Einladungslink\n"
-              "/radar — fremde Bewegungen\n"
-              "/log <Text> — ohne Medien erfassen · /summary — deine Monate\n"
-              "/pause — stumm · /info — diese Liste",
+              "📹 Schick ein rundes Video, Foto oder GIF — das ist deine Bewegung. Text innerhalb von {mins} Min wird zum Kommentar. Keine Kamera? /log <Text>\n"
+              "⚡ Tippe ⚡ unter einer fremden Bewegung. Jeden Morgen erfährst du, wie viele deine bekam.\n"
+              "🤝 /move — deine Crew. Gib einen Namen ein zum Einladen, Stummschalten oder Entfernen. /invite gibt dir einen persönlichen Link.\n"
+              "📡 /radar — eine Bewegung von außerhalb deiner Crew, so oft du willst. Dieselbe fremde Person kommt {rdays} Tage lang nicht wieder.\n"
+              "🔥 Serien zählen Tage am Stück. Meilensteine bei {miles}. /summary für deine Monate.\n"
+              "⏸️ /pause — Ruhe für einen Tag, eine Woche oder einen Monat.",
     },
     "ask_name": {"en": "What would you like to be called?", "uk": "Як тебе називати?", "de": "Wie möchtest du genannt werden?"},
     "welcome": {
@@ -1293,24 +1204,8 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         (tg_id, tname),
     )
     if cur.fetchone():
-        cur.execute(
-            "SELECT muted_until FROM move_mute WHERE telegram_user_id = %s "
-            "AND LOWER(muted_name) = LOWER(%s) AND muted_until > NOW()",
-            (tg_id, tname),
-        )
-        m = cur.fetchone()
-        status = _t("crew_muted_until", lang, until=m["muted_until"].strftime("%b %d")) if m else ""
-        rows = []
-        if m:
-            rows.append([{"text": _t("btn_unmute", lang), "callback_data": f"mv:crew:unmute:{tname}"}])
-        rows.append([
-            {"text": _t("btn_mute_1d", lang), "callback_data": f"mv:crew:mute1d:{tname}"},
-            {"text": _t("btn_mute_1w", lang), "callback_data": f"mv:crew:mute1w:{tname}"},
-        ])
-        rows.append([{"text": _t("btn_remove", lang), "callback_data": f"mv:crew:remove:{tname}"}])
-        rows.append([{"text": _t("kb_cancel", lang), "callback_data": "mv:crew:cancel"}])
-        _send(chat_id, _t("crew_in_list", lang, name=tname, status=status),
-              reply_markup={"inline_keyboard": rows})
+        text, kb = _crew_member_view(cur, tg_id, tname, lang)
+        _send(chat_id, text, reply_markup=kb)
         return
     # Not added — asked. Nothing enters either crew until the other side accepts,
     # and the accept wires up both directions at once.
@@ -1326,6 +1221,31 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
           ]]})
     _send(chat_id, _t("crew_request_sent", lang, name=tname))
     _log(f"🤝 Move: crew request\n• {myname} → {tname}")
+
+
+def _crew_member_view(cur, tg_id: int, tname: str, lang: str) -> tuple[str, dict]:
+    """What you can do with someone already in your crew, rendered from state.
+
+    Carries a mute-until date, so it has to be redrawn after every action —
+    same reason the radar and pause menus are views rather than one-shot sends.
+    """
+    cur.execute(
+        "SELECT muted_until FROM move_mute WHERE telegram_user_id = %s "
+        "AND LOWER(muted_name) = LOWER(%s) AND muted_until > NOW()",
+        (tg_id, tname),
+    )
+    m = cur.fetchone()
+    status = _t("crew_muted_until", lang, until=m["muted_until"].strftime("%b %d")) if m else ""
+    rows = []
+    if m:
+        rows.append([{"text": _t("btn_unmute", lang), "callback_data": f"mv:crew:unmute:{tname}"}])
+    rows.append([
+        {"text": _t("btn_mute_1d", lang), "callback_data": f"mv:crew:mute1d:{tname}"},
+        {"text": _t("btn_mute_1w", lang), "callback_data": f"mv:crew:mute1w:{tname}"},
+    ])
+    rows.append([{"text": _t("btn_remove", lang), "callback_data": f"mv:crew:remove:{tname}"}])
+    rows.append([{"text": _t("kb_cancel", lang), "callback_data": "mv:crew:cancel"}])
+    return _t("crew_in_list", lang, name=tname, status=status), {"inline_keyboard": rows}
 
 
 def _connect(cur, conn, a_id: int, b_id: int) -> str:
@@ -1568,7 +1488,8 @@ def _cmd_radar(cur, tg_id: int, chat_id: int, lang: str) -> None:
         _send(chat_id, text, reply_markup=kb)
 
 
-def _cmd_pause(cur, tg_id: int, chat_id: int, lang: str) -> None:
+def _pause_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
+    """The pause menu, rendered from current state — same contract as the radar views."""
     u = _user(cur, tg_id)
     now = datetime.now(timezone.utc)
     paused = bool(u and u["paused_until"] and u["paused_until"] > now)
@@ -1582,7 +1503,12 @@ def _cmd_pause(cur, tg_id: int, chat_id: int, lang: str) -> None:
         text = _t("pause_active", lang, until=u["paused_until"].strftime("%b %d"))
     else:
         text = _t("pause_menu", lang)
-    _send(chat_id, text, reply_markup={"inline_keyboard": rows})
+    return text, {"inline_keyboard": rows}
+
+
+def _cmd_pause(cur, tg_id: int, chat_id: int, lang: str) -> None:
+    text, kb = _pause_view(cur, tg_id, lang)
+    _send(chat_id, text, reply_markup=kb)
 
 
 def _cmd_mod(cur, conn, tg_id: int, chat_id: int, lang: str, args: str) -> None:
@@ -1889,7 +1815,12 @@ def _handle_callback(cur, conn, cq: dict) -> None:
 
     if body.startswith("crew:"):
         sub = body[5:]
-        _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        # Only the actions that end the conversation drop their buttons. Mute and
+        # unmute keep the menu open and redraw it below, so stripping here first
+        # would remove the buttons and immediately put them back.
+        if not sub.startswith(("mute1d:", "mute1w:", "unmute:")):
+            _api_call("editMessageReplyMarkup",
+                      {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         if sub in ("cancel", "decline"):
             # A decline stays between the button and the person who pressed it —
             # telling the asker they were turned down only invites a second ask.
@@ -1930,11 +1861,15 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             me = _user(cur, tg_id)
             _log(f"🗑 Move: crew −\n• {me['participant_name'] if me else tg_id} ✗ {name}")
             return
+        # Mute and unmute leave the person in your crew, so the menu stays open
+        # and is redrawn — its text carries the mute-until date, which would
+        # otherwise still read "muted until Sep 04" right after unmuting.
         if action == "unmute":
             cur.execute("DELETE FROM move_mute WHERE telegram_user_id = %s AND LOWER(muted_name) = LOWER(%s)",
                         (tg_id, name))
             conn.commit()
-            _send(chat_id, _t("crew_unmuted", lang, name=name))
+            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, name, lang))
+            _answer(cq["id"], _t("crew_unmuted", lang, name=name))
             return
         if action in ("mute1d", "mute1w"):
             until = datetime.now(timezone.utc) + timedelta(days=1 if action == "mute1d" else 7)
@@ -1944,7 +1879,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 (tg_id, name, until),
             )
             conn.commit()
-            _send(chat_id, _t("crew_muted", lang, name=name, until=until.strftime("%b %d")))
+            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, name, lang))
+            _answer(cq["id"], _t("crew_muted", lang, name=name, until=until.strftime("%b %d")))
         return
 
     if body == "radarnow":
@@ -2120,20 +2056,23 @@ def _handle_callback(cur, conn, cq: dict) -> None:
 
     if body.startswith("pause:"):
         what = body[len("pause:"):]
-        _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         u = _user(cur, tg_id)
         who = u["participant_name"] if u else tg_id
         if what == "resume":
             cur.execute("UPDATE move_users SET paused_until = NULL WHERE telegram_user_id = %s", (tg_id,))
             conn.commit()
-            _send(chat_id, _t("pause_resumed", lang))
+            # Same as the radar menus: redraw, so the message can't keep saying
+            # "paused until Sep 04" after the pause has been lifted.
+            _redraw(chat_id, msg_id, *_pause_view(cur, tg_id, lang))
+            _answer(cq["id"], _t("pause_resumed", lang))
             _log(f"▶️ Move: resumed\n• {who}")
             return
         days = {"1d": 1, "1w": 7, "1m": 30}.get(what, 1)
         until = datetime.now(timezone.utc) + timedelta(days=days)
         cur.execute("UPDATE move_users SET paused_until = %s WHERE telegram_user_id = %s", (until, tg_id))
         conn.commit()
-        _send(chat_id, _t("pause_set", lang, until=until.strftime("%b %d")))
+        _redraw(chat_id, msg_id, *_pause_view(cur, tg_id, lang))
+        _answer(cq["id"], _t("pause_set", lang, until=until.strftime("%b %d")))
         _log(f"⏸️ Move: paused {what}\n• {who}")
         return
 

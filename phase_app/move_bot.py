@@ -215,8 +215,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Як це працює:\n"
               "• Запишіть кругле відео (або фото) і надішліть сюди\n"
               "• Одразу після цього можете додати коментар\n"
-              "• Ваше коло бачить це і може надіслати вам ⚡\n\n"
-              "Спершу: як вас називати?",
+              "• Ваше коло бачить це і може надіслати Вам ⚡\n\n"
+              "Спершу: як Вас називати?",
         "de": "👋 Willkommen bei Move!\n\n{tagline}\n\n"
               "Eine Bewegung pro Tag — was auch immer. Gehen, Schwimmen, Heben, Dehnen, Tanzen.\n\n"
               "So funktioniert's:\n"
@@ -269,40 +269,40 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Один рух на день — будь-який. Прогулянка, плавання, штанга, розтяжка, танці.\n"
               "Нічого не вимірюється й не порівнюється. Головне — з'явитися.\n\n"
               "📹 ЯК ЗАПИСАТИ РУХ\n"
-              "• Надішліть кругле відео, фото, відео або GIF — це ваш рух дня\n"
-              "• Він одразу йде до вашого кола\n"
+              "• Надішліть кругле відео, фото, відео або GIF — це Ваш рух дня\n"
+              "• Він одразу йде до Вашого кола\n"
               "• Хочете щось сказати? Надішліть текст протягом {mins} хвилин — він з'явиться "
-              "відповіддю просто під вашим рухом\n"
+              "відповіддю просто під Вашим рухом\n"
               "• Немає камери? Скористайтесь /log <текст>\n"
               "• Один рух на день — зараховується перший\n"
               "• Передумали? Кнопка 🗑 (або /undo) забирає рух назад протягом {undo} с "
-              "і видаляє його з чатів вашого кола — далі він лишається\n\n"
+              "і видаляє його з чатів Вашого кола — далі він лишається\n\n"
               "⚡ БЛИСКАВКИ\n"
               "• Натисніть ⚡ під чиїмось рухом, щоб підтримати — одна на рух\n"
               "• Лічильник на кнопці оновлюється для всіх\n"
-              "• Щоранку ви дізнаєтесь, скільки ⚡ зібрав учорашній рух\n\n"
+              "• Щоранку Ви дізнаєтесь, скільки ⚡ зібрав учорашній рух\n\n"
               "🤝 ВАШЕ КОЛО — /move\n"
-              "• Напишіть ім'я, щоб додати; вони бачитимуть кожен ваш рух, а ви їхні\n"
+              "• Напишіть ім'я, щоб додати; вони бачитимуть кожен Ваш рух, а Ви їхні\n"
               "• Напишіть ім'я з кола, щоб приглушити (1 день / 1 тиждень) або прибрати\n"
               "• /invite дає особисте посилання — кожен, хто його відкриє, автоматично "
-              "з'єднується з вами, новий чи вже зареєстрований\n\n"
+              "з'єднується з Вами, новий чи вже зареєстрований\n\n"
               "📡 РАДАР — /radar\n"
-              "• Отримуйте рух від когось поза вашим колом — щодня, щотижня, щомісяця або вимкнено\n"
-              "• Той самий незнайомець не потрапить до вас двічі протягом {rdays} днів\n"
-              "• Окремо ви обираєте, чи можна показувати ваші рухи незнайомцям\n\n"
+              "• Отримуйте рух від когось поза Вашим колом — щодня, щотижня, щомісяця або вимкнено\n"
+              "• Той самий незнайомець не потрапить до Вас двічі протягом {rdays} днів\n"
+              "• Окремо Ви обираєте, чи можна показувати Ваші рухи незнайомцям\n\n"
               "🔥 СЕРІЇ\n"
               "• Дні поспіль рахуються й показуються при записі\n"
               "• Віхи на {miles} днях\n"
               "• 1-го числа щомісяця — підсумок: днів у русі, регулярність, "
               "найдовша серія та отримані ⚡\n"
-              "• /summary — усі ваші місяці, будь-коли\n\n"
+              "• /summary — усі Ваші місяці, будь-коли\n\n"
               "⏸️ ТИША — /pause\n"
               "• Вимкнути все на день, тиждень чи місяць. Відновити будь-коли.\n\n"
               "КОМАНДИ\n"
               "/start — реєстрація · /rename — змінити ім'я\n"
-              "/move — ваше коло · /invite — посилання-запрошення\n"
+              "/move — Ваше коло · /invite — посилання-запрошення\n"
               "/radar — рухи незнайомців\n"
-              "/log <текст> — запис без медіа · /summary — ваші місяці\n"
+              "/log <текст> — запис без медіа · /summary — Ваші місяці\n"
               "/pause — тиша · /info — цей список",
         "de": "🏃 Move\n{tagline}\n\n"
               "Eine Bewegung pro Tag — was auch immer. Gehen, Schwimmen, Heben, Dehnen, Tanzen.\n"
@@ -344,14 +344,14 @@ _STRINGS: dict[str, dict[str, str]] = {
               "/log <Text> — ohne Medien erfassen · /summary — deine Monate\n"
               "/pause — stumm · /info — diese Liste",
     },
-    "ask_name": {"en": "What would you like to be called?", "uk": "Як вас називати?", "de": "Wie möchtest du genannt werden?"},
+    "ask_name": {"en": "What would you like to be called?", "uk": "Як Вас називати?", "de": "Wie möchtest du genannt werden?"},
     "welcome": {
         "en": "Welcome, {name}! 👋\n\nNext: add your crew with 🤝 Move with.\nThey'll see every move you log — and you'll see theirs.",
-        "uk": "Вітаємо, {name}! 👋\n\nДалі: додайте своє коло через 🤝 Рух разом.\nВони бачитимуть кожен ваш рух — а ви їхні.",
+        "uk": "Вітаємо, {name}! 👋\n\nДалі: додайте своє коло через 🤝 Рух разом.\nВони бачитимуть кожен Ваш рух — а Ви їхні.",
         "de": "Willkommen, {name}! 👋\n\nAls Nächstes: Füge deine Crew über 🤝 Bewegen mit hinzu.\nSie sehen jede deiner Bewegungen — und du ihre.",
     },
     "already_registered": {"en": "You're already registered as {name}.", "uk": "Ви вже зареєстровані як {name}.", "de": "Du bist bereits als {name} registriert."},
-    "renamed": {"en": "Done! You're now {name}.", "uk": "Готово! Тепер ви {name}.", "de": "Fertig! Du bist jetzt {name}."},
+    "renamed": {"en": "Done! You're now {name}.", "uk": "Готово! Тепер Ви {name}.", "de": "Fertig! Du bist jetzt {name}."},
     "ask_rename": {"en": "What should your new name be?", "uk": "Яке нове ім'я?", "de": "Wie soll dein neuer Name sein?"},
     "register_first": {"en": "Please register first — send /start", "uk": "Спершу зареєструйтесь — надішліть /start", "de": "Bitte zuerst registrieren — sende /start"},
     "letters_only": {"en": "Letters only please, up to 32 characters.", "uk": "Лише літери, до 32 символів.", "de": "Bitte nur Buchstaben, bis zu 32 Zeichen."},
@@ -368,7 +368,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "comment_added": {
         "en": "💬 Added under your move — your crew can see it.",
-        "uk": "💬 Додано під ваш рух — ваше коло це бачить.",
+        "uk": "💬 Додано під Ваш рух — Ваше коло це бачить.",
         "de": "💬 Unter deiner Bewegung ergänzt — deine Crew sieht es.",
     },
     "comment_saved_late": {
@@ -383,7 +383,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "💬 Bei der heutigen Bewegung gespeichert. Noch sieht es niemand — "
               "füge jemanden über 🤝 Bewegen mit hinzu.",
     },
-    "log_usage": {"en": "Usage: /log <what you did>", "uk": "Використання: /log <що ви зробили>", "de": "Verwendung: /log <was du gemacht hast>"},
+    "log_usage": {"en": "Usage: /log <what you did>", "uk": "Використання: /log <що Ви зробили>", "de": "Verwendung: /log <was du gemacht hast>"},
     # Base form is deliberately genderless in Ukrainian, for users we haven't asked.
     "crew_move":   {"en": "{name} moved today", "uk": "{name} — рух сьогодні", "de": "{name} hat sich heute bewegt"},
     "crew_move_m": {"uk": "{name} рухався сьогодні"},
@@ -391,7 +391,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_undo": {"en": "🗑 Undo", "uk": "🗑 Скасувати", "de": "🗑 Rückgängig"},
     "undo_done": {
         "en": "🗑 Move removed — deleted from your crew's chats too.",
-        "uk": "🗑 Рух видалено — прибрано і з чатів вашого кола.",
+        "uk": "🗑 Рух видалено — прибрано і з чатів Вашого кола.",
         "de": "🗑 Bewegung entfernt — auch aus den Chats deiner Crew gelöscht.",
     },
     "undo_too_late": {
@@ -401,19 +401,38 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "undo_none": {
         "en": "Nothing to undo — you haven't logged a move today.",
-        "uk": "Нічого скасовувати — ви ще не записали рух сьогодні.",
+        "uk": "Нічого скасовувати — Ви ще не записали рух сьогодні.",
         "de": "Nichts rückgängig zu machen — du hast heute noch nichts erfasst.",
     },
     "zap_btn": {"en": "⚡", "uk": "⚡", "de": "⚡"},
     "zap_btn_sent": {"en": "⚡ sent ✓", "uk": "⚡ надіслано ✓", "de": "⚡ gesendet ✓"},
     "zap_sent": {"en": "⚡ sent!", "uk": "⚡ надіслано!", "de": "⚡ gesendet!"},
     "zap_already": {"en": "You already sent a ⚡", "uk": "Ви вже надіслали ⚡", "de": "Du hast schon ein ⚡ gesendet"},
-    "zap_own": {"en": "That's your own move 🙂", "uk": "Це ваш власний рух 🙂", "de": "Das ist deine eigene Bewegung 🙂"},
+    "zap_own": {"en": "That's your own move 🙂", "uk": "Це Ваш власний рух 🙂", "de": "Das ist deine eigene Bewegung 🙂"},
     # ── crew ──
+    # Three parts, with the invite link between them: the prompt goes last so it
+    # sits right above the input box, next to where you'd act on it. The
+    # "your crew sees your moves" explainer lives in /info — /move is a command
+    # people run repeatedly, and onboarding text wears out fast.
     "crew_menu": {
-        "en": "🤝 Your crew sees every move you log — and you see theirs.\n\nMoving with: {crew}\n\nType a name to add, mute or remove:",
-        "uk": "🤝 Ваше коло бачить кожен ваш рух — а ви їхні.\n\nРухаєтесь з: {crew}\n\nНапишіть ім'я, щоб додати, приглушити або прибрати:",
-        "de": "🤝 Deine Crew sieht jede deiner Bewegungen — und du ihre.\n\nBewegst dich mit: {crew}\n\nGib einen Namen ein zum Hinzufügen, Stummschalten oder Entfernen:",
+        "en": "🤝 Moving with: {crew}",
+        "uk": "🤝 Рухаєтесь разом з: {crew}",
+        "de": "🤝 Bewegst dich mit: {crew}",
+    },
+    # Spells out both branches, because typing a name does two different things
+    # depending on whether that person is already in your crew. "Participant's
+    # name", not "username": it's the name they registered with, and @handle
+    # would send people looking in the wrong place.
+    "crew_prompt": {
+        "en": "Type a participant's name.\n"
+              "If they're not in your crew yet, we'll send them an invite.\n"
+              "If they already are, you can mute their moves or remove them:",
+        "uk": "Напишіть ім'я учасника.\n"
+              "Якщо цієї людини ще немає у Вашому колі — надішлемо їй запрошення.\n"
+              "Якщо вона вже у колі — зможете приглушити її рухи або прибрати з кола:",
+        "de": "Gib den Namen einer Teilnehmerin oder eines Teilnehmers ein.\n"
+              "Ist die Person noch nicht in deiner Crew, schicken wir ihr eine Einladung.\n"
+              "Ist sie es schon, kannst du ihre Bewegungen stummschalten oder sie entfernen:",
     },
     "crew_nobody": {"en": "nobody yet", "uk": "поки нікого", "de": "noch niemand"},
     "crew_not_found": {"en": "No one named \"{name}\". Try again or send /move.", "uk": "Нікого з ім'ям «{name}». Спробуйте ще або надішліть /move.", "de": "Niemand namens „{name}“. Versuch es erneut oder sende /move."},
@@ -428,8 +447,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     "crew_request": {
         "en": "🤝 {name} wants to move with you.\n\n"
               "Accept and you'll each see the other's moves.",
-        "uk": "🤝 {name} хоче рухатися разом з вами.\n\n"
-              "Погодьтесь — і ви бачитимете рухи одне одного.",
+        "uk": "🤝 {name} хоче рухатися разом з Вами.\n\n"
+              "Погодьтесь — і Ви бачитимете рухи одне одного.",
         "de": "🤝 {name} möchte sich mit dir zusammen bewegen.\n\n"
               "Nimm an, und ihr seht gegenseitig eure Bewegungen.",
     },
@@ -437,7 +456,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     # for gender — unlike the past-tense phrasing used for a logged move.
     "crew_request_accepted": {
         "en": "🤝 {name} accepted — you're now moving together.",
-        "uk": "🤝 {name} погодилися — тепер ви рухаєтесь разом.",
+        "uk": "🤝 {name} погодилися — тепер Ви рухаєтесь разом.",
         "de": "🤝 {name} hat zugestimmt — ihr bewegt euch jetzt zusammen.",
     },
     "crew_request_gone": {
@@ -449,10 +468,10 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_decline": {"en": "Not now", "uk": "Не зараз", "de": "Nicht jetzt"},
     "crew_added_back": {
         "en": "🤝 Added {name} — you're now moving together.",
-        "uk": "🤝 {name} додано — тепер ви рухаєтесь разом.",
+        "uk": "🤝 {name} додано — тепер Ви рухаєтесь разом.",
         "de": "🤝 {name} hinzugefügt — ihr bewegt euch jetzt zusammen.",
     },
-    "crew_in_list": {"en": "{name} is in your crew{status}. What now?", "uk": "{name} у вашому колі{status}. Що далі?", "de": "{name} ist in deiner Crew{status}. Was nun?"},
+    "crew_in_list": {"en": "{name} is in your crew{status}. What now?", "uk": "{name} у Вашому колі{status}. Що далі?", "de": "{name} ist in deiner Crew{status}. Was nun?"},
     "crew_muted_until": {"en": " (muted until {until})", "uk": " (без звуку до {until})", "de": " (stumm bis {until})"},
     "crew_removed": {"en": "Removed {name}.", "uk": "{name} прибрано.", "de": "{name} entfernt."},
     "crew_muted": {"en": "🔕 {name} muted until {until}.", "uk": "🔕 {name} без звуку до {until}.", "de": "🔕 {name} stumm bis {until}."},
@@ -468,7 +487,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "radar_menu": {
         "en": "📡 Radar shows you a move from someone outside your crew.\n\n"
               "Receiving: {current}\n\nHow often?",
-        "uk": "📡 Радар показує рух від когось поза вашим колом.\n\n"
+        "uk": "📡 Радар показує рух від когось поза Вашим колом.\n\n"
               "Отримувати: {current}\n\nЯк часто?",
         "de": "📡 Radar zeigt dir eine Bewegung von jemandem außerhalb deiner Crew.\n\n"
               "Empfangen: {current}\n\nWie oft?",
@@ -476,8 +495,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     "radar_share_menu": {
         "en": "📡 And your own moves — may radar show them to people outside your crew?\n\n"
               "Always anonymous: they see the move, never your name.\n\nNow: {current}",
-        "uk": "📡 А ваші власні рухи — чи може радар показувати їх людям поза вашим колом?\n\n"
-              "Завжди анонімно: вони бачать рух, але не ваше ім'я.\n\nЗараз: {current}",
+        "uk": "📡 А Ваші власні рухи — чи може радар показувати їх людям поза Вашим колом?\n\n"
+              "Завжди анонімно: вони бачать рух, але не Ваше ім'я.\n\nЗараз: {current}",
         "de": "📡 Und deine eigenen Bewegungen — darf Radar sie Leuten außerhalb deiner "
               "Crew zeigen?\n\nImmer anonym: sie sehen die Bewegung, nie deinen Namen.\n\n"
               "Jetzt: {current}",
@@ -492,7 +511,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "radar_pull_none": {
         "en": "📡 Nothing new right now — you've seen everyone who moved lately. "
               "Try again tomorrow.",
-        "uk": "📡 Зараз нічого нового — ви вже бачили всіх, хто рухався останнім часом. "
+        "uk": "📡 Зараз нічого нового — Ви вже бачили всіх, хто рухався останнім часом. "
               "Спробуйте завтра.",
         "de": "📡 Gerade nichts Neues — du hast alle gesehen, die sich zuletzt bewegt "
               "haben. Versuch es morgen wieder.",
@@ -502,7 +521,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "radar_report_btn": {"en": "⚠️ Report", "uk": "⚠️ Поскаржитись", "de": "⚠️ Melden"},
     "radar_reported": {
         "en": "⚠️ Reported — a human will look at it. You won't see this person again either.",
-        "uk": "⚠️ Скаргу надіслано — її перегляне людина. Цю людину ви більше не побачите.",
+        "uk": "⚠️ Скаргу надіслано — її перегляне людина. Цю людину Ви більше не побачите.",
         "de": "⚠️ Gemeldet — ein Mensch schaut es sich an. Diese Person siehst du auch nicht mehr.",
     },
     # Neutral on purpose. The reports are unverified, most people who trip this
@@ -512,9 +531,9 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Nothing has changed — you're still sharing as before. Radar shows your "
               "move to strangers, so keep it to your own activity.\n\n"
               "Warnings on your account: {n} of {max}.",
-        "uk": "⚠️ Кілька людей поскаржились на один з ваших рухів.\n\n"
-              "Нічого не змінилось — ви ділитесь як і раніше. Радар показує ваш рух "
-              "незнайомцям, тож нехай це буде ваша власна активність.\n\n"
+        "uk": "⚠️ Кілька людей поскаржились на один з Ваших рухів.\n\n"
+              "Нічого не змінилось — Ви ділитесь як і раніше. Радар показує Ваш рух "
+              "незнайомцям, тож нехай це буде Ваша власна активність.\n\n"
               "Попереджень на акаунті: {n} з {max}.",
         "de": "⚠️ Ein paar Leute haben eine deiner Bewegungen gemeldet.\n\n"
               "Nichts hat sich geändert — du teilst wie bisher. Radar zeigt deine "
@@ -527,8 +546,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "moves. Only strangers no longer see yours.\n\n"
               "A human will review this.",
         "uk": "🚫 Показ у радарі призупинено після {n} попереджень.\n\n"
-              "Ваше коло це не зачіпає — ви й далі надсилаєте їм рухи та бачите їхні. "
-              "Просто незнайомці більше не бачать ваших.\n\n"
+              "Ваше коло це не зачіпає — Ви й далі надсилаєте їм рухи та бачите їхні. "
+              "Просто незнайомці більше не бачать Ваших.\n\n"
               "Це перегляне людина.",
         "de": "🚫 Radar-Teilen ist nach {n} Verwarnungen pausiert.\n\n"
               "Deine Crew ist nicht betroffen — du postest weiter an sie und siehst "
@@ -542,14 +561,14 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "banned": {
         "en": "🚫 Radar is switched off on your account. Your crew is unaffected.",
-        "uk": "🚫 Радар вимкнено на вашому акаунті. Ваше коло це не зачіпає.",
+        "uk": "🚫 Радар вимкнено на Вашому акаунті. Ваше коло це не зачіпає.",
         "de": "🚫 Radar ist für dein Konto abgeschaltet. Deine Crew ist nicht betroffen.",
     },
     "radar_share_locked": {
         "en": "🚫 Radar sharing is paused on your account and can't be turned back on "
               "here. You can still receive radar, and your crew is unaffected.",
         "uk": "🚫 Показ у радарі призупинено — увімкнути його тут не можна. Отримувати "
-              "радар ви й далі можете, і ваше коло це не зачіпає.",
+              "радар Ви й далі можете, і Ваше коло це не зачіпає.",
         "de": "🚫 Radar-Teilen ist pausiert und kann hier nicht wieder aktiviert werden. "
               "Empfangen kannst du weiter, und deine Crew ist nicht betroffen.",
     },
@@ -560,7 +579,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "radar_blocked": {
         "en": "🚫 Done — this person won't turn up in your radar again.",
-        "uk": "🚫 Готово — ця людина більше не з'явиться у вашому радарі.",
+        "uk": "🚫 Готово — ця людина більше не з'явиться у Вашому радарі.",
         "de": "🚫 Erledigt — diese Person taucht in deinem Radar nicht mehr auf.",
     },
     "radar_daily": {"en": "Daily", "uk": "Щодня", "de": "Täglich"},
@@ -573,7 +592,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Anonymous on purpose: radar shares the move, never who made it.
     "radar_received": {
         "en": "📡 Someone outside your crew moved today.",
-        "uk": "📡 Хтось поза вашим колом рухався сьогодні.",
+        "uk": "📡 Хтось поза Вашим колом рухався сьогодні.",
         "de": "📡 Jemand außerhalb deiner Crew hat sich heute bewegt.",
     },
     # ── pause ──
@@ -586,7 +605,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "pause_set": {"en": "⏸️ Paused until {until}.", "uk": "⏸️ Призупинено до {until}.", "de": "⏸️ Pausiert bis {until}."},
     "pause_resumed": {"en": "▶️ Resumed.", "uk": "▶️ Відновлено.", "de": "▶️ Fortgesetzt."},
     # ── reports ──
-    "zap_report": {"en": "⚡ Yesterday your move got {n} {word}.", "uk": "⚡ Вчора ваш рух отримав {n} {word}.", "de": "⚡ Gestern hat deine Bewegung {n} {word} bekommen."},
+    "zap_report": {"en": "⚡ Yesterday your move got {n} {word}.", "uk": "⚡ Вчора Ваш рух отримав {n} {word}.", "de": "⚡ Gestern hat deine Bewegung {n} {word} bekommen."},
     "zap_word_one":  {"en": "lightning", "uk": "блискавку", "de": "Blitz"},
     "zap_word_few":  {"en": "lightnings", "uk": "блискавки", "de": "Blitze"},
     "zap_word_many": {"en": "lightnings", "uk": "блискавок", "de": "Blitze"},
@@ -600,14 +619,14 @@ _STRINGS: dict[str, dict[str, str]] = {
               "When they tap it, you'll be added to each other's crew automatically — "
               "whether they're new here or already registered.",
         "uk": "🔗 Надішліть це посилання тому, з ким хочете рухатись разом:\n\n{link}\n\n"
-              "Коли вони його відкриють, ви автоматично потрапите в кола одне одного — "
+              "Коли вони його відкриють, Ви автоматично потрапите в кола одне одного — "
               "незалежно від того, нові вони тут чи вже зареєстровані.",
         "de": "🔗 Teile diesen Link mit allen, mit denen du dich bewegen möchtest:\n\n{link}\n\n"
               "Wenn sie ihn antippen, landet ihr automatisch in der Crew des anderen — "
               "egal ob neu hier oder schon registriert.",
     },
     # Only asked of Ukrainian speakers — the other two languages don't inflect here.
-    "ask_gender": {"uk": "Як про вас писати?", "en": "How should we refer to you?",
+    "ask_gender": {"uk": "Як про Вас писати?", "en": "How should we refer to you?",
                    "de": "Wie sollen wir über dich schreiben?"},
     "gender_m": {"uk": "Він", "en": "He", "de": "Er"},
     "gender_f": {"uk": "Вона", "en": "She", "de": "Sie"},
@@ -618,13 +637,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "🌍 Sprache auf Deutsch gestellt.",
     },
     "invite_line": {
-        "en": "🔗 Your invite link — share it to connect instantly:\n{link}",
-        "uk": "🔗 Ваше посилання-запрошення — надішліть, щоб одразу з'єднатись:\n{link}",
-        "de": "🔗 Dein Einladungslink — teile ihn, um euch sofort zu verbinden:\n{link}",
+        "en": "🔗 Your invite link for future members:\n{link}",
+        "uk": "🔗 Ваше посилання-запрошення для майбутніх учасників:\n{link}",
+        "de": "🔗 Dein Einladungslink für künftige Mitglieder:\n{link}",
     },
     "invite_connected": {
         "en": "🤝 You and {name} are now moving together!",
-        "uk": "🤝 Тепер ви з {name} рухаєтесь разом!",
+        "uk": "🤝 Тепер Ви з {name} рухаєтесь разом!",
         "de": "🤝 Du und {name} bewegt euch jetzt zusammen!",
     },
     "invite_already": {
@@ -634,7 +653,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "invite_self": {
         "en": "That's your own invite link 🙂 Share it with someone else.",
-        "uk": "Це ваше власне посилання 🙂 Надішліть його комусь іншому.",
+        "uk": "Це Ваше власне посилання 🙂 Надішліть його комусь іншому.",
         "de": "Das ist dein eigener Link 🙂 Teile ihn mit jemand anderem.",
     },
     "summary_all_header": {"en": "📊 Your months", "uk": "📊 Ваші місяці", "de": "📊 Deine Monate"},
@@ -1218,7 +1237,8 @@ def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     crew = ", ".join(names) or _t("crew_nobody", lang)
     me = _user(cur, tg_id)
     _send(chat_id, f"{_t('crew_menu', lang, crew=crew)}\n\n"
-                   f"{_invite_line(tg_id, lang, me['participant_name'] if me else None)}")
+                   f"{_invite_line(tg_id, lang, me['participant_name'] if me else None)}\n\n"
+                   f"{_t('crew_prompt', lang)}")
 
 
 def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str) -> None:

@@ -250,38 +250,44 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "info_body": {
         "en": "🏃 Move\n"
-              "{tagline}\n"
               "\n"
-              "One move a day — any kind. Nothing is measured or compared. What counts is showing up.\n"
+              "One move a day — any kind. Squats, swimming, barbell, stretching, dancing. Nothing is measured or compared. What counts is showing up.\n"
               "\n"
-              "📹 Send a video bubble, photo or GIF — that's your move. Text within {mins} min becomes its comment. No camera? /log <text>\n"
+              "📹 Send a video bubble or a photo to this bot — that's your move of the day. You can add a text comment to it. The bot passes your move straight to your crew — and to strangers too, if you turn radar on.\n"
               "⚡ Tap ⚡ under someone's move to cheer. Each morning you learn how many yours got.\n"
               "🤝 /move — your crew. Type a name to invite someone, mute or remove. /invite gives you a personal link.\n"
               "📡 /radar — one move from outside your crew, as often as you like. The same stranger won't return within {rdays} days.\n"
               "🔥 Streaks count days in a row. Milestones at {miles}. /summary for your months.\n"
-              "⏸️ /pause — silence everything for a day, a week or a month.",
-        "uk": "🏃 Move\n"
+              "⏸️ /pause — silence everything for a day, a week or a month.\n"
+              "\n"
               "{tagline}\n"
+              "Let's do it together.",
+        "uk": "🏃 Move\n"
               "\n"
-              "Один рух на день — будь-який. Нічого не вимірюється й не порівнюється. Головне — з'явитися.\n"
+              "Один рух на день — будь-який. Присідання, плавання, штанга, розтяжка, танці. Нічого не вимірюється й не порівнюється. Головне — проявитися.\n"
               "\n"
-              "📹 Надішли кругле відео, фото або GIF — це твій рух. Текст протягом {mins} хв стане коментарем. Немає камери? /log <текст>\n"
+              "📹 Надішли кругле відео або фото в цей чат-бот — це твій рух дня. Можеш доповнити рух текстовим коментарем. Бот одразу розішле рух твоєму колу — а якщо увімкнеш радар, то й незнайомцям.\n"
               "⚡ Тисни ⚡ під чужим рухом, щоб підтримати. Щоранку дізнаєшся, скільки зібрав твій.\n"
               "🤝 /move — твоє коло. Напиши ім'я, щоб запросити, приглушити або прибрати. /invite дає особисте посилання.\n"
               "📡 /radar — один рух з-поза твого кола, з обраною частотою. Той самий незнайомець не повернеться протягом {rdays} днів.\n"
               "🔥 Серії рахують дні поспіль. Віхи на {miles}. /summary — твої місяці.\n"
-              "⏸️ /pause — тиша на день, тиждень чи місяць.",
-        "de": "🏃 Move\n"
+              "⏸️ /pause — тиша на день, тиждень чи місяць.\n"
+              "\n"
               "{tagline}\n"
+              "Давай робити це разом.",
+        "de": "🏃 Move\n"
               "\n"
-              "Eine Bewegung pro Tag — welche auch immer. Nichts wird gemessen oder verglichen. Es zählt, dass du auftauchst.\n"
+              "Eine Bewegung pro Tag — welche auch immer. Kniebeugen, Schwimmen, Langhantel, Dehnen, Tanzen. Nichts wird gemessen oder verglichen. Es zählt, dass du auftauchst.\n"
               "\n"
-              "📹 Schick ein rundes Video, Foto oder GIF — das ist deine Bewegung. Text innerhalb von {mins} Min wird zum Kommentar. Keine Kamera? /log <Text>\n"
+              "📹 Schick ein rundes Video oder ein Foto an diesen Bot — das ist deine Bewegung des Tages. Du kannst einen Textkommentar ergänzen. Der Bot schickt deine Bewegung direkt an deine Crew — und an Fremde, wenn du Radar einschaltest.\n"
               "⚡ Tippe ⚡ unter einer fremden Bewegung. Jeden Morgen erfährst du, wie viele deine bekam.\n"
               "🤝 /move — deine Crew. Gib einen Namen ein zum Einladen, Stummschalten oder Entfernen. /invite gibt dir einen persönlichen Link.\n"
               "📡 /radar — eine Bewegung von außerhalb deiner Crew, so oft du willst. Dieselbe fremde Person kommt {rdays} Tage lang nicht wieder.\n"
               "🔥 Serien zählen Tage am Stück. Meilensteine bei {miles}. /summary für deine Monate.\n"
-              "⏸️ /pause — Ruhe für einen Tag, eine Woche oder einen Monat.",
+              "⏸️ /pause — Ruhe für einen Tag, eine Woche oder einen Monat.\n"
+              "\n"
+              "{tagline}\n"
+              "Machen wir das zusammen.",
     },
     "ask_name": {"en": "What would you like to be called?", "uk": "Як тебе називати?", "de": "Wie möchtest du genannt werden?"},
     "welcome": {

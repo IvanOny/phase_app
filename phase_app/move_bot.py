@@ -41,6 +41,11 @@ _RADAR_REPEAT_DAYS = int(os.environ.get("POOL_COOLDOWN_DAYS", "7"))
 _RADAR_PULL_MIN_POOL = 20             # "show me someone now" unlocks at this pool size
 _RADAR_FRESH_DAYS = 2                 # how far back radar looks for a move to show
 _MILESTONES = (7, 14, 30, 50, 100, 200, 365)
+# Moderation. Reports are unverified, so the automatic half stays reversible:
+# a warning is cheap, and a suspension is a pause a moderator can lift.
+_REPORTS_PER_WARNING = 2              # distinct reporters on one entry
+_WARNINGS_PER_SUSPENSION = 3          # active warnings before radar sharing stops
+_WARNING_TTL_DAYS = 90                # after which a warning no longer counts
 _INVITE_PREFIX = "invitation_of_"
 _INVITE_SLUG_MAX = 24                 # 14 + 24 + 1 + 10 keeps us under Telegram's 64
 # Enough Ukrainian/Russian and German to make a readable slug; the rest is dropped.
@@ -109,14 +114,29 @@ def _bot_username() -> str:
     return _BOT_USERNAME
 
 
-def _log(text: str) -> None:
+def _log(text: str, reply_markup: dict | None = None) -> None:
     if not _LOG_CHAT_ID:
         return
     ts = datetime.now(timezone(timedelta(hours=2))).strftime("%Y-%m-%d %H:%M")
+    payload = {"chat_id": int(_LOG_CHAT_ID), "text": f"[{ts}]\n{text}"}
+    if reply_markup:
+        # Moderation messages carry their actions, so acting doesn't need typing.
+        payload["reply_markup"] = reply_markup
     try:
-        _api_call("sendMessage", {"chat_id": int(_LOG_CHAT_ID), "text": f"[{ts}]\n{text}"})
+        _api_call("sendMessage", payload)
     except Exception:
         pass
+
+
+def _admin_ids() -> set[int]:
+    """Who may act on a report. MOVE_ADMIN_IDS, or the burpee bot's ADMIN_TG_ID."""
+    raw = os.environ.get("MOVE_ADMIN_IDS", "") or os.environ.get("ADMIN_TG_ID", "")
+    out = set()
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.add(int(part))
+    return out
 
 
 # ── i18n ─────────────────────────────────────────────────────────────────────
@@ -485,6 +505,54 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "⚠️ Скаргу надіслано — її перегляне людина. Цю людину ви більше не побачите.",
         "de": "⚠️ Gemeldet — ein Mensch schaut es sich an. Diese Person siehst du auch nicht mehr.",
     },
+    # Neutral on purpose. The reports are unverified, most people who trip this
+    # are careless rather than malicious, and an accusation makes them leave.
+    "warned": {
+        "en": "⚠️ A few people flagged one of your moves.\n\n"
+              "Nothing has changed — you're still sharing as before. Radar shows your "
+              "move to strangers, so keep it to your own activity.\n\n"
+              "Warnings on your account: {n} of {max}.",
+        "uk": "⚠️ Кілька людей поскаржились на один з ваших рухів.\n\n"
+              "Нічого не змінилось — ви ділитесь як і раніше. Радар показує ваш рух "
+              "незнайомцям, тож нехай це буде ваша власна активність.\n\n"
+              "Попереджень на акаунті: {n} з {max}.",
+        "de": "⚠️ Ein paar Leute haben eine deiner Bewegungen gemeldet.\n\n"
+              "Nichts hat sich geändert — du teilst wie bisher. Radar zeigt deine "
+              "Bewegung Fremden, also halte dich an deine eigene Aktivität.\n\n"
+              "Verwarnungen auf deinem Konto: {n} von {max}.",
+    },
+    "suspended": {
+        "en": "🚫 Radar sharing is paused on your account after {n} warnings.\n\n"
+              "Your crew is unaffected — you still post to them, and still see their "
+              "moves. Only strangers no longer see yours.\n\n"
+              "A human will review this.",
+        "uk": "🚫 Показ у радарі призупинено після {n} попереджень.\n\n"
+              "Ваше коло це не зачіпає — ви й далі надсилаєте їм рухи та бачите їхні. "
+              "Просто незнайомці більше не бачать ваших.\n\n"
+              "Це перегляне людина.",
+        "de": "🚫 Radar-Teilen ist nach {n} Verwarnungen pausiert.\n\n"
+              "Deine Crew ist nicht betroffen — du postest weiter an sie und siehst "
+              "ihre Bewegungen. Nur Fremde sehen deine nicht mehr.\n\n"
+              "Ein Mensch schaut sich das an.",
+    },
+    "restored": {
+        "en": "✅ Reviewed — radar sharing is back on. Sorry for the interruption.",
+        "uk": "✅ Перевірено — показ у радарі знову увімкнено. Вибачте за паузу.",
+        "de": "✅ Geprüft — Radar-Teilen ist wieder an. Entschuldige die Unterbrechung.",
+    },
+    "banned": {
+        "en": "🚫 Radar is switched off on your account. Your crew is unaffected.",
+        "uk": "🚫 Радар вимкнено на вашому акаунті. Ваше коло це не зачіпає.",
+        "de": "🚫 Radar ist für dein Konto abgeschaltet. Deine Crew ist nicht betroffen.",
+    },
+    "radar_share_locked": {
+        "en": "🚫 Radar sharing is paused on your account and can't be turned back on "
+              "here. You can still receive radar, and your crew is unaffected.",
+        "uk": "🚫 Показ у радарі призупинено — увімкнути його тут не можна. Отримувати "
+              "радар ви й далі можете, і ваше коло це не зачіпає.",
+        "de": "🚫 Radar-Teilen ist pausiert und kann hier nicht wieder aktiviert werden. "
+              "Empfangen kannst du weiter, und deine Crew ist nicht betroffen.",
+    },
     "radar_reported_already": {
         "en": "⚠️ You've already reported this one.",
         "uk": "⚠️ Ви вже поскаржились на це.",
@@ -804,6 +872,81 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     u = _user(cur, tg_id)
     _log(f"🗑 Move: revoked\n• {u['participant_name'] if u else tg_id}")
     return True
+
+
+# ── moderation ───────────────────────────────────────────────────────────────
+
+def _active_warnings(cur, tg_id: int) -> int:
+    """Warnings that still count: not cleared by a moderator, not yet expired."""
+    cur.execute(
+        "SELECT COUNT(*) AS n FROM move_warnings WHERE telegram_user_id = %s "
+        "AND cleared_at IS NULL AND created_at > NOW() - make_interval(days => %s)",
+        (tg_id, _WARNING_TTL_DAYS),
+    )
+    return cur.fetchone()["n"] or 0
+
+
+def _banned(u) -> bool:
+    """Tolerates a row from before 044 added the column, as _tgen does for gender."""
+    return bool(u and "banned_at" in u and u["banned_at"])
+
+
+def _is_suspended(cur, tg_id: int) -> bool:
+    cur.execute(
+        "SELECT 1 FROM move_suspensions WHERE telegram_user_id = %s AND lifted_at IS NULL",
+        (tg_id,),
+    )
+    return cur.fetchone() is not None
+
+
+def _mod_kb(tg_id: int) -> dict:
+    """Actions a moderator can take, attached to the log-channel message."""
+    return {"inline_keyboard": [[
+        {"text": "✅ Restore", "callback_data": f"mv:mod:restore:{tg_id}"},
+        {"text": "🚫 Ban", "callback_data": f"mv:mod:ban:{tg_id}"},
+    ]]}
+
+
+def _suspend(cur, conn, author, warnings: int) -> None:
+    """Pause radar sharing, pending a human. Reversible by design."""
+    tg_id = author["telegram_user_id"]
+    if _is_suspended(cur, tg_id):
+        return
+    cur.execute("UPDATE move_users SET radar_send = FALSE WHERE telegram_user_id = %s", (tg_id,))
+    cur.execute("INSERT INTO move_suspensions (telegram_user_id) VALUES (%s)", (tg_id,))
+    conn.commit()
+    _send(author["chat_id"] or tg_id,
+          _t("suspended", _norm_lang(author["language_code"]), n=warnings))
+    _log(f"🛑 Move: SUSPENDED (auto)\n"
+         f"• {author['participant_name']} (id {tg_id})\n"
+         f"• {warnings} active warnings\n"
+         f"• radar sharing off — crew untouched",
+         reply_markup=_mod_kb(tg_id))
+
+
+def _warn(cur, conn, author, entry_id: int) -> None:
+    """One warning per entry, however many people reported it."""
+    tg_id = author["telegram_user_id"]
+    cur.execute(
+        "INSERT INTO move_warnings (telegram_user_id, entry_id) VALUES (%s, %s) "
+        "ON CONFLICT (telegram_user_id, entry_id) DO NOTHING RETURNING id",
+        (tg_id, entry_id),
+    )
+    if cur.fetchone() is None:
+        conn.commit()
+        return                                # already warned for this move
+    conn.commit()
+    n = _active_warnings(cur, tg_id)
+    if n >= _WARNINGS_PER_SUSPENSION:
+        _suspend(cur, conn, author, n)
+        return
+    _send(author["chat_id"] or tg_id,
+          _t("warned", _norm_lang(author["language_code"]),
+             n=n, max=_WARNINGS_PER_SUSPENSION))
+    _log(f"⚠️ Move: warning {n}/{_WARNINGS_PER_SUSPENSION}\n"
+         f"• {author['participant_name']} (id {tg_id})\n"
+         f"• entry #{entry_id}",
+         reply_markup=_mod_kb(tg_id))
 
 
 # ── logging a move ───────────────────────────────────────────────────────────
@@ -1274,7 +1417,8 @@ def _radar_candidates(cur, rid: int) -> list:
         "SELECT e.id, e.chat_id, e.message_id, e.text_body, "
         "       u2.telegram_user_id AS from_id, u2.participant_name "
         "FROM move_entries e JOIN move_users u2 ON u2.telegram_user_id = e.telegram_user_id "
-        "WHERE e.entry_date >= %s AND u2.radar_send = TRUE AND u2.telegram_user_id <> %s "
+        "WHERE e.entry_date >= %s AND u2.radar_send = TRUE AND u2.banned_at IS NULL "
+        "  AND u2.telegram_user_id <> %s "
         "  AND NOT EXISTS (SELECT 1 FROM move_radar_block b "
         "                  WHERE b.telegram_user_id = %s AND b.blocked_tg_id = u2.telegram_user_id) "
         "  AND NOT EXISTS (SELECT 1 FROM move_radar_history h "
@@ -1373,6 +1517,47 @@ def _cmd_pause(cur, tg_id: int, chat_id: int, lang: str) -> None:
     else:
         text = _t("pause_menu", lang)
     _send(chat_id, text, reply_markup={"inline_keyboard": rows})
+
+
+def _cmd_mod(cur, conn, tg_id: int, chat_id: int, lang: str, args: str) -> None:
+    """`/mod status|restore|ban <name>` — the typed equivalent of the log buttons.
+
+    English only and unlocalized: it's for whoever runs the bot, not for users.
+    """
+    if tg_id not in _admin_ids():
+        # Answer exactly as any other unknown word would — no hint that /mod exists.
+        _send(chat_id, _t("unknown_msg", lang), reply_markup=_main_kb(lang))
+        return
+    action, _, name = args.strip().partition(" ")
+    name = name.strip()
+    if action not in ("status", "restore", "ban") or not name:
+        _send(chat_id, "Usage:\n/mod status <name>\n/mod restore <name>\n/mod ban <name>")
+        return
+    who = _by_name(cur, name)
+    if not who:
+        _send(chat_id, f"No one named \"{name}\".")
+        return
+    target_id = who["telegram_user_id"]
+    if action == "status":
+        cur.execute("SELECT COUNT(*) AS n FROM move_reports r JOIN move_entries e "
+                    "ON e.id = r.entry_id WHERE e.telegram_user_id = %s", (target_id,))
+        reports = cur.fetchone()["n"] or 0
+        _send(chat_id,
+              f"{who['participant_name']} (id {target_id})\n"
+              f"• active warnings: {_active_warnings(cur, target_id)}"
+              f"/{_WARNINGS_PER_SUSPENSION}\n"
+              f"• reports received: {reports}\n"
+              f"• suspended: {'yes' if _is_suspended(cur, target_id) else 'no'}\n"
+              f"• banned: {'yes' if _banned(who) else 'no'}\n"
+              f"• sharing to radar: {'yes' if who['radar_send'] else 'no'}",
+              reply_markup=_mod_kb(target_id))
+        return
+    # restore / ban reuse the button paths, so there's one implementation of each.
+    _handle_callback(cur, conn, {
+        "id": "0", "from": {"id": tg_id},
+        "message": {"chat": {"id": chat_id}, "message_id": 0},
+        "data": f"mv:mod:{action}:{target_id}",
+    })
 
 
 # ── webhook ──────────────────────────────────────────────────────────────────
@@ -1479,6 +1664,9 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word == "invite":
         _cmd_invite(cur, tg_id, chat_id, lang)
+        return
+    if word == "mod":
+        _cmd_mod(cur, conn, tg_id, chat_id, lang, args)
         return
     if word in ("language", "lang"):
         _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
@@ -1765,6 +1953,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _answer(cq["id"])
         _send(chat_id, _t("radar_reported", lang))
         me = _user(cur, tg_id)
+        # Distinct reporters, not reports: the PK on move_reports already makes
+        # one person's second tap a no-op, so a row is a person.
         cur.execute("SELECT COUNT(*) AS n FROM move_reports WHERE entry_id = %s", (entry_id,))
         total = cur.fetchone()["n"] or 0
         # Named on purpose: the log channel is the moderators' view, and they
@@ -1774,11 +1964,70 @@ def _handle_callback(cur, conn, cq: dict) -> None:
              f"• entry #{entry_id} ({entry['media_type'] or 'text'}, {entry['entry_date']})\n"
              f"• author: {entry['participant_name']} (id {entry['telegram_user_id']})\n"
              f"• reported by: {me['participant_name'] if me else tg_id} (id {tg_id})\n"
-             f"• reports on this entry: {total}")
+             f"• reports on this entry: {total}",
+             reply_markup=_mod_kb(entry["telegram_user_id"]))
+        if total >= _REPORTS_PER_WARNING:
+            author = _user(cur, entry["telegram_user_id"])
+            if author:
+                _warn(cur, conn, author, entry_id)
+        return
+
+    if body.startswith("mod:"):
+        # Pressed in the log channel. Whoever is in that channel isn't
+        # automatically a moderator, so the presser is checked, not the chat.
+        if tg_id not in _admin_ids():
+            _answer(cq["id"], "Not for you.")
+            return
+        action, _, target = body[len("mod:"):].partition(":")
+        if not target.isdigit():
+            return
+        target_id = int(target)
+        who = _user(cur, target_id)
+        name = who["participant_name"] if who else target_id
+        if action == "restore":
+            cur.execute(
+                "UPDATE move_suspensions SET lifted_at = NOW(), lifted_by = %s "
+                "WHERE telegram_user_id = %s AND lifted_at IS NULL",
+                (tg_id, target_id),
+            )
+            cur.execute(
+                "UPDATE move_warnings SET cleared_at = NOW(), cleared_by = %s "
+                "WHERE telegram_user_id = %s AND cleared_at IS NULL",
+                (tg_id, target_id),
+            )
+            cur.execute(
+                "UPDATE move_users SET radar_send = TRUE, banned_at = NULL "
+                "WHERE telegram_user_id = %s",
+                (target_id,),
+            )
+            conn.commit()
+            if who:
+                _send(who["chat_id"] or target_id, _t("restored", _norm_lang(who["language_code"])))
+            _answer(cq["id"], "Restored.")
+            _log(f"✅ Move: restored\n• {name} (id {target_id})\n• by admin {tg_id}")
+            return
+        if action == "ban":
+            cur.execute(
+                "UPDATE move_users SET radar_send = FALSE, banned_at = NOW() "
+                "WHERE telegram_user_id = %s",
+                (target_id,),
+            )
+            conn.commit()
+            if who:
+                _send(who["chat_id"] or target_id, _t("banned", _norm_lang(who["language_code"])))
+            _answer(cq["id"], "Banned from radar.")
+            _log(f"🚫 Move: banned from radar\n• {name} (id {target_id})\n• by admin {tg_id}")
+            return
         return
 
     if body.startswith("radarsend:"):
         on = body[len("radarsend:"):] == "on"
+        u = _user(cur, tg_id)
+        # A suspension the user can undo from a menu isn't a suspension.
+        if on and (_is_suspended(cur, tg_id) or _banned(u)):
+            _answer(cq["id"])
+            _send(chat_id, _t("radar_share_locked", lang))
+            return
         cur.execute("UPDATE move_users SET radar_send = %s WHERE telegram_user_id = %s", (on, tg_id))
         conn.commit()
         _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})

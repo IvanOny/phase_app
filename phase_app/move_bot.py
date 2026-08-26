@@ -570,7 +570,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     # ── pause ──
     "pause_menu": {"en": "⏸️ Pause everything — no moves from your crew, no radar.\n\nPause for:", "uk": "⏸️ Призупинити все — жодних рухів від кола, жодного радару.\n\nПризупинити на:", "de": "⏸️ Alles pausieren — keine Bewegungen der Crew, kein Radar.\n\nPausieren für:"},
-    "pause_active": {"en": "⏸️ Paused until {until}.\n\nExtend or resume:", "uk": "⏸️ Призупинено до {until}.\n\nПродовжити або відновити:", "de": "⏸️ Pausiert bis {until}.\n\nVerlängern oder fortsetzen:"},
+    # "Продовжити" alone is ambiguous — it reads as both "extend" and "carry on
+    # (i.e. resume)". Naming the object removes the ambiguity.
+    "pause_active": {"en": "⏸️ Paused until {until}.\n\nExtend the pause or resume:",
+                     "uk": "⏸️ Призупинено до {until}.\n\nПродовжити зупинку або відновити:",
+                     "de": "⏸️ Pausiert bis {until}.\n\nPause verlängern oder fortsetzen:"},
     "pause_1d": {"en": "1 day", "uk": "1 день", "de": "1 Tag"},
     "pause_1w": {"en": "1 week", "uk": "1 тиждень", "de": "1 Woche"},
     "pause_1m": {"en": "1 month", "uk": "1 місяць", "de": "1 Monat"},

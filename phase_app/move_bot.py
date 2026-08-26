@@ -555,10 +555,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "🚫 Готово — ця людина більше не з'явиться у твоєму радарі.",
         "de": "🚫 Erledigt — diese Person taucht in deinem Radar nicht mehr auf.",
     },
-    "radar_daily": {"en": "Daily", "uk": "Щодня", "de": "Täglich"},
-    "radar_weekly": {"en": "Weekly", "uk": "Щотижня", "de": "Wöchentlich"},
-    "radar_monthly": {"en": "Monthly", "uk": "Щомісяця", "de": "Monatlich"},
-    "radar_off": {"en": "Off", "uk": "Вимкнено", "de": "Aus"},
+    # Icon last, matching the share question's "Так, ділитися ✅". Sun/moon read
+    # as day/month without needing to be read; 🚫 is the same "no" as over there.
+    "radar_daily": {"en": "Daily ☀️", "uk": "Щодня ☀️", "de": "Täglich ☀️"},
+    "radar_weekly": {"en": "Weekly 📆", "uk": "Щотижня 📆", "de": "Wöchentlich 📆"},
+    "radar_monthly": {"en": "Monthly 🌙", "uk": "Щомісяця 🌙", "de": "Monatlich 🌙"},
+    "radar_off": {"en": "Off 🚫", "uk": "Вимкнено 🚫", "de": "Aus 🚫"},
     "radar_set": {"en": "📡 Radar: {label}.", "uk": "📡 Радар: {label}.", "de": "📡 Radar: {label}."},
     "radar_share_on": {"en": "📡 Share my moves: ON ✅", "uk": "📡 Ділитися моїми рухами: УВІМК ✅", "de": "📡 Meine Bewegungen teilen: AN ✅"},
     "radar_share_off": {"en": "📡 Share my moves: OFF 🚫", "uk": "📡 Ділитися моїми рухами: ВИМК 🚫", "de": "📡 Meine Bewegungen teilen: AUS 🚫"},

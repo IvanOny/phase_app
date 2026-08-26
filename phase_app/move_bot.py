@@ -390,7 +390,9 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Ist sie es schon, kannst du ihre Bewegungen stummschalten oder sie entfernen:",
     },
     "crew_nobody": {"en": "nobody yet", "uk": "поки нікого", "de": "noch niemand"},
-    "crew_not_found": {"en": "No one named \"{name}\". Try again or send /move.", "uk": "Нікого з ім'ям «{name}». Спробуй ще або надішли /move.", "de": "Niemand namens „{name}“. Versuch es erneut oder sende /move."},
+    # No "or send /move": the prompt is still armed, so retyping is the answer,
+    # and the way back to the menu is the 🤝 button sitting on screen anyway.
+    "crew_not_found": {"en": "No one named \"{name}\". Try again.", "uk": "Нікого з ім'ям «{name}». Спробуй ще.", "de": "Niemand namens „{name}“. Versuch es erneut."},
     # Adding someone is a request, never a fait accompli: moves are photos and
     # videos of people, so nobody's move travels anywhere they didn't agree to.
     "crew_request_sent": {

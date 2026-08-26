@@ -40,6 +40,13 @@ def _get_api() -> PhaseApi:
     # so we need an explicit round-trip to detect stale warm instances.
     try:
         _conn.cursor().execute("SELECT 1")
+        # Close the transaction the ping just opened. psycopg2 is not in
+        # autocommit, so SELECT 1 starts one and nothing here ends it -- the
+        # instance then sits "idle in transaction" holding AccessShareLock on
+        # every table it has touched, for as long as Vercel keeps it warm.
+        # That blocks any ALTER TABLE until it hits statement_timeout, and
+        # piles up lock contention for everything else.
+        _conn.rollback()
     except Exception:
         try:
             _conn.close()
@@ -47,6 +54,22 @@ def _get_api() -> PhaseApi:
             pass
         _conn = get_connection()
     return PhaseApi(_conn)
+
+
+def _release(conn) -> None:
+    """End whatever transaction this request left open.
+
+    Every write handler commits for itself, so anything still open here is a
+    read -- metrics.py never commits. Left alone it keeps the instance "idle in
+    transaction", holding AccessShareLock on the tables it touched for as long
+    as Vercel keeps the instance warm. Rolling back is therefore safe and is
+    what stops the locks accumulating.
+    """
+    try:
+        if conn and not conn.closed:
+            conn.rollback()
+    except Exception:
+        pass
 
 
 @app.after_request
@@ -70,6 +93,7 @@ def telegram_bot():
         handle_webhook(request.get_json(force=True) or {}, _get_api().conn)
     except Exception:
         traceback.print_exc()
+    _release(_conn)
     return jsonify({"ok": True}), 200
 
 
@@ -84,6 +108,7 @@ def move_bot():
         handle_move_webhook(request.get_json(force=True) or {}, _get_api().conn)
     except Exception:
         traceback.print_exc()
+    _release(_conn)
     return jsonify({"ok": True}), 200
 
 
@@ -144,13 +169,16 @@ def _run_daily_jobs(conn) -> dict:
 @app.route("/api/cron/radar", methods=["GET", "POST"])   # legacy alias / manual trigger
 def cron_daily():
     import traceback
+    global _conn
     try:
         result = _run_daily_jobs(_get_api().conn)
     except Exception:
         traceback.print_exc()
+        _release(_conn)
         return jsonify({"ok": False, "failed": ["*"]}), 500
     # 200 even with partial failures — the body names them, and Vercel retrying
     # the whole batch would just re-skip everything via cron_log anyway.
+    _release(_conn)
     return jsonify(result), 200
 
 
@@ -161,15 +189,12 @@ def handle(path: str):
         return make_response("", 204)
     query_params = {k: v for k, v in request.args.items()}
     body = request.get_json(silent=True) or {}
+    global _conn
     try:
         resp = _get_api().handle(request.method, "/" + path, body, query_params)
     except Exception:
         # Roll back any aborted transaction so the connection is reusable.
-        global _conn
-        try:
-            if _conn and not _conn.closed:
-                _conn.rollback()
-        except Exception:
-            pass
+        _release(_conn)
         raise
+    _release(_conn)
     return jsonify(resp.body), resp.status

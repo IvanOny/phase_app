@@ -47,17 +47,6 @@ _MILESTONES = (7, 14, 30, 50, 100, 200, 365)
 _REPORTS_PER_WARNING = 2              # distinct reporters on one entry
 _WARNINGS_PER_SUSPENSION = 3          # active warnings before radar sharing stops
 _WARNING_TTL_DAYS = 90                # after which a warning no longer counts
-_INVITE_PREFIX = "invitation_of_"
-_INVITE_SLUG_MAX = 24                 # 14 + 24 + 1 + 16 keeps us under Telegram's 64
-# Enough Ukrainian/Russian and German to make a readable slug; the rest is dropped.
-_TRANSLIT = {
-    "а": "a", "б": "b", "в": "v", "г": "h", "ґ": "g", "д": "d", "е": "e", "є": "ie",
-    "ж": "zh", "з": "z", "и": "y", "і": "i", "ї": "i", "й": "i", "к": "k", "л": "l",
-    "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch", "ь": "",
-    "ю": "iu", "я": "ia", "ы": "y", "э": "e", "ё": "e", "ъ": "",
-    "ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss",
-}
 _MEDIA_KEYS = ("video_note", "video", "photo", "animation")
 
 
@@ -412,6 +401,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "🤝 {name} gefragt, ob ihr euch zusammen bewegt.\n\n"
               "Ihr werdet verbunden, sobald sie zustimmen.",
     },
+    # Same decision as crew_request, but the owner never typed a name — they just
+    # get a knock at the door, so the message has to say where it came from.
+    "crew_request_link": {
+        "en": "🔗 {name} opened your invite link and wants to move with you.\n\n"
+              "Accept and you'll each see the other's moves.",
+        "uk": "🔗 {name} відкрив(ла) твоє посилання-запрошення й хоче рухатися разом.\n"
+              "\n"
+              "Погодься — і бачитимете рухи одне одного.",
+        "de": "🔗 {name} hat deinen Einladungslink geöffnet und möchte sich mit dir bewegen.\n\n"
+              "Nimm an, und ihr seht gegenseitig eure Bewegungen.",
+    },
     "crew_request": {
         "en": "🤝 {name} wants to move with you.\n\n"
               "Accept and you'll each see the other's moves.",
@@ -628,6 +628,16 @@ _STRINGS: dict[str, dict[str, str]] = {
     "summary_days": {"en": "🏃 Days moved: {count} of {total} ({pct}%)", "uk": "🏃 Днів у русі: {count} з {total} ({pct}%)", "de": "🏃 Bewegte Tage: {count} von {total} ({pct}%)"},
     "summary_streak": {"en": "🔥 Longest streak: {days} days", "uk": "🔥 Найдовша серія: {days} днів", "de": "🔥 Längste Serie: {days} Tage"},
     "summary_zaps": {"en": "⚡ Lightnings received: {n}", "uk": "⚡ Отримано блискавок: {n}", "de": "⚡ Erhaltene Blitze: {n}"},
+    "btn_new_link": {
+        "en": "🔄 New link", "uk": "🔄 Нове посилання", "de": "🔄 Neuer Link",
+    },
+    "invite_rotated": {
+        "en": "🔄 Done — here's your new link. The old one no longer works.\n\n{link}",
+        "uk": "🔄 Готово — ось нове посилання. Старе більше не працює.\n"
+              "\n"
+              "{link}",
+        "de": "🔄 Fertig — hier ist dein neuer Link. Der alte funktioniert nicht mehr.\n\n{link}",
+    },
     "invite_text": {
         "en": "🔗 Share this link with anyone you'd like to move with:\n\n{link}\n\n"
               "When they tap it, you'll be added to each other's crew automatically — "
@@ -1221,22 +1231,6 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
     _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
 
 
-def _slug(name: str) -> str:
-    """Name → deep-link-safe slug. Telegram allows only A-Za-z0-9_- in a payload."""
-    out = []
-    for ch in (name or "").strip():
-        low = ch.lower()
-        if ch.isascii() and ch.isalnum():
-            out.append(ch)
-        elif low in _TRANSLIT:
-            t = _TRANSLIT[low]
-            out.append(t.capitalize() if t and ch != low else t)
-        elif ch in " -_":
-            out.append("_")
-    slug = "_".join(part for part in "".join(out).split("_") if part)
-    return slug[:_INVITE_SLUG_MAX].strip("_")
-
-
 def _invite_code(cur, tg_id: int) -> str:
     """This user's secret invite token, minting one if the row somehow lacks it.
 
@@ -1256,16 +1250,25 @@ def _invite_code(cur, tg_id: int) -> str:
 
 
 def _invite_link(cur, tg_id: int, name: str | None = None) -> str:
-    """`invitation_of_Iv_Zhaba_<code>` — or plain `inv_<code>` if the name slugs to nothing.
+    """`inv_<code>` — nothing but a random token.
 
-    The trailing part used to be the raw Telegram user id, which is not secret,
-    so anyone could forge a link into a stranger's crew. It is now a random
-    per-user code (migration 045).
+    Two things used to ride along and both were liabilities. The Telegram user
+    id was not secret, so links could be forged (migration 045). The name slug
+    was cosmetic and never trusted for identity, but it published the owner's
+    name into every chat the link passed through, and it could be rewritten to
+    name someone else — which mattered while opening a link auto-connected.
+    `name` is still accepted so callers need not change.
     """
-    code = _invite_code(cur, tg_id)
-    slug = _slug(name or "")
-    payload = f"{_INVITE_PREFIX}{slug}_{code}" if slug else f"inv_{code}"
-    return f"https://t.me/{_bot_username()}?start={payload}"
+    return f"https://t.me/{_bot_username()}?start=inv_{_invite_code(cur, tg_id)}"
+
+
+def _rotate_invite_code(cur, tg_id: int) -> str:
+    """Issue a fresh code, killing every link handed out so far."""
+    import secrets
+    code = "m" + secrets.token_hex(8)[:15]
+    cur.execute("UPDATE move_users SET invite_code = %s WHERE telegram_user_id = %s",
+                (code, tg_id))
+    return code
 
 
 def _inviter_from_payload(cur, payload: str) -> int | None:
@@ -1467,32 +1470,57 @@ def _connect(cur, conn, a_id: int, b_id: int) -> str:
     return "already" if already else "linked"
 
 
+def _invite_kb(lang: str) -> dict:
+    return {"inline_keyboard": [[
+        {"text": _t("btn_new_link", lang), "callback_data": "mv:invite:rotate"}
+    ]]}
+
+
 def _cmd_invite(cur, tg_id: int, chat_id: int, lang: str) -> None:
     me = _user(cur, tg_id)
     link = _invite_link(cur, tg_id, me["participant_name"] if me else None)
-    _send(chat_id, _t("invite_text", lang, link=link))
+    _send(chat_id, _t("invite_text", lang, link=link), reply_markup=_invite_kb(lang))
 
 
 def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: int) -> None:
-    """Wire up a deep-link invite once both sides are registered."""
+    """A deep-link invite was opened: ask the link's owner to approve.
+
+    This used to connect the two outright. But a link is a bearer token — it
+    gets forwarded, pasted into groups, screenshotted — and whoever holds it
+    was landing in the owner's crew with no say from the owner, receiving their
+    daily videos from then on. Nobody joins without a tap now.
+
+    The approval belongs to the link's owner: they are the one exposed, and the
+    person who opened the link already consented by opening it. So this is the
+    same request the name flow sends, with the roles as they actually are —
+    the opener is the requester, the owner decides.
+    """
     if inviter_id == tg_id:
         _send(chat_id, _t("invite_self", lang))
         return
     inviter = _user(cur, inviter_id)
     if not inviter or not inviter["participant_name"]:
         return                                    # stale or unregistered inviter — ignore
-    result = _connect(cur, conn, tg_id, inviter_id)
-    if result == "bad":
-        return
     me = _user(cur, tg_id)
-    if result == "already":
+    if not me or not me["participant_name"]:
+        return                                    # opener hasn't finished registering
+    # Already crew? Say so instead of pestering the owner with a dead request.
+    cur.execute(
+        "SELECT 1 FROM move_crew WHERE telegram_user_id = %s AND LOWER(crew_name) = LOWER(%s)",
+        (tg_id, inviter["participant_name"]),
+    )
+    if cur.fetchone():
         _send(chat_id, _t("invite_already", lang, name=inviter["participant_name"]))
         return
-    _send(chat_id, _t("invite_connected", lang, name=inviter["participant_name"]))
+    ilang = _norm_lang(inviter["language_code"])
     _send(inviter["chat_id"] or inviter_id,
-          _t("invite_connected", _norm_lang(inviter["language_code"]),
-             name=me["participant_name"]))
-    _log(f"🔗 Move: invite\n• {inviter['participant_name']} ↔ {me['participant_name']}")
+          _t("crew_request_link", ilang, name=me["participant_name"]),
+          reply_markup={"inline_keyboard": [[
+              {"text": _t("btn_accept", ilang), "callback_data": f"mv:crew:accept:{tg_id}"},
+              {"text": _t("btn_decline", ilang), "callback_data": "mv:crew:decline"},
+          ]]})
+    _send(chat_id, _t("crew_request_sent", lang, name=inviter["participant_name"]))
+    _log(f"🔗 Move: invite link opened\n• {me['participant_name']} → {inviter['participant_name']}")
 
 
 def _month_stats(cur, tg_id: int, start: date, end: date) -> dict | None:
@@ -1933,6 +1961,18 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         return
     lang = _lang(cur, tg_id)
     body = data[3:]
+
+    if body == "invite:rotate":
+        _rotate_invite_code(cur, tg_id)
+        conn.commit()
+        _answer(cq["id"])
+        # New message rather than an edit: the old link stays visible above it,
+        # which is what makes "the old one no longer works" legible.
+        _send(chat_id, _t("invite_rotated", lang, link=_invite_link(cur, tg_id)),
+              reply_markup=_invite_kb(lang))
+        _log("🔄 Move: invite link rotated\n• " + str((_user(cur, tg_id) or {}).get(
+            "participant_name") or tg_id))
+        return
 
     if body.startswith("zap:"):
         entry_id = int(body[4:])

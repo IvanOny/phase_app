@@ -48,7 +48,7 @@ _REPORTS_PER_WARNING = 2              # distinct reporters on one entry
 _WARNINGS_PER_SUSPENSION = 3          # active warnings before radar sharing stops
 _WARNING_TTL_DAYS = 90                # after which a warning no longer counts
 _INVITE_PREFIX = "invitation_of_"
-_INVITE_SLUG_MAX = 24                 # 14 + 24 + 1 + 10 keeps us under Telegram's 64
+_INVITE_SLUG_MAX = 24                 # 14 + 24 + 1 + 16 keeps us under Telegram's 64
 # Enough Ukrainian/Russian and German to make a readable slug; the rest is dropped.
 _TRANSLIT = {
     "а": "a", "б": "b", "в": "v", "г": "h", "ґ": "g", "д": "d", "е": "e", "є": "ie",
@@ -1194,12 +1194,12 @@ def _check_milestone(cur, conn, user, streak: int) -> None:
 # ── commands ─────────────────────────────────────────────────────────────────
 
 def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = "") -> None:
-    """`/start`, optionally with an `invitation_of_<name>_<id>` deep-link payload.
+    """`/start`, optionally with an `invitation_of_<name>_<code>` deep-link payload.
 
     Already registered? We don't re-register — but we still honour the invite and
     connect the two, which is the useful thing to do with a tapped link.
     """
-    inviter_id = _inviter_from_payload(payload)
+    inviter_id = _inviter_from_payload(cur, payload)
 
     u = _user(cur, tg_id)
     if u and u["participant_name"]:
@@ -1237,40 +1237,65 @@ def _slug(name: str) -> str:
     return slug[:_INVITE_SLUG_MAX].strip("_")
 
 
-def _invite_link(tg_id: int, name: str | None = None) -> str:
-    """`invitation_of_Iv_Zhaba_<id>` — or plain `inv_<id>` if the name slugs to nothing."""
+def _invite_code(cur, tg_id: int) -> str:
+    """This user's secret invite token, minting one if the row somehow lacks it.
+
+    Migration 045 backfills every row and sets a column default, so the mint
+    below should never fire — it exists so a link is never silently built from
+    nothing on a database that missed the migration.
+    """
+    cur.execute("SELECT invite_code FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+    row = cur.fetchone()
+    if row and row["invite_code"]:
+        return row["invite_code"]
+    import secrets
+    code = "m" + secrets.token_hex(8)[:15]
+    cur.execute("UPDATE move_users SET invite_code = %s WHERE telegram_user_id = %s",
+                (code, tg_id))
+    return code
+
+
+def _invite_link(cur, tg_id: int, name: str | None = None) -> str:
+    """`invitation_of_Iv_Zhaba_<code>` — or plain `inv_<code>` if the name slugs to nothing.
+
+    The trailing part used to be the raw Telegram user id, which is not secret,
+    so anyone could forge a link into a stranger's crew. It is now a random
+    per-user code (migration 045).
+    """
+    code = _invite_code(cur, tg_id)
     slug = _slug(name or "")
-    payload = f"{_INVITE_PREFIX}{slug}_{tg_id}" if slug else f"inv_{tg_id}"
+    payload = f"{_INVITE_PREFIX}{slug}_{code}" if slug else f"inv_{code}"
     return f"https://t.me/{_bot_username()}?start={payload}"
 
 
-def _inviter_from_payload(payload: str) -> int | None:
-    """Trailing digits are the inviter id; whatever precedes them is decoration.
+def _inviter_from_payload(cur, payload: str) -> int | None:
+    """Resolve a deep-link payload to the inviter's id, or None.
 
-    Handles both the old `inv_<id>` links already sitting in people's chats and
-    the new `invitation_of_<name>_<id>` ones. The name is never trusted — it is
-    cosmetic, and spoofable by anyone who can type a URL, so the greeting still
-    reads the real name out of the database.
+    The last underscore-separated chunk is the token; anything before it is the
+    cosmetic name slug, which is never trusted — it is spoofable by anyone who
+    can type a URL, so the greeting still reads the real name from the database.
+
+    An all-digit chunk is a legacy `..._<telegram_user_id>` link. Those are
+    refused: honouring them would leave the forgery hole wide open, which is the
+    whole reason for the change. Codes always start with a letter, so the two
+    can never be confused.
     """
     payload = payload.strip()
-    digits = ""
-    for ch in reversed(payload):
-        if not ch.isdigit():
-            break
-        digits = ch + digits
-    if not digits or digits == payload:
+    if "_" not in payload:
         return None                       # no prefix at all — not one of our links
-    try:
-        return int(digits)
-    except ValueError:
+    token = payload.rsplit("_", 1)[-1]
+    if not token or token.isdigit():
         return None
+    cur.execute("SELECT telegram_user_id FROM move_users WHERE invite_code = %s", (token,))
+    row = cur.fetchone()
+    return row["telegram_user_id"] if row else None
 
 
-def _invite_line(tg_id: int, lang: str, name: str | None = None) -> str:
-    return _t("invite_line", lang, link=_invite_link(tg_id, name))
+def _invite_line(cur, tg_id: int, lang: str, name: str | None = None) -> str:
+    return _t("invite_line", lang, link=_invite_link(cur, tg_id, name))
 
 
-def _cmd_info(tg_id: int, chat_id: int, lang: str, name: str | None = None) -> None:
+def _cmd_info(cur, tg_id: int, chat_id: int, lang: str, name: str | None = None) -> None:
     body = _t("info_body", lang,
               tagline=_t("tagline", lang),
               mins=_COMMENT_WINDOW_MINUTES,
@@ -1278,7 +1303,7 @@ def _cmd_info(tg_id: int, chat_id: int, lang: str, name: str | None = None) -> N
               undo=_UNDO_WINDOW_SECONDS,
               miles="/".join(str(m) for m in _MILESTONES))
     # Inline button, not the reply keyboard — the persistent one stays put anyway.
-    _send(chat_id, f"{body}\n\n{_invite_line(tg_id, lang, name)}",
+    _send(chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}",
           reply_markup={"inline_keyboard": [[
               {"text": _t("btn_language", lang), "callback_data": "mv:langmenu"}
           ]]})
@@ -1308,7 +1333,7 @@ def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     # do it (it uses an inline keyboard), and the old label still routes here via
     # _LEGACY_BUTTONS — so tapping the stale button upgrades it.
     _send(chat_id, "\n".join(lines) + "\n\n"
-                   f"{_invite_line(tg_id, lang, me['participant_name'] if me else None)}\n\n"
+                   f"{_invite_line(cur, tg_id, lang, me['participant_name'] if me else None)}\n\n"
                    f"{_t('crew_prompt', lang)}",
           reply_markup=_main_kb(lang))
 
@@ -1317,10 +1342,10 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
     """A name typed after /move: invite them, or offer hide/remove if already there."""
     target = _by_name(cur, name)
     if not target or target["telegram_user_id"] == tg_id:
-        # "Try again" has to mean it: the caller cleared the state before getting
-        # here, so without re-arming it the next name typed falls through to
-        # "send a video bubble" and the user has to reopen the menu.
-        _set_state(cur, tg_id, "await_crew")
+        # Leave await_crew armed so "try again" means it — but don't re-set it,
+        # which would restart the 10-minute clock. Refreshing it on every miss
+        # made the state immortal: keep typing and every plain message, for the
+        # rest of time, is read as a crew name. Now the window closes on time.
         _send(chat_id, _t("crew_not_found", lang, name=name))
         return
     tname = target["participant_name"]
@@ -1329,9 +1354,8 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         (tg_id, tname),
     )
     if cur.fetchone():
-        # Same re-arm as above: the menu is informational, and the prompt still
-        # invites another name, so typing one has to keep working.
-        _set_state(cur, tg_id, "await_crew")
+        # Also left armed: the menu is informational and the prompt still invites
+        # another name, so typing one has to keep working — within the window.
         text, kb = _crew_member_view(cur, tg_id, target, lang)
         _send(chat_id, text, reply_markup=kb)
         return
@@ -1347,6 +1371,8 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
               {"text": _t("btn_decline", _norm_lang(target["language_code"])),
                "callback_data": "mv:crew:decline"},
           ]]})
+    # The ask went out — that's the end of this prompt, so stop reading text as names.
+    _clear_state(cur, tg_id)
     _send(chat_id, _t("crew_request_sent", lang, name=tname))
     _log(f"🤝 Move: crew request\n• {myname} → {tname}")
 
@@ -1443,7 +1469,7 @@ def _connect(cur, conn, a_id: int, b_id: int) -> str:
 
 def _cmd_invite(cur, tg_id: int, chat_id: int, lang: str) -> None:
     me = _user(cur, tg_id)
-    link = _invite_link(tg_id, me["participant_name"] if me else None)
+    link = _invite_link(cur, tg_id, me["participant_name"] if me else None)
     _send(chat_id, _t("invite_text", lang, link=link))
 
 
@@ -1755,6 +1781,10 @@ def handle_move_webhook(body: dict, conn) -> None:
         if not (u and u["participant_name"]):
             _send(chat_id, _t("register_first", lang))
             return
+        # Sending a move ends any half-finished prompt. Otherwise an armed
+        # "await_crew" outranks the comment window below, and the text you type
+        # under your own video comes back as "nobody is called that".
+        _clear_state(cur, tg_id)
         _log_move(cur, conn, tg_id, chat_id, media, msg.get("caption"))
         conn.commit()
         return
@@ -1821,7 +1851,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         _send(chat_id, _t("register_first", lang))
         return
     if word in ("info", "help"):
-        _cmd_info(tg_id, chat_id, lang, u["participant_name"])
+        _cmd_info(cur, tg_id, chat_id, lang, u["participant_name"])
         return
     if word == "rename":
         _set_state(cur, tg_id, "await_rename")
@@ -1872,9 +1902,11 @@ def handle_move_webhook(body: dict, conn) -> None:
         conn.commit()
         return
 
-    # 4) a name typed after /move
+    # 4) a name typed after /move.
+    # The state is deliberately left in place for the handler to decide: it clears
+    # it once the invite is actually sent, and otherwise leaves it armed with its
+    # original timestamp so the 10-minute window still expires on schedule.
     if state == "await_crew":
-        _clear_state(cur, tg_id)
         _handle_crew_name(cur, conn, tg_id, chat_id, lang, text)
         conn.commit()
         return

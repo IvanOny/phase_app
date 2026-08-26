@@ -291,6 +291,13 @@ _STRINGS: dict[str, dict[str, str]] = {
     "letters_only": {"en": "Letters only please, up to 32 characters.", "uk": "Лише літери, до 32 символів.", "de": "Bitte nur Buchstaben, bis zu 32 Zeichen."},
     "name_taken": {"en": "\"{name}\" is taken. Pick another.", "uk": "Ім'я «{name}» зайняте. Обери інше.", "de": "„{name}“ ist vergeben. Wähle einen anderen."},
     "unknown_msg": {"en": "Send a video bubble or a photo to log your move. Tap ℹ️ Info for more.", "uk": "Надішли кругле відео або фото, щоб записати свій рух. Натисни ℹ️ Інфо.", "de": "Schick ein rundes Video oder ein Foto, um deine Bewegung zu erfassen. Tippe ℹ️ Info."},
+    # Same fallback, for someone who has already moved — telling them to record a
+    # move they've just recorded reads as if the bot forgot.
+    "unknown_msg_done": {
+        "en": "Already moved today ✓ — tap ℹ️ Info to see what else I can do.",
+        "uk": "Сьогодні рух уже є ✓ — натисни ℹ️ Інфо, щоб побачити, що я ще вмію.",
+        "de": "Heute schon bewegt ✓ — tippe ℹ️ Info, um zu sehen, was ich sonst kann.",
+    },
     # ── logging ──
     "logged": {"en": "✓ Move logged{streak}", "uk": "✓ Рух записано{streak}", "de": "✓ Bewegung erfasst{streak}"},
     "logged_shared": {"en": "✓ Move logged{streak} → shared with {names}", "uk": "✓ Рух записано{streak} → надіслано: {names}", "de": "✓ Bewegung erfasst{streak} → geteilt mit {names}"},
@@ -411,20 +418,20 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Not "mute": nothing is silenced, their moves simply don't arrive until the
     # date. "Без звуку" had people asking which sound the bot meant.
     "crew_muted_until": {
-        "en": " (hidden until {until})",
-        "uk": " (не показуємо до {until})",
-        "de": " (ausgeblendet bis {until})",
+        "en": " (🙈 hidden until {until})",
+        "uk": " (🙈 не показуємо до {until})",
+        "de": " (🙈 ausgeblendet bis {until})",
     },
     # Removal is symmetric and needs the other side's consent to undo, so it asks
     # first — and says what "removing" now costs.
     "crew_remove_confirm": {
-        "en": "Remove {name} from your crew?\n\n"
+        "en": "🗑 Remove {name} from your crew?\n\n"
               "The link goes both ways, so it disappears for both of you. To get it "
               "back you'd have to send a request and wait for them to accept.",
-        "uk": "Прибрати {name} з кола?\n\n"
+        "uk": "🗑 Прибрати {name} з кола?\n\n"
               "Зв'язок взаємний, тож зникне з обох боків. Щоб повернути, доведеться "
               "надіслати запит і дочекатися згоди.",
-        "de": "{name} aus deiner Crew entfernen?\n\n"
+        "de": "🗑 {name} aus deiner Crew entfernen?\n\n"
               "Die Verbindung gilt in beide Richtungen und verschwindet für euch "
               "beide. Zurückholen geht nur mit einer neuen Anfrage und ihrer Zustimmung.",
     },
@@ -1803,7 +1810,12 @@ def handle_move_webhook(body: dict, conn) -> None:
     if _attach_comment(cur, conn, tg_id, chat_id, text):
         return
 
-    _send(chat_id, _t("unknown_msg", lang), reply_markup=_main_kb(lang))
+    cur.execute(
+        "SELECT 1 FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",
+        (tg_id, date.today()),
+    )
+    _send(chat_id, _t("unknown_msg_done" if cur.fetchone() else "unknown_msg", lang),
+          reply_markup=_main_kb(lang))
     conn.commit()
 
 

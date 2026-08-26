@@ -1247,9 +1247,14 @@ def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     names = [n for n in _crew_names(cur, tg_id) if n != "__all__"]
     crew = ", ".join(names) or _t("crew_nobody", lang)
     me = _user(cur, tg_id)
+    # Resend the main keyboard here: it lives in the client until a message
+    # carries a new one, so a renamed button stays stale otherwise. /info can't
+    # do it (it uses an inline keyboard), and the old label still routes here via
+    # _LEGACY_BUTTONS — so tapping the stale button upgrades it.
     _send(chat_id, f"{_t('crew_menu', lang, crew=crew)}\n\n"
                    f"{_invite_line(tg_id, lang, me['participant_name'] if me else None)}\n\n"
-                   f"{_t('crew_prompt', lang)}")
+                   f"{_t('crew_prompt', lang)}",
+          reply_markup=_main_kb(lang))
 
 
 def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str) -> None:

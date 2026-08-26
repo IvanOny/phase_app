@@ -612,9 +612,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     "pause_active": {"en": "⏸️ Paused until {until}.\n\nExtend the pause or resume:",
                      "uk": "⏸️ Призупинено до {until}.\n\nПродовжити зупинку або відновити:",
                      "de": "⏸️ Pausiert bis {until}.\n\nPause verlängern oder fortsetzen:"},
-    "pause_1d": {"en": "1 day", "uk": "1 день", "de": "1 Tag"},
-    "pause_1w": {"en": "1 week", "uk": "1 тиждень", "de": "1 Woche"},
-    "pause_1m": {"en": "1 month", "uk": "1 місяць", "de": "1 Monat"},
+    # An escalating ladder, so the three are told apart at a glance rather than
+    # read: one night, one week on the calendar, one month.
+    "pause_1d": {"en": "🌙 1 day", "uk": "🌙 1 день", "de": "🌙 1 Tag"},
+    "pause_1w": {"en": "📅 1 week", "uk": "📅 1 тиждень", "de": "📅 1 Woche"},
+    "pause_1m": {"en": "🗓 1 month", "uk": "🗓 1 місяць", "de": "🗓 1 Monat"},
     "pause_resume": {"en": "▶️ Resume now", "uk": "▶️ Відновити зараз", "de": "▶️ Jetzt fortsetzen"},
     "pause_set": {"en": "⏸️ Paused until {until}.", "uk": "⏸️ Призупинено до {until}.", "de": "⏸️ Pausiert bis {until}."},
     "pause_resumed": {"en": "▶️ Resumed.", "uk": "▶️ Відновлено.", "de": "▶️ Fortgesetzt."},

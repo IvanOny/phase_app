@@ -256,6 +256,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "\n"
               "📹 Send a video bubble or a photo to this bot — that's your move of the day. You can add a text comment to it. The bot passes your move straight to your crew — and to strangers too, if you turn radar on.\n"
               "\n"
+              "💬 A question or an idea? Send /feedback — it goes straight to the people who make Move.\n"
+              "\n"
               "{tagline}\n"
               "Let's do it together.",
         "uk": "🏃 Move\n"
@@ -264,6 +266,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "\n"
               "📹 Надішли кругле відео або фото в цей чат-бот — це твій рух дня. Можеш доповнити рух текстовим коментарем. Бот одразу розішле рух твоєму колу — а якщо увімкнеш радар, то й незнайомцям.\n"
               "\n"
+              "💬 Є питання чи ідея? Надішли /feedback — воно потрапить прямо до тих, хто робить Move.\n"
+              "\n"
               "{tagline}\n"
               "Давай робити це разом.",
         "de": "🏃 Move\n"
@@ -271,6 +275,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Eine Bewegung pro Tag — welche auch immer. Kniebeugen, Schwimmen, Langhantel, Dehnen, Tanzen. Nichts wird gemessen oder verglichen. Es zählt, dass du auftauchst.\n"
               "\n"
               "📹 Schick ein rundes Video oder ein Foto an diesen Bot — das ist deine Bewegung des Tages. Du kannst einen Textkommentar ergänzen. Der Bot schickt deine Bewegung direkt an deine Crew — und an Fremde, wenn du Radar einschaltest.\n"
+              "\n"
+              "💬 Eine Frage oder eine Idee? Schick /feedback — sie geht direkt an die Leute hinter Move.\n"
               "\n"
               "{tagline}\n"
               "Machen wir das zusammen.",
@@ -324,6 +330,17 @@ _STRINGS: dict[str, dict[str, str]] = {
               "füge jemanden über 🤝 Bewegen mit hinzu.",
     },
     "log_usage": {"en": "Usage: /log <what you did>", "uk": "Використання: /log <твоя активність>", "de": "Verwendung: /log <was du gemacht hast>"},
+    # ── feedback ──
+    "ask_feedback": {
+        "en": "What's on your mind? Write your question or idea in one message — I'll pass it on.",
+        "uk": "Що скажеш? Напиши питання або ідею одним повідомленням — я передам.",
+        "de": "Was hast du auf dem Herzen? Schreib deine Frage oder Idee in einer Nachricht — ich leite sie weiter.",
+    },
+    "feedback_sent": {
+        "en": "Thanks — passed on to the team 🙏",
+        "uk": "Дякую — передав команді 🙏",
+        "de": "Danke — an das Team weitergeleitet 🙏",
+    },
     # Base form is deliberately genderless in Ukrainian, for users we haven't asked.
     "crew_move":   {"en": "{name} moved today", "uk": "{name} — рух сьогодні", "de": "{name} hat sich heute bewegt"},
     "crew_move_m": {"uk": "{name} рухався сьогодні"},
@@ -464,7 +481,9 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_unmute": {"en": "👀 Show again", "uk": "👀 Показувати знову", "de": "👀 Wieder anzeigen"},
     "btn_mute_1d": {"en": "🙈 Hide 1 day", "uk": "🙈 Сховати на 1 день", "de": "🙈 1 Tag ausblenden"},
     "btn_mute_1w": {"en": "🙈 Hide 1 week", "uk": "🙈 Сховати на 1 тиждень", "de": "🙈 1 Woche ausblenden"},
-    "btn_remove": {"en": "🗑 Remove", "uk": "🗑 Прибрати", "de": "🗑 Entfernen"},
+    # "Remove" alone begs the question "from what?" — the menu also offers hiding.
+    "btn_remove": {"en": "🗑 Remove from crew", "uk": "🗑 Прибрати з кола",
+                   "de": "🗑 Aus der Crew entfernen"},
     "cancelled": {"en": "Cancelled.", "uk": "Скасовано.", "de": "Abgebrochen."},
     # ── radar ──
     # Two separate questions, asked one after the other: receiving and sharing are
@@ -1310,6 +1329,9 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         (tg_id, tname),
     )
     if cur.fetchone():
+        # Same re-arm as above: the menu is informational, and the prompt still
+        # invites another name, so typing one has to keep working.
+        _set_state(cur, tg_id, "await_crew")
         text, kb = _crew_member_view(cur, tg_id, target, lang)
         _send(chat_id, text, reply_markup=kb)
         return
@@ -1365,7 +1387,9 @@ def _crew_member_view(cur, tg_id: int, target, lang: str) -> tuple[str, dict]:
         {"text": _t("btn_mute_1w", lang), "callback_data": f"mv:crew:mute1w:{tid}"},
     ])
     rows.append([{"text": _t("btn_remove", lang), "callback_data": f"mv:crew:remove:{tid}"}])
-    rows.append([{"text": _t("kb_cancel", lang), "callback_data": "mv:crew:cancel"}])
+    # No cancel: this menu asks nothing, so doing nothing is already the way out.
+    # It also used to clear await_crew, which quietly stopped you typing another
+    # name. The destructive confirm below still has one, where "no" is a real answer.
     return _t("crew_in_list", lang, name=tname, status=status), {"inline_keyboard": rows}
 
 
@@ -1769,6 +1793,21 @@ def handle_move_webhook(body: dict, conn) -> None:
                 pass
         return
 
+    # 2b) a question or suggestion typed after /feedback
+    if base_state == "await_feedback":
+        _clear_state(cur, tg_id)
+        conn.commit()
+        if not text.startswith("/"):
+            # No storage: this is a message to a human, not app data. The log chat
+            # is where the maintainers already watch, and the name + id let them
+            # reply by hand.
+            _log("💬 Move: feedback\n• {} ({})\n\n{}".format(
+                (u or {}).get("participant_name") or "?", tg_id, text))
+            _send(chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang))
+            return
+        # A command instead of an answer means they changed their mind — the state
+        # is already cleared, so let it fall through and run.
+
     # 3) commands
     head = text.split()[0]
     word = head.lstrip("/").lower()
@@ -1793,6 +1832,16 @@ def handle_move_webhook(body: dict, conn) -> None:
         _cmd_move(cur, tg_id, chat_id, lang)
         _set_state(cur, tg_id, "await_crew")
         conn.commit()
+        return
+    if word in ("feedback", "support"):
+        # Inline form supported too: "/feedback the radar is confusing" skips the ask.
+        if args:
+            _log("💬 Move: feedback\n• {} ({})\n\n{}".format(u["participant_name"], tg_id, args))
+            _send(chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang))
+            return
+        _set_state(cur, tg_id, "await_feedback")
+        conn.commit()
+        _send(chat_id, _t("ask_feedback", lang))
         return
     if word == "radar":
         _cmd_radar(cur, tg_id, chat_id, lang)

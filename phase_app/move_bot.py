@@ -359,6 +359,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "🤝 Рухаєшся разом з: {crew}",
         "de": "🤝 Bewegst dich mit: {crew}",
     },
+    # Hidden people are still in the crew, so listing them alongside everyone
+    # else made the menu claim you're moving with someone you've muted.
+    "crew_menu_hidden": {
+        "en": "🙈 Paused with: {crew}",
+        "uk": "🙈 Призупинена взаємодія з: {crew}",
+        "de": "🙈 Pausiert mit: {crew}",
+    },
+    "crew_hidden_entry": {"en": "{name} until {until}", "uk": "{name} до {until}",
+                          "de": "{name} bis {until}"},
     # Spells out both branches, because typing a name does two different things
     # depending on whether that person is already in your crew. "Participant's
     # name", not "username": it's the name they registered with, and @handle
@@ -1258,13 +1267,28 @@ def _cmd_info(tg_id: int, chat_id: int, lang: str, name: str | None = None) -> N
 
 def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     names = [n for n in _crew_names(cur, tg_id) if n != "__all__"]
-    crew = ", ".join(names) or _t("crew_nobody", lang)
+    # Hidden people are still crew, but listing them under "moving with" claims
+    # something untrue — they're the ones whose moves you've paused.
+    cur.execute(
+        "SELECT muted_name, muted_until FROM move_mute "
+        "WHERE telegram_user_id = %s AND muted_until > NOW()",
+        (tg_id,),
+    )
+    hidden = {r["muted_name"].lower(): r["muted_until"] for r in cur.fetchall()}
+    active = [n for n in names if n.lower() not in hidden]
+
+    lines = [_t("crew_menu", lang, crew=", ".join(active) or _t("crew_nobody", lang))]
+    if hidden:
+        lines.append(_t("crew_menu_hidden", lang, crew=", ".join(
+            _t("crew_hidden_entry", lang, name=n, until=_short_date(hidden[n.lower()]))
+            for n in names if n.lower() in hidden)))
+
     me = _user(cur, tg_id)
     # Resend the main keyboard here: it lives in the client until a message
     # carries a new one, so a renamed button stays stale otherwise. /info can't
     # do it (it uses an inline keyboard), and the old label still routes here via
     # _LEGACY_BUTTONS — so tapping the stale button upgrades it.
-    _send(chat_id, f"{_t('crew_menu', lang, crew=crew)}\n\n"
+    _send(chat_id, "\n".join(lines) + "\n\n"
                    f"{_invite_line(tg_id, lang, me['participant_name'] if me else None)}\n\n"
                    f"{_t('crew_prompt', lang)}",
           reply_markup=_main_kb(lang))

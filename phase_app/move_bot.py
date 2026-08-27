@@ -745,6 +745,19 @@ _STRINGS: dict[str, dict[str, str]] = {
     "pause_resumed": {"en": "▶️ Resumed.", "uk": "▶️ Відновлено.", "de": "▶️ Fortgesetzt."},
     # ── reports ──
     "zap_report": {"en": "⚡ Yesterday your move got {n} {word}.", "uk": "⚡ Вчора твій рух отримав {n} {word}.", "de": "⚡ Gestern hat deine Bewegung {n} {word} bekommen."},
+    # Counts only — no names, from either side. Which crew member cheered stays
+    # as private as which stranger did.
+    "zap_report_split": {
+        "en": "{crew} from your crew · {radar} from strangers on radar",
+        "uk": "{crew} від твого кола · {radar} від незнайомців з радару",
+        "de": "{crew} aus deiner Crew · {radar} von Fremden im Radar",
+    },
+    # "0 from your crew" is a worse way to say this.
+    "zap_report_all_radar": {
+        "en": "all of them from strangers on radar",
+        "uk": "усі — від незнайомців з радару",
+        "de": "alle von Fremden im Radar",
+    },
     "zap_word_one":  {"en": "lightning", "uk": "блискавку", "de": "Blitz"},
     "zap_word_few":  {"en": "lightnings", "uk": "блискавки", "de": "Blitze"},
     "zap_word_many": {"en": "lightnings", "uk": "блискавок", "de": "Blitze"},
@@ -2702,9 +2715,17 @@ def send_move_zap_reports(conn) -> None:
     if not _claim_job(cur, conn, "move_zap_report", today):
         return
     yesterday = today - timedelta(days=1)
+    # Split by where the ⚡ came from. move_forwards already knows: the copy each
+    # reactor was looking at is kind='radar' for a stranger and kind='move' for
+    # crew. A ⚡ from outside your crew is the only sign that sharing to radar did
+    # anything at all, and it used to disappear into one undifferentiated number.
     cur.execute(
         "SELECT e.id, e.telegram_user_id, u.chat_id, u.language_code, "
-        "       (SELECT COUNT(*) FROM move_reactions r WHERE r.entry_id = e.id) AS zaps "
+        "       (SELECT COUNT(*) FROM move_reactions r WHERE r.entry_id = e.id) AS zaps, "
+        "       (SELECT COUNT(*) FROM move_reactions r "
+        "          JOIN move_forwards f ON f.entry_id = r.entry_id "
+        "                              AND f.recipient_tg_id = r.reactor_tg_id "
+        "         WHERE r.entry_id = e.id AND f.kind = 'radar') AS radar_zaps "
         "FROM move_entries e JOIN move_users u ON u.telegram_user_id = e.telegram_user_id "
         "WHERE e.entry_date = %s",
         (yesterday,),
@@ -2717,7 +2738,15 @@ def send_move_zap_reports(conn) -> None:
             continue                      # no ⚡ — better silence than "you got 0"
         lang = _norm_lang(r["language_code"])
         word = _t(f"zap_word_{_plural_form(n, lang)}", lang)
-        _send(r["chat_id"] or r["telegram_user_id"], _t("zap_report", lang, n=n, word=word))
+        text = _t("zap_report", lang, n=n, word=word)
+        strangers = min(r["radar_zaps"] or 0, n)
+        if strangers:
+            # Only when there were any: someone with radar sharing off would
+            # otherwise get a line about a thing they've switched off.
+            text += "\n" + (_t("zap_report_all_radar", lang) if strangers == n
+                            else _t("zap_report_split", lang,
+                                    crew=n - strangers, radar=strangers))
+        _send(r["chat_id"] or r["telegram_user_id"], text)
         notified += 1
     conn.commit()
     # Always log, so a missing report can be told apart from a job that never ran.

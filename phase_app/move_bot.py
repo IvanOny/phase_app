@@ -378,17 +378,20 @@ _STRINGS: dict[str, dict[str, str]] = {
     # depending on whether that person is already in your crew. "Participant's
     # name", not "username": it's the name they registered with, and @handle
     # would send people looking in the wrong place.
+    # The branch this used to spell out is now visible: people already in the crew
+    # are buttons below. All that's left to say is how to reach someone who isn't
+    # — without this line, inviting has no entry point at all.
     "crew_prompt": {
-        "en": "Type a participant's name.\n"
-              "If they're not in your crew yet, we'll send them an invite.\n"
-              "If they already are, you can mute their moves or remove them:",
-        "uk": "Напиши ім'я учасника.\n"
-              "Якщо цієї людини ще немає у твоєму колі — надішлемо їй запрошення.\n"
-              "Якщо вона вже у колі — зможеш сховати її рухи або прибрати з кола:",
-        "de": "Gib den Namen einer Teilnehmerin oder eines Teilnehmers ein.\n"
-              "Ist die Person noch nicht in deiner Crew, schicken wir ihr eine Einladung.\n"
-              "Ist sie es schon, kannst du ihre Bewegungen stummschalten oder sie entfernen:",
+        "en": "Type a name to invite someone new, or pick someone below:",
+        "uk": "Напиши ім'я, щоб запросити когось нового, або обери зі списку:",
+        "de": "Gib einen Namen ein, um jemanden einzuladen, oder wähle unten:",
     },
+    "crew_prompt_empty": {
+        "en": "Type a name to invite someone to move with you:",
+        "uk": "Напиши ім'я, щоб запросити когось рухатися разом:",
+        "de": "Gib einen Namen ein, um jemanden einzuladen:",
+    },
+    "btn_back": {"en": "← Back", "uk": "← Назад", "de": "← Zurück"},
     "crew_nobody": {"en": "nobody yet", "uk": "поки нікого", "de": "noch niemand"},
     # No "or send /move": the prompt is still armed, so retyping is the answer,
     # and the way back to the menu is the 🤝 button sitting on screen anyway.
@@ -1340,9 +1343,45 @@ def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     # do it (it uses an inline keyboard), and the old label still routes here via
     # _LEGACY_BUTTONS — so tapping the stale button upgrades it.
     _send(chat_id, "\n".join(lines) + "\n\n"
-                   f"{_invite_line(cur, tg_id, lang, me['participant_name'] if me else None)}\n\n"
-                   f"{_t('crew_prompt', lang)}",
+                   f"{_invite_line(cur, tg_id, lang, me['participant_name'] if me else None)}",
           reply_markup=_main_kb(lang))
+    # The prompt goes in its own message because it carries the crew as buttons,
+    # and one message can hold either the main keyboard or an inline one.
+    text, kb = _crew_pick_view(cur, tg_id, lang)
+    _send(chat_id, text, reply_markup=kb)
+
+
+# Telegram takes far more, but a wall of buttons stops being a shortcut. Beyond
+# this the prompt above still works — typing a name is the path that scales.
+_CREW_BUTTON_LIMIT = 20
+
+
+def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
+    """The "type a name" prompt, with everyone already in the crew as a button.
+
+    Typing still works and is still the only way to reach someone new; the
+    buttons just remove the need to retype a name the bot already knows —
+    including ones with characters that are awkward to enter.
+    """
+    names = [n for n in _crew_names(cur, tg_id) if n != "__all__"]
+    if not names:
+        # An empty keyboard, not no keyboard: editMessageText without reply_markup
+        # leaves the old buttons in place, which would strand names that are gone.
+        return _t("crew_prompt_empty", lang), {"inline_keyboard": []}
+    cur.execute(
+        "SELECT LOWER(muted_name) AS n FROM move_mute "
+        "WHERE telegram_user_id = %s AND muted_until > NOW()",
+        (tg_id,),
+    )
+    hidden = {r["n"] for r in cur.fetchall()}
+    cur.execute("SELECT telegram_user_id, participant_name FROM move_users "
+                "WHERE participant_name = ANY(%s)", (names,))
+    rows = sorted(cur.fetchall(), key=lambda r: (r["participant_name"] or "").casefold())
+    kb = [[{"text": ("🙈 " if (r["participant_name"] or "").lower() in hidden else "")
+                    + r["participant_name"],
+            "callback_data": f"mv:crew:open:{r['telegram_user_id']}"}]
+          for r in rows[:_CREW_BUTTON_LIMIT]]
+    return _t("crew_prompt", lang), {"inline_keyboard": kb}
 
 
 def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str) -> None:
@@ -1420,9 +1459,11 @@ def _crew_member_view(cur, tg_id: int, target, lang: str) -> tuple[str, dict]:
         {"text": _t("btn_mute_1w", lang), "callback_data": f"mv:crew:mute1w:{tid}"},
     ])
     rows.append([{"text": _t("btn_remove", lang), "callback_data": f"mv:crew:remove:{tid}"}])
-    # No cancel: this menu asks nothing, so doing nothing is already the way out.
-    # It also used to clear await_crew, which quietly stopped you typing another
-    # name. The destructive confirm below still has one, where "no" is a real answer.
+    # Back, not cancel. This menu asks nothing, so doing nothing was always a way
+    # out — but opening it from the crew list replaces that list in place, and
+    # this puts it back. (An earlier cancel button also cleared await_crew, which
+    # quietly stopped you typing another name; this one leaves the state alone.)
+    rows.append([{"text": _t("btn_back", lang), "callback_data": "mv:crew:list"}])
     return _t("crew_in_list", lang, name=tname, status=status), {"inline_keyboard": rows}
 
 
@@ -2097,9 +2138,15 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # Only the actions that end the conversation drop their buttons. Mute and
         # unmute keep the menu open and redraw it below, so stripping here first
         # would remove the buttons and immediately put them back.
-        if not sub.startswith(("mute1d:", "mute1w:", "unmute:", "remove:", "back:")):
+        if not sub.startswith(("mute1d:", "mute1w:", "unmute:", "remove:", "back:", "open:")) \
+                and sub != "list":
             _api_call("editMessageReplyMarkup",
                       {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        if sub == "list":
+            # Back out of a member's menu into the crew picker it replaced.
+            _redraw(chat_id, msg_id, *_crew_pick_view(cur, tg_id, lang))
+            _answer(cq["id"])
+            return
         if sub in ("cancel", "decline"):
             # A decline stays between the button and the person who pressed it —
             # telling the asker they were turned down only invites a second ask.
@@ -2141,6 +2188,10 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             return
         tname = target["participant_name"]
 
+        if action == "open":
+            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, target, lang))
+            _answer(cq["id"])
+            return
         if action == "remove":
             # Ask first — this is the one action here that needs the other
             # person's agreement to undo.

@@ -374,6 +374,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "🤝 Твоє коло — обери когось, щоб сховати рухи або прибрати:",
         "de": "🤝 Deine Crew — tippe auf jemanden zum Ausblenden oder Entfernen:",
     },
+    # Impersonal in Ukrainian and German: "прихований" and "ausgeblendet" would
+    # both have to agree with a gender the bot often doesn't know.
+    "crew_hidden_line": {
+        "en": "{name} is 🙈 hidden until {until}",
+        "uk": "{name} — 🙈 сховано до {until}",
+        "de": "{name} — 🙈 ausgeblendet bis {until}",
+    },
     "crew_prompt_empty": {
         "en": "Share the link above, or type a name if they're already on Move:",
         "uk": "Надішли посилання вище, або напиши ім'я, якщо людина вже в Move:",
@@ -657,10 +664,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "🌍 Sprache auf Deutsch gestellt.",
     },
     "invite_line": {
-        "en": "🔗 Your invite link for future members:\n{link}",
-        "uk": "🔗 Твоє посилання-запрошення для майбутніх учасників:\n"
+        "en": "Send 🔗 your invite link to future members:\n{link}",
+        "uk": "Надішли 🔗 своє посилання-запрошення майбутнім учасникам:\n"
               "{link}",
-        "de": "🔗 Dein Einladungslink für künftige Mitglieder:\n{link}",
+        "de": "Schick 🔗 deinen Einladungslink an künftige Mitglieder:\n{link}",
     },
     "invite_connected": {
         "en": "🤝 You and {name} are now moving together!",
@@ -1345,11 +1352,11 @@ def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
         # leaves the old buttons in place, which would strand names that are gone.
         return _t("crew_prompt_empty", lang), {"inline_keyboard": []}
     cur.execute(
-        "SELECT LOWER(muted_name) AS n FROM move_mute "
+        "SELECT LOWER(muted_name) AS n, muted_until FROM move_mute "
         "WHERE telegram_user_id = %s AND muted_until > NOW()",
         (tg_id,),
     )
-    hidden = {r["n"] for r in cur.fetchall()}
+    hidden = {r["n"]: r["muted_until"] for r in cur.fetchall()}
     cur.execute("SELECT telegram_user_id, participant_name FROM move_users "
                 "WHERE participant_name = ANY(%s)", (names,))
     rows = sorted(cur.fetchall(), key=lambda r: (r["participant_name"] or "").casefold())
@@ -1357,7 +1364,14 @@ def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
                     + r["participant_name"],
             "callback_data": f"mv:crew:open:{r['telegram_user_id']}"}]
           for r in rows[:_CREW_BUTTON_LIMIT]]
-    return _t("crew_prompt", lang), {"inline_keyboard": kb}
+    # Spell out the hidden ones with their dates. A 🙈 on the button says someone
+    # is hidden but not until when, and "until when" is the thing you come back
+    # to check — hiding is temporary by design.
+    lines = [_t("crew_prompt", lang)]
+    lines += [_t("crew_hidden_line", lang, name=r["participant_name"],
+                 until=_short_date(hidden[(r["participant_name"] or "").lower()]))
+              for r in rows if (r["participant_name"] or "").lower() in hidden]
+    return "\n".join(lines), {"inline_keyboard": kb}
 
 
 def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str) -> None:
@@ -2195,7 +2209,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             cur.execute("DELETE FROM move_mute WHERE telegram_user_id = %s AND LOWER(muted_name) = LOWER(%s)",
                         (tg_id, tname))
             conn.commit()
-            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, target, lang))
+            _redraw(chat_id, msg_id, *_crew_pick_view(cur, tg_id, lang))
             _answer(cq["id"], _t("crew_unmuted", lang, name=tname))
             return
         if action in ("mute1d", "mute1w"):
@@ -2206,7 +2220,9 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 (tg_id, tname, until),
             )
             conn.commit()
-            _redraw(chat_id, msg_id, *_crew_member_view(cur, tg_id, target, lang))
+            # Back to the list, not this menu: the action is done, and the list is
+            # where you see it took effect — who's hidden, and until when.
+            _redraw(chat_id, msg_id, *_crew_pick_view(cur, tg_id, lang))
             _answer(cq["id"], _t("crew_muted", lang, name=tname, until=_short_date(until)))
         return
 

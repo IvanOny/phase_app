@@ -425,16 +425,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Says what the buttons do, and nothing else. Inviting is the link above this
     # message; typing a name still works but no longer needs advertising, since
     # the link reaches people who aren't in Move yet as well as people who are.
-    # Says what hiding actually does — "stop getting their moves for a while" —
-    # rather than naming the feature. Keeps the imperative: the buttons are right
-    # below, and the line is what connects them to it.
+    # Says what hiding does — "not get someone's moves for a while" — rather than
+    # naming the feature, and the temporariness is the part that matters most.
+    # "Коло твоїх людей", not "друзів": people arrive here by invite link too, and
+    # calling a colleague a friend makes "remove from your friends" read harsher
+    # than the action is.
     "crew_prompt": {
-        "en": "🤝 Your crew of friends. Tap someone to stop getting their moves "
-              "for a while, or to remove them from your crew:",
-        "uk": "🤝 Твоє коло друзів. Обери когось, щоб певний час не отримувати "
-              "від нього рухи, або щоб прибрати людину з кола:",
-        "de": "🤝 Dein Freundeskreis. Tippe auf jemanden, um eine Weile keine "
-              "Bewegungen von ihm zu bekommen oder ihn zu entfernen:",
+        "en": "🤝 Your circle of people. You can set it so you don't get someone's "
+              "moves for a while, or remove a person from the circle",
+        "uk": "🤝 Коло твоїх людей. Ти можеш налаштувати, щоб певний час не "
+              "отримувати від когось рухи, або ж видалити людину з кола",
+        "de": "🤝 Der Kreis deiner Leute. Du kannst einstellen, eine Weile keine "
+              "Bewegungen von jemandem zu bekommen, oder die Person entfernen",
     },
     # Impersonal in Ukrainian and German: "прихований" and "ausgeblendet" would
     # both have to agree with a gender the bot often doesn't know.

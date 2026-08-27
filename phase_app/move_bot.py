@@ -2042,7 +2042,12 @@ def handle_move_webhook(body: dict, conn) -> None:
     # The state is deliberately left in place for the handler to decide: it clears
     # it once the invite is actually sent, and otherwise leaves it armed with its
     # original timestamp so the 10-minute window still expires on schedule.
-    if state == "await_crew":
+    # Only if it could be a name. The prompt stays armed for 10 minutes, and it
+    # used to swallow anything typed in that window — so a sentence aimed at the
+    # bot came back as «Нікого з ім'ям "я думаю, Нео сподобається. Можна
+    # переслати йому?"». Names are letters only (_valid_name is what registration
+    # enforces), so punctuation means this was never a name.
+    if state == "await_crew" and _valid_name(text):
         _handle_crew_name(cur, conn, tg_id, chat_id, lang, text)
         conn.commit()
         return

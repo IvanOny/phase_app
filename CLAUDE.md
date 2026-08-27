@@ -116,3 +116,5 @@ python scripts/run_migration.py 042
 Takes one or more files — a path, a filename, or just the number (`042`) — each in its
 own transaction. `--dry-run` prints the SQL instead of applying it. There is no
 migration ledger — migrations are written to be re-runnable.
+`MOVE_TRACE_CHAT_ID` — every incoming Move update, one line each. Unset falls back
+to the log chat (where it buries the ⚠️ reports); `off` disables tracing.

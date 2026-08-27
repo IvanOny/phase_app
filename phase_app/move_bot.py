@@ -31,6 +31,11 @@ _API = f"https://api.telegram.org/bot{_TOKEN}"
 # Activity goes to the same log channel as the burpee bot (Бурчик лог).
 # MOVE_LOG_CHAT_ID only exists to split them later if that's ever wanted.
 _LOG_CHAT_ID = os.environ.get("MOVE_LOG_CHAT_ID", "") or os.environ.get("LOG_CHAT_ID", "")
+# Every incoming update, one line each. Set MOVE_TRACE_CHAT_ID to send this
+# firehose somewhere of its own — in the same chat as the ⚠️ reports it buries
+# them, and those are the messages that carry moderator buttons. Empty and with
+# no separate chat, tracing goes to the log chat; set it to "off" to stop.
+_TRACE_CHAT_ID = os.environ.get("MOVE_TRACE_CHAT_ID", "")
 
 _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
@@ -132,6 +137,57 @@ def _log(text: str, reply_markup: dict | None = None) -> None:
         payload["reply_markup"] = reply_markup
     try:
         _api_call("sendMessage", payload)
+    except Exception:
+        pass
+
+
+_TRACE_MAX = 300                      # a pasted wall of text shouldn't fill the chat
+
+
+def _trace(cur, body: dict) -> None:
+    """One line per incoming update: who, and what they sent or tapped.
+
+    The other _log calls record outcomes — a move logged, a crew link made. This
+    records input, including the things that produce no outcome at all: menus
+    opened, names that matched nobody, buttons pressed twice. Those are invisible
+    otherwise, and they're where the confusion shows.
+
+    Only incoming updates. The bot's own replies aren't updates, so they aren't
+    here; what the bot said in response is what the code says it says.
+    """
+    target = _TRACE_CHAT_ID or _LOG_CHAT_ID
+    if not target or _TRACE_CHAT_ID.lower() == "off":
+        return
+
+    cq = body.get("callback_query")
+    msg = cq.get("message") if cq else body.get("message")
+    src = (cq or body.get("message") or {}).get("from") or {}
+    tg_id = src.get("id")
+    if not tg_id:
+        return
+    u = _user(cur, tg_id)
+    who = (u["participant_name"] if u and u["participant_name"] else None) \
+        or src.get("first_name") or "?"
+
+    if cq:
+        what = f"⌨ {cq.get('data') or '?'}"
+    else:
+        m = body.get("message") or {}
+        media = next((k for k in _MEDIA_KEYS if k in m), None)
+        if media:
+            what = f"📹 {media}" + (f" + «{m['caption'][:_TRACE_MAX]}»" if m.get("caption") else "")
+        elif m.get("text"):
+            what = f"«{m['text'][:_TRACE_MAX]}»"
+        else:
+            # Stickers, locations, contacts — the bot ignores them, but a user
+            # sending one and getting nothing back is exactly what's worth seeing.
+            what = "· " + ", ".join(k for k in m if k not in ("message_id", "from", "chat", "date"))
+    try:
+        _api_call("sendMessage", {
+            "chat_id": int(target),
+            "text": f"👤 {who} ({tg_id})\n{what}",
+            "disable_notification": True,      # a firehose must not buzz the phone
+        })
     except Exception:
         pass
 
@@ -1382,6 +1438,12 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         # which would restart the 10-minute clock. Refreshing it on every miss
         # made the state immortal: keep typing and every plain message, for the
         # rest of time, is read as a crew name. Now the window closes on time.
+        # Worth its own line, not just a trace: every one of these is someone who
+        # wanted to add a person and couldn't. It's how you find out people are
+        # typing @usernames, or that a name is spelled differently than they think.
+        me = _user(cur, tg_id)
+        _log(f"🔍 Move: name not found\n• {me['participant_name'] if me else tg_id}"
+             f" searched: {name[:64]}")
         _send(chat_id, _t("crew_not_found", lang, name=name))
         return
     tname = target["participant_name"]
@@ -1818,6 +1880,9 @@ def _cmd_mod(cur, conn, tg_id: int, chat_id: int, lang: str, args: str) -> None:
 
 def handle_move_webhook(body: dict, conn) -> None:
     cur = conn.cursor()
+    # Before dispatch, so an update that goes on to crash is still recorded —
+    # a silent failure at least leaves a trace of what triggered it.
+    _trace(cur, body)
 
     cq = body.get("callback_query")
     if cq:

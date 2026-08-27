@@ -39,7 +39,9 @@ _TRACE_CHAT_ID = os.environ.get("MOVE_TRACE_CHAT_ID", "")
 
 _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
-_UNDO_WINDOW_SECONDS = 10             # how long a move can still be taken back
+# Long enough to watch back what you just sent. The cap exists so a move the
+# crew has already seen and cheered can't vanish, and a minute doesn't risk that.
+_UNDO_WINDOW_SECONDS = 60
 # Same stranger can't reappear within a week. Env-tunable: while the pool is
 # small a hard 7 days runs everyone dry, so it can be dialled down and raised
 # again as the pool grows, without a code change.
@@ -399,7 +401,10 @@ _STRINGS: dict[str, dict[str, str]] = {
     "crew_move":   {"en": "{name} moved today", "uk": "{name} — рух сьогодні", "de": "{name} hat sich heute bewegt"},
     "crew_move_m": {"uk": "{name} рухався сьогодні"},
     "crew_move_f": {"uk": "{name} рухалася сьогодні"},
-    "btn_undo": {"en": "🗑 Undo", "uk": "🗑 Скасувати", "de": "🗑 Rückgängig"},
+    # The window is in the label: the button stays on screen after it expires
+    # (nothing runs a minute later to remove it), so it has to say what it promises.
+    "btn_undo": {"en": "🗑 Undo ({secs}s)", "uk": "🗑 Скасувати ({secs} с)",
+                 "de": "🗑 Rückgängig ({secs}s)"},
     "undo_done": {
         "en": "🗑 Move removed — deleted from your crew's chats too.",
         "uk": "🗑 Рух видалено — прибрано і з чатів твого кола.",
@@ -414,6 +419,52 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Nothing to undo — you haven't logged a move today.",
         "uk": "Нічого скасовувати — сьогодні ще немає руху.",
         "de": "Nichts rückgängig zu machen — du hast heute noch nichts erfasst.",
+    },
+    # ── notes (crew only) ──
+    # A directed message, not a broadcast: only the person it's about sees it.
+    # There is no button for this under a radar copy, and there won't be —
+    # anonymous text from strangers under a video of someone's body is the one
+    # thing this bot must not build.
+    "btn_note": {"en": "💬 Comment", "uk": "💬 Прокоментувати", "de": "💬 Kommentieren"},
+    "btn_note_reply": {"en": "💬 Reply", "uk": "💬 Відповісти", "de": "💬 Antworten"},
+    "note_ask": {
+        "en": "💬 Write your comment for {name} — they'll get it under their move:",
+        "uk": "💬 Напиши коментар для {name} — він прийде під цей рух:",
+        "de": "💬 Schreib deinen Kommentar für {name} — er kommt unter die Bewegung:",
+    },
+    "note_ask_reply": {
+        "en": "💬 Write your reply to {name}:",
+        "uk": "💬 Напиши відповідь для {name}:",
+        "de": "💬 Schreib deine Antwort an {name}:",
+    },
+    "note_received": {
+        "en": "💬 {name} on your move:\n\n{body}",
+        "uk": "💬 {name} про твій рух:\n\n{body}",
+        "de": "💬 {name} zu deiner Bewegung:\n\n{body}",
+    },
+    "note_reply_received": {
+        "en": "💬 {name} replied:\n\n{body}",
+        "uk": "💬 {name} відповідає:\n\n{body}",
+        "de": "💬 {name} antwortet:\n\n{body}",
+    },
+    "note_sent": {"en": "💬 Sent to {name}.", "uk": "💬 Надіслано: {name}.",
+                  "de": "💬 An {name} geschickt."},
+    "note_too_long": {
+        "en": "Too long — {max} characters at most. It's a comment, not a letter.",
+        "uk": "Задовге — щонайбільше {max} символів. Це коментар, а не лист.",
+        "de": "Zu lang — höchstens {max} Zeichen. Ein Kommentar, kein Brief.",
+    },
+    "note_undelivered": {
+        # Deliberately vague. "They've hidden you" or "they're paused" would both
+        # be leaks; the sender only needs to know it didn't land.
+        "en": "💬 Not delivered — {name} isn't receiving right now.",
+        "uk": "💬 Не доставлено — {name} зараз не отримує повідомлень.",
+        "de": "💬 Nicht zugestellt — {name} empfängt gerade nichts.",
+    },
+    "note_gone": {
+        "en": "That move is no longer available.",
+        "uk": "Цей рух уже недоступний.",
+        "de": "Diese Bewegung gibt es nicht mehr.",
     },
     "zap_btn": {"en": "⚡", "uk": "⚡", "de": "⚡"},
     "zap_btn_sent": {"en": "⚡ sent ✓", "uk": "⚡ надіслано ✓", "de": "⚡ gesendet ✓"},
@@ -974,7 +1025,76 @@ def _zap_count(cur, entry_id: int) -> int:
     return cur.fetchone()["n"] or 0
 
 
-def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = False) -> dict:
+_NOTE_MAX = 500                       # a comment, not a letter
+
+
+def _note_kb(entry_id: int, to_id: int, lang: str, reply: bool = False) -> dict:
+    """The button that starts (or continues) a comment thread.
+
+    Both ends of the thread are in the callback data — the move it's about and
+    who the text goes to — so a reply routes without storing message ids.
+    """
+    return {"inline_keyboard": [[
+        {"text": _t("btn_note_reply" if reply else "btn_note", lang),
+         "callback_data": f"mv:note:{entry_id}:{to_id}"}
+    ]]}
+
+
+def _note_deliverable(cur, to_id: int, from_name: str) -> bool:
+    """Same gates as a move: a paused person gets nothing, and hiding someone
+    hides their words too — otherwise "hidden" only half works."""
+    u = _user(cur, to_id)
+    if not u or not u["participant_name"]:
+        return False
+    if u["paused_until"] and u["paused_until"] > datetime.now(timezone.utc):
+        return False
+    cur.execute(
+        "SELECT 1 FROM move_mute WHERE telegram_user_id = %s "
+        "AND LOWER(muted_name) = LOWER(%s) AND muted_until > NOW()",
+        (to_id, from_name),
+    )
+    return cur.fetchone() is None
+
+
+def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
+               entry_id: int, to_id: int, body: str) -> None:
+    """Deliver one comment, with a Reply button pointing back at its sender."""
+    me, them = _user(cur, tg_id), _user(cur, to_id)
+    if not me or not them:
+        _send(chat_id, _t("note_gone", lang))
+        return
+    cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
+    owner = cur.fetchone()
+    if not owner:
+        _send(chat_id, _t("note_gone", lang))       # move was undone meanwhile
+        return
+    tname = them["participant_name"]
+    if not _note_deliverable(cur, to_id, me["participant_name"]):
+        _send(chat_id, _t("note_undelivered", lang, name=tname))
+        return
+
+    tlang = _norm_lang(them["language_code"])
+    # "on your move" only for the person whose move it is; anyone else in the
+    # thread is being replied to.
+    key = "note_received" if owner["telegram_user_id"] == to_id else "note_reply_received"
+    res = _send(them["chat_id"] or to_id,
+                _t(key, tlang, name=me["participant_name"], body=body),
+                reply_markup=_note_kb(entry_id, tg_id, tlang, reply=True))
+    if res and res.get("message_id"):
+        # kind='note' so /undo takes the whole conversation with the move, and so
+        # the ⚡ refresh and comment threading keep ignoring these.
+        cur.execute(
+            "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id, kind) "
+            "VALUES (%s, %s, %s, %s, 'note')",
+            (entry_id, to_id, them["chat_id"] or to_id, res["message_id"]),
+        )
+    conn.commit()
+    _send(chat_id, _t("note_sent", lang, name=tname))
+    _log(f"💬 Move: note\n• {me['participant_name']} → {tname}\n• {body[:120]}")
+
+
+def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = False,
+            note_to: int | None = None) -> dict:
     """No running total — a move isn't a popularity contest. You only see whether
     *you* cheered; the author gets the tally next morning.
 
@@ -983,6 +1103,11 @@ def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = F
     """
     rows = [[{"text": _t("zap_btn_sent" if sent else "zap_btn", lang),
               "callback_data": f"mv:zap:{entry_id}"}]]
+    if note_to:
+        # Crew only, and it needs the author's id: the thread routes by id, and
+        # radar copies deliberately have no route back to a name.
+        rows.append([{"text": _t("btn_note", lang),
+                      "callback_data": f"mv:note:{entry_id}:{note_to}"}])
     if radar:
         # Block is "stop showing me this"; report is "someone should look at this".
         # One per row — sharing a row clips the block label, which is a sentence.
@@ -1110,6 +1235,7 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
     """Copy the move to each crew member, remembering where it landed so a late
     comment can be threaded under it. Returns the names it reached."""
     sender = user["participant_name"]
+    author_id = user["telegram_user_id"]
     gender = user["gender"] if "gender" in user else None
     names = []
 
@@ -1127,14 +1253,15 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
         if media:
             from_chat, msg_id = media
             track(rid, chat_id,
-                  _copy(from_chat, msg_id, chat_id, reply_markup=_zap_kb(entry_id, lang=rlang)),
+                  _copy(from_chat, msg_id, chat_id,
+                        reply_markup=_zap_kb(entry_id, lang=rlang, note_to=author_id)),
                   "move")
             # Tracked too, so /undo takes the "X moved today" line with it.
             track(rid, chat_id, _send(chat_id, header), "header")
         else:
             track(rid, chat_id,
                   _send(chat_id, f"{header}\n{text_body or ''}".strip(),
-                        reply_markup=_zap_kb(entry_id, lang=rlang)),
+                        reply_markup=_zap_kb(entry_id, lang=rlang, note_to=author_id)),
                   "move")
         names.append(rname)
     conn.commit()
@@ -1177,7 +1304,8 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
     # Inline undo — the persistent reply keyboard stays regardless.
     undo_kb = {"inline_keyboard": [[
-        {"text": _t("btn_undo", lang), "callback_data": f"mv:undo:{entry_id}"}
+        {"text": _t("btn_undo", lang, secs=_UNDO_WINDOW_SECONDS),
+         "callback_data": f"mv:undo:{entry_id}"}
     ]]}
     if names:
         _send(chat_id, _t("logged_shared", lang, streak=suffix, names=", ".join(names)),
@@ -1968,6 +2096,29 @@ def handle_move_webhook(body: dict, conn) -> None:
                 pass
         return
 
+    # 2a) a comment typed after tapping 💬 on someone's move
+    if base_state == "await_note":
+        # Cleared first, like /feedback: a command typed instead of a comment
+        # means they changed their mind, and the prompt shouldn't stay armed to
+        # catch whatever they type next.
+        _clear_state(cur, tg_id)
+        conn.commit()
+        if not text.startswith("/"):               # a command means "never mind"
+            try:
+                entry_id, to_id = (int(x) for x in (state or "").split(":")[1:3])
+            except ValueError:
+                _send(chat_id, _t("note_gone", lang))
+                return
+            if len(text) > _NOTE_MAX:
+                # Re-arm rather than lose what they wrote: it's still on screen to
+                # trim, and the prompt is still the one they were answering.
+                _set_state(cur, tg_id, f"await_note:{entry_id}:{to_id}")
+                conn.commit()
+                _send(chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
+                return
+            _send_note(cur, conn, tg_id, chat_id, lang, entry_id, to_id, text)
+            return
+
     # 2b) a question or suggestion typed after /feedback
     if base_state == "await_feedback":
         _clear_state(cur, tg_id)
@@ -2132,6 +2283,28 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             to = cur.fetchone()
             _log(f"⚡ Move: lightning\n• {me['participant_name'] if me else tg_id}"
                  f" → {to['participant_name'] if to else '?'}")
+        return
+
+    if body.startswith("note:"):
+        try:
+            entry_id, to_id = (int(x) for x in body[len("note:"):].split(":", 1))
+        except ValueError:
+            return
+        if to_id == tg_id:
+            _answer(cq["id"], _t("zap_own", lang))     # your own move, or your own words
+            return
+        them = _user(cur, to_id)
+        cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
+        owner = cur.fetchone()
+        if not them or not owner:
+            _answer(cq["id"], _t("note_gone", lang))
+            return
+        # Armed, not sent: the next text goes to this person and nobody else.
+        _set_state(cur, tg_id, f"await_note:{entry_id}:{to_id}")
+        conn.commit()
+        _answer(cq["id"])
+        key = "note_ask" if owner["telegram_user_id"] == to_id else "note_ask_reply"
+        _send(chat_id, _t(key, lang, name=them["participant_name"]))
         return
 
     if body.startswith("undo"):

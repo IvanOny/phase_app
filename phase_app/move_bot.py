@@ -87,7 +87,16 @@ def _send(chat_id: int, text: str, reply_markup: dict | None = None,
 
 def _copy(from_chat_id: int, message_id: int, to_chat_id: int,
           reply_markup: dict | None = None) -> dict | None:
-    payload: dict = {"chat_id": to_chat_id, "from_chat_id": from_chat_id, "message_id": message_id}
+    """Place someone's move in another chat.
+
+    protect_content removes Forward and Save As from the message: a move is
+    someone's video of themselves, sent to the people they let into their crew,
+    and it shouldn't travel further with one tap. It does not stop screenshots
+    or a second phone — nothing does — but it makes passing it on deliberate
+    rather than accidental.
+    """
+    payload: dict = {"chat_id": to_chat_id, "from_chat_id": from_chat_id,
+                     "message_id": message_id, "protect_content": True}
     if reply_markup:
         payload["reply_markup"] = reply_markup
     return _api_call("copyMessage", payload)

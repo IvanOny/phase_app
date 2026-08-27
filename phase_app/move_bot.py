@@ -360,20 +360,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     # sits right above the input box, next to where you'd act on it. The
     # "your crew sees your moves" explainer lives in /info — /move is a command
     # people run repeatedly, and onboarding text wears out fast.
-    "crew_menu": {
-        "en": "🤝 Moving with: {crew}",
-        "uk": "🤝 Рухаєшся разом з: {crew}",
-        "de": "🤝 Bewegst dich mit: {crew}",
-    },
     # Hidden people are still in the crew, so listing them alongside everyone
     # else made the menu claim you're moving with someone you've muted.
-    "crew_menu_hidden": {
-        "en": "🙈 Paused with: {crew}",
-        "uk": "🙈 Призупинена взаємодія з: {crew}",
-        "de": "🙈 Pausiert mit: {crew}",
-    },
-    "crew_hidden_entry": {"en": "{name} until {until}", "uk": "{name} до {until}",
-                          "de": "{name} bis {until}"},
     # Spells out both branches, because typing a name does two different things
     # depending on whether that person is already in your crew. "Participant's
     # name", not "username": it's the name they registered with, and @handle
@@ -382,9 +370,9 @@ _STRINGS: dict[str, dict[str, str]] = {
     # message; typing a name still works but no longer needs advertising, since
     # the link reaches people who aren't in Move yet as well as people who are.
     "crew_prompt": {
-        "en": "Tap someone to hide their moves or remove them:",
-        "uk": "Обери когось, щоб сховати його рухи або прибрати з кола:",
-        "de": "Tippe auf jemanden, um Bewegungen auszublenden oder zu entfernen:",
+        "en": "🤝 Your crew — tap someone to hide their moves or remove them:",
+        "uk": "🤝 Твоє коло — обери когось, щоб сховати рухи або прибрати:",
+        "de": "🤝 Deine Crew — tippe auf jemanden zum Ausblenden oder Entfernen:",
     },
     "crew_prompt_empty": {
         "en": "Share the link above, or type a name if they're already on Move:",
@@ -392,7 +380,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "Teile den Link oben, oder gib einen Namen ein, wenn die Person schon dabei ist:",
     },
     "btn_back": {"en": "← Back", "uk": "← Назад", "de": "← Zurück"},
-    "crew_nobody": {"en": "nobody yet", "uk": "поки нікого", "de": "noch niemand"},
     # No "or send /move": the prompt is still armed, so retyping is the answer,
     # and the way back to the menu is the 🤝 button sitting on screen anyway.
     "crew_not_found": {"en": "No one named \"{name}\". Try again.", "uk": "Нікого з ім'ям «{name}». Спробуй ще.", "de": "Niemand namens „{name}“. Versuch es erneut."},
@@ -1320,33 +1307,22 @@ def _cmd_info(cur, tg_id: int, chat_id: int, lang: str, name: str | None = None)
 
 
 def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
-    names = [n for n in _crew_names(cur, tg_id) if n != "__all__"]
-    # Hidden people are still crew, but listing them under "moving with" claims
-    # something untrue — they're the ones whose moves you've paused.
-    cur.execute(
-        "SELECT muted_name, muted_until FROM move_mute "
-        "WHERE telegram_user_id = %s AND muted_until > NOW()",
-        (tg_id,),
-    )
-    hidden = {r["muted_name"].lower(): r["muted_until"] for r in cur.fetchall()}
-    active = [n for n in names if n.lower() not in hidden]
+    """The invite link, then the crew as buttons.
 
-    lines = [_t("crew_menu", lang, crew=", ".join(active) or _t("crew_nobody", lang))]
-    if hidden:
-        lines.append(_t("crew_menu_hidden", lang, crew=", ".join(
-            _t("crew_hidden_entry", lang, name=n, until=_short_date(hidden[n.lower()]))
-            for n in names if n.lower() in hidden)))
-
+    The crew used to be spelled out as a sentence above the link, with a second
+    line naming the hidden people. Both are now the buttons themselves — the
+    list, and a 🙈 on whoever is hidden — so printing the names as well said
+    everything twice.
+    """
     me = _user(cur, tg_id)
     # Resend the main keyboard here: it lives in the client until a message
     # carries a new one, so a renamed button stays stale otherwise. /info can't
     # do it (it uses an inline keyboard), and the old label still routes here via
     # _LEGACY_BUTTONS — so tapping the stale button upgrades it.
-    _send(chat_id, "\n".join(lines) + "\n\n"
-                   f"{_invite_line(cur, tg_id, lang, me['participant_name'] if me else None)}",
+    _send(chat_id, _invite_line(cur, tg_id, lang, me["participant_name"] if me else None),
           reply_markup=_main_kb(lang))
-    # The prompt goes in its own message because it carries the crew as buttons,
-    # and one message can hold either the main keyboard or an inline one.
+    # The crew goes in its own message: one message can hold either the main
+    # keyboard or an inline one, and the buttons need the inline slot.
     text, kb = _crew_pick_view(cur, tg_id, lang)
     _send(chat_id, text, reply_markup=kb)
 

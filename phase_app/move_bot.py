@@ -378,18 +378,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     # depending on whether that person is already in your crew. "Participant's
     # name", not "username": it's the name they registered with, and @handle
     # would send people looking in the wrong place.
-    # The branch this used to spell out is now visible: people already in the crew
-    # are buttons below. All that's left to say is how to reach someone who isn't
-    # — without this line, inviting has no entry point at all.
+    # Says what the buttons do, and nothing else. Inviting is the link above this
+    # message; typing a name still works but no longer needs advertising, since
+    # the link reaches people who aren't in Move yet as well as people who are.
     "crew_prompt": {
-        "en": "Type a name to invite someone new, or pick someone below:",
-        "uk": "Напиши ім'я, щоб запросити когось нового, або обери зі списку:",
-        "de": "Gib einen Namen ein, um jemanden einzuladen, oder wähle unten:",
+        "en": "Tap someone to hide their moves or remove them:",
+        "uk": "Обери когось, щоб сховати його рухи або прибрати з кола:",
+        "de": "Tippe auf jemanden, um Bewegungen auszublenden oder zu entfernen:",
     },
     "crew_prompt_empty": {
-        "en": "Type a name to invite someone to move with you:",
-        "uk": "Напиши ім'я, щоб запросити когось рухатися разом:",
-        "de": "Gib einen Namen ein, um jemanden einzuladen:",
+        "en": "Share the link above, or type a name if they're already on Move:",
+        "uk": "Надішли посилання вище, або напиши ім'я, якщо людина вже в Move:",
+        "de": "Teile den Link oben, oder gib einen Namen ein, wenn die Person schon dabei ist:",
     },
     "btn_back": {"en": "← Back", "uk": "← Назад", "de": "← Zurück"},
     "crew_nobody": {"en": "nobody yet", "uk": "поки нікого", "de": "noch niemand"},

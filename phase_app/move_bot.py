@@ -77,8 +77,10 @@ def _api_call(method: str, payload: dict) -> dict | None:
 
 
 def _send(chat_id: int, text: str, reply_markup: dict | None = None,
-          reply_to: int | None = None) -> dict | None:
+          reply_to: int | None = None, protect: bool = False) -> dict | None:
     payload: dict = {"chat_id": chat_id, "text": text}
+    if protect:
+        payload["protect_content"] = True
     if reply_markup:
         payload["reply_markup"] = reply_markup
     if reply_to:
@@ -88,17 +90,19 @@ def _send(chat_id: int, text: str, reply_markup: dict | None = None,
 
 
 def _copy(from_chat_id: int, message_id: int, to_chat_id: int,
-          reply_markup: dict | None = None) -> dict | None:
+          reply_markup: dict | None = None, protect: bool = False) -> dict | None:
     """Place someone's move in another chat.
 
-    protect_content removes Forward and Save As from the message: a move is
-    someone's video of themselves, sent to the people they let into their crew,
-    and it shouldn't travel further with one tap. It does not stop screenshots
-    or a second phone — nothing does — but it makes passing it on deliberate
-    rather than accidental.
+    protect=True removes Forward and Save As. It's for radar only: a stranger's
+    move reached this viewer anonymously and shouldn't travel any further, while
+    inside a crew people chose each other and forwarding is theirs to do. It
+    doesn't stop screenshots or a second phone — nothing does — but it keeps a
+    stranger's video from being passed on with one tap.
     """
     payload: dict = {"chat_id": to_chat_id, "from_chat_id": from_chat_id,
-                     "message_id": message_id, "protect_content": True}
+                     "message_id": message_id}
+    if protect:
+        payload["protect_content"] = True
     if reply_markup:
         payload["reply_markup"] = reply_markup
     return _api_call("copyMessage", payload)
@@ -1909,14 +1913,17 @@ def _radar_deliver(cur, conn, rid: int, chat_id: int, lang: str, cand,
     back the daily drop they already subscribed to.
     """
     kb = _zap_kb(cand["id"], lang=lang, radar=True)
+    # protect on both branches: a radar move arrives from someone the viewer
+    # doesn't know and hasn't been introduced to, and it stops here. Crew copies
+    # are deliberately not protected — those people chose each other.
     if cand["message_id"]:
         # The author may have deleted the original — copyMessage then fails, so
         # the caller should move on rather than send a bare "someone moved".
-        res = _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb)
+        res = _copy(cand["chat_id"], cand["message_id"], chat_id, reply_markup=kb, protect=True)
         if not res:
             return False
     else:
-        res = _send(chat_id, cand["text_body"] or "", reply_markup=kb)
+        res = _send(chat_id, cand["text_body"] or "", reply_markup=kb, protect=True)
     # Track it so a later undo revokes the radar copy too. kind='radar' keeps the
     # block button alive when the ⚡ is ticked.
     if res and res.get("message_id"):

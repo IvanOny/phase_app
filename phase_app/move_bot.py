@@ -247,8 +247,11 @@ def _trace(cur, body: dict) -> None:
     if not tg_id:
         return
     u = _user(cur, tg_id)
+    # Their registered name if they have one; otherwise what Telegram calls them,
+    # which is all we know about someone who hasn't finished signing up.
+    telegram_name = " ".join(p for p in (src.get("first_name"), src.get("last_name")) if p)
     who = (u["participant_name"] if u and u["participant_name"] else None) \
-        or src.get("first_name") or "?"
+        or telegram_name or "?"
 
     if cq:
         what = "⌨ " + _describe_callback(cur, cq.get("data") or "")

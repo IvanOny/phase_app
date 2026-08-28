@@ -290,10 +290,13 @@ _SUPPORTED_LANGS = ("en", "uk", "de")
 
 
 def _norm_lang(raw: str | None) -> str:
+    """Ukrainian is the fallback: it's who the bot is for, and a Telegram locale
+    we don't speak is far more likely to belong to a Ukrainian speaker than to
+    an English one. The picker on /start overrides it in two taps either way."""
     if not raw:
-        return "en"
+        return "uk"
     code = raw.split("-")[0].lower()
-    return code if code in _SUPPORTED_LANGS else "en"
+    return code if code in _SUPPORTED_LANGS else "uk"
 
 
 def _t(key: str, lang: str = "en", **fmt) -> str:
@@ -444,12 +447,15 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Dehnen, ein Satz. Deine Crew ist noch da.",
     },
     "nudge_first_move": {
-        "en": "👋 Still here? Your first move is one video away — anything you did "
-              "today counts, and nothing is measured.\n\n{how}",
-        "uk": "👋 Ти ще тут? До першого руху — одне відео. Годиться будь-що, що ти "
-              "сьогодні робив, і нічого не вимірюється.\n\n{how}",
-        "de": "👋 Noch da? Bis zur ersten Bewegung fehlt ein Video — alles zählt, "
-              "und nichts wird gemessen.\n\n{how}",
+        "en": "👋 Still here? Your first move is one video away. Anything counts: "
+              "a walk, a swim, the barbell, stretching, dancing, squats, a plank, "
+              "the stairs instead of the lift. Nothing is measured.",
+        "uk": "👋 Ти ще тут? До першого руху — одне відео. Годиться "
+              "будь-що: прогулянка, плавання, штанга, розтяжка, танці, "
+              "присідання, планка, сходи замість ліфта. Нічого не вимірюється.",
+        "de": "👋 Noch da? Bis zur ersten Bewegung fehlt ein Video. Alles zählt: "
+              "ein Spaziergang, Schwimmen, die Langhantel, Dehnen, Tanzen, Kniebeugen, "
+              "eine Planke, die Treppe statt des Aufzugs. Nichts wird gemessen.",
     },
     "hint_radar": {
         "en": "📡 One thing you haven't tried: radar shows you a move from someone "
@@ -1642,10 +1648,34 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
         "ON CONFLICT (telegram_user_id) DO UPDATE SET chat_id = EXCLUDED.chat_id",
         (tg_id, chat_id, lang),
     )
-    # Language first, then the name. Any inviter rides along in the state key.
-    _set_state(cur, tg_id, f"await_lang:{inviter_id}" if inviter_id is not None else "await_lang")
+
+    # /start can arrive again in the middle of onboarding — Telegram's own START
+    # button, or the invite link tapped a second time. Resetting to the language
+    # question threw away both the step they'd reached and, when the second
+    # /start carried no payload, the inviter waiting in the state key. Keep both:
+    # the step they're on, and whichever inviter we know about.
+    state = _get_state(cur, tg_id) or ""
+    step = state.split(":")[0] if state else ""
+    pending = state.split(":", 1)[1] if ":" in state else None
+    if inviter_id is not None:
+        pending = str(inviter_id)
+    if step not in ("await_lang", "await_gender", "await_name"):
+        step = "await_lang"                       # nothing in progress, or it expired
+    _set_state(cur, tg_id, f"{step}:{pending}" if pending else step)
     conn.commit()
-    _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
+
+    # Re-ask the question they're actually on, not the first one.
+    if step == "await_name":
+        code = _norm_lang((_user(cur, tg_id) or {}).get("language_code")) or lang
+        _send(chat_id, _t("ask_name", code))
+    elif step == "await_gender":
+        code = _norm_lang((_user(cur, tg_id) or {}).get("language_code")) or lang
+        _send(chat_id, _t("ask_gender", code), reply_markup={"inline_keyboard": [[
+            {"text": _t("gender_m", code), "callback_data": "mv:gender:m"},
+            {"text": _t("gender_f", code), "callback_data": "mv:gender:f"},
+        ]]})
+    else:
+        _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
 
 
 def _invite_code(cur, tg_id: int) -> str:
@@ -3098,7 +3128,7 @@ def send_move_nudges(conn) -> None:
     for u in first:
         lang = _norm_lang(u["language_code"])
         _send(u["chat_id"] or u["telegram_user_id"],
-              _t("nudge_first_move", lang, how=_t("how_to_record", lang)),
+              _t("nudge_first_move", lang),
               reply_markup=_main_kb(lang))
         cur.execute("UPDATE move_users SET nudged_at = %s WHERE telegram_user_id = %s",
                     (today, u["telegram_user_id"]))

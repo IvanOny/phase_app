@@ -47,7 +47,11 @@ _UNDO_WINDOW_SECONDS = 60
 # again as the pool grows, without a code change.
 _RADAR_REPEAT_DAYS = int(os.environ.get("POOL_COOLDOWN_DAYS", "7"))
 _RADAR_PULL_MIN_POOL = 20             # "show me someone now" unlocks at this pool size
-_RADAR_FRESH_DAYS = 2                 # how far back radar looks for a move to show
+# How far back radar looks. A weekly subscriber is only due on one morning, so
+# a short window meant almost everything posted was invisible to them — it had
+# to be posted in the two days before their turn came up. Env-tunable, like the
+# cooldown, because the right value depends on how busy the pool is.
+_RADAR_FRESH_DAYS = int(os.environ.get("RADAR_FRESH_DAYS", "33"))
 _MILESTONES = (7, 14, 30, 50, 100, 200, 365)
 # Moderation. Reports are unverified, so the automatic half stays reversible:
 # a warning is cheap, and a suspension is a pause a moderator can lift.
@@ -114,6 +118,12 @@ def _edit(chat_id: int, message_id: int, text: str,
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
     return _api_call("editMessageText", payload)
+
+
+def _redraw_markup(chat_id: int, message_id: int, reply_markup: dict) -> None:
+    """Swap the buttons, keep the text — for a message whose words don't change."""
+    _api_call("editMessageReplyMarkup",
+              {"chat_id": chat_id, "message_id": message_id, "reply_markup": reply_markup})
 
 
 def _redraw(chat_id: int, message_id: int, text: str, reply_markup: dict) -> None:
@@ -405,6 +415,40 @@ _STRINGS: dict[str, dict[str, str]] = {
     "crew_move":   {"en": "{name} moved today", "uk": "{name} — рух сьогодні", "de": "{name} hat sich heute bewegt"},
     "crew_move_m": {"uk": "{name} рухався сьогодні"},
     "crew_move_f": {"uk": "{name} рухалася сьогодні"},
+    # ── per-move radar ──
+    # State, not instruction: the label says where this move stands, and tapping
+    # moves it. Live for as long as the move is still eligible for radar — with a
+    # month-long window a move keeps circulating, so the off switch has to keep
+    # working rather than expiring after the first stranger sees it.
+    "btn_radar_ok_on": {
+        "en": "📡 In radar range", "uk": "📡 В зоні дії радару",
+        "de": "📡 In Radar-Reichweite",
+    },
+    "btn_radar_ok_off": {
+        "en": "🚫 Out of radar range", "uk": "🚫 Поза зоною дії радару",
+        "de": "🚫 Außerhalb der Radar-Reichweite",
+    },
+    "radar_ok_on": {
+        "en": "📡 Strangers can be shown this move.",
+        "uk": "📡 Цей рух можуть побачити незнайомці.",
+        "de": "📡 Fremde können diese Bewegung sehen.",
+    },
+    "radar_ok_off": {
+        "en": "🚫 This move stays with your crew.",
+        "uk": "🚫 Цей рух лишається у твоєму колі.",
+        "de": "🚫 Diese Bewegung bleibt in deiner Crew.",
+    },
+    "radar_ok_off_seen": {
+        # Honest about what can't be undone: someone already watched it.
+        "en": "🚫 It won't be shown again. Whoever already saw it, saw it.",
+        "uk": "🚫 Більше не показуватимемо. Хто вже побачив — побачив.",
+        "de": "🚫 Wird nicht mehr gezeigt. Wer sie gesehen hat, hat sie gesehen.",
+    },
+    "radar_ok_expired": {
+        "en": "This move is past the radar window — nobody new will see it.",
+        "uk": "Цей рух уже поза вікном радару — нових глядачів не буде.",
+        "de": "Diese Bewegung ist außerhalb des Radar-Fensters — niemand Neues sieht sie.",
+    },
     # The window is in the label: the button stays on screen after it expires
     # (nothing runs a minute later to remove it), so it has to say what it promises.
     "btn_undo": {"en": "🗑 Undo ({secs}s)", "uk": "🗑 Скасувати ({secs} с)",
@@ -728,9 +772,9 @@ _STRINGS: dict[str, dict[str, str]] = {
     "radar_share_off": {"en": "📡 Share my moves: OFF 🚫", "uk": "📡 Ділитися моїми рухами: ВИМК 🚫", "de": "📡 Meine Bewegungen teilen: AUS 🚫"},
     # Anonymous on purpose: radar shares the move, never who made it.
     "radar_received": {
-        "en": "📡 Someone outside your crew moved today.",
-        "uk": "📡 Хтось поза твоїм колом рухався сьогодні.",
-        "de": "📡 Jemand außerhalb deiner Crew hat sich heute bewegt.",
+        "en": "📡 Someone outside your crew moved recently.",
+        "uk": "📡 Хтось поза твоїм колом рухався нещодавно.",
+        "de": "📡 Jemand außerhalb deiner Crew hat sich kürzlich bewegt.",
     },
     # ── pause ──
     "pause_menu": {"en": "⏸️ Pause everything — no moves from your crew, no radar.\n\nPause for:", "uk": "⏸️ Призупинити все — жодних рухів від кола, жодного радару.\n\nПризупинити на:", "de": "⏸️ Alles pausieren — keine Bewegungen der Crew, kein Radar.\n\nPausieren für:"},
@@ -1042,6 +1086,28 @@ def _zap_count(cur, entry_id: int) -> int:
     return cur.fetchone()["n"] or 0
 
 
+def _radar_ok(cur, entry_id: int) -> bool:
+    """Whether this move may be shown to strangers — the override, or the default."""
+    cur.execute(
+        "SELECT COALESCE(e.radar_ok, u.radar_send) AS ok FROM move_entries e "
+        "JOIN move_users u ON u.telegram_user_id = e.telegram_user_id WHERE e.id = %s",
+        (entry_id,),
+    )
+    row = cur.fetchone()
+    return bool(row and row["ok"])
+
+
+def _logged_kb(cur, entry_id: int, lang: str) -> dict:
+    """Undo, and where this one move stands with radar."""
+    on = _radar_ok(cur, entry_id)
+    return {"inline_keyboard": [
+        [{"text": _t("btn_undo", lang, secs=_UNDO_WINDOW_SECONDS),
+          "callback_data": f"mv:undo:{entry_id}"}],
+        [{"text": _t("btn_radar_ok_on" if on else "btn_radar_ok_off", lang),
+          "callback_data": f"mv:rok:{entry_id}"}],
+    ]}
+
+
 _NOTE_MAX = 500                       # a comment, not a letter
 
 
@@ -1319,11 +1385,8 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
 
     streak = _streak(cur, tg_id, today)
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
-    # Inline undo — the persistent reply keyboard stays regardless.
-    undo_kb = {"inline_keyboard": [[
-        {"text": _t("btn_undo", lang, secs=_UNDO_WINDOW_SECONDS),
-         "callback_data": f"mv:undo:{entry_id}"}
-    ]]}
+    # Inline undo and the radar decision — the persistent reply keyboard stays.
+    undo_kb = _logged_kb(cur, entry_id, lang)
     if names:
         _send(chat_id, _t("logged_shared", lang, streak=suffix, names=", ".join(names)),
               reply_markup=undo_kb)
@@ -1883,7 +1946,8 @@ def _radar_candidates(cur, rid: int) -> list:
         "SELECT e.id, e.chat_id, e.message_id, e.text_body, "
         "       u2.telegram_user_id AS from_id, u2.participant_name "
         "FROM move_entries e JOIN move_users u2 ON u2.telegram_user_id = e.telegram_user_id "
-        "WHERE e.entry_date >= %s AND u2.radar_send = TRUE AND u2.banned_at IS NULL "
+        "WHERE e.entry_date >= %s AND COALESCE(e.radar_ok, u2.radar_send) = TRUE "
+        "  AND u2.banned_at IS NULL "
         "  AND u2.telegram_user_id <> %s "
         "  AND NOT EXISTS (SELECT 1 FROM move_radar_block b "
         "                  WHERE b.telegram_user_id = %s AND b.blocked_tg_id = u2.telegram_user_id) "
@@ -2319,6 +2383,36 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             to = cur.fetchone()
             _log(f"⚡ Move: lightning\n• {me['participant_name'] if me else tg_id}"
                  f" → {to['participant_name'] if to else '?'}")
+        return
+
+    if body.startswith("rok:"):
+        entry_id = int(body[len("rok:"):])
+        cur.execute(
+            "SELECT telegram_user_id, entry_date FROM move_entries WHERE id = %s", (entry_id,))
+        e = cur.fetchone()
+        if not e or e["telegram_user_id"] != tg_id:
+            _answer(cq["id"], _t("note_gone", lang))       # not yours, or undone
+            return
+        was = _radar_ok(cur, entry_id)
+        cur.execute("UPDATE move_entries SET radar_ok = %s WHERE id = %s", (not was, entry_id))
+        conn.commit()
+        _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang))
+
+        # Past the window nothing more can happen either way, so say that rather
+        # than implying the toggle still decides something.
+        if (date.today() - e["entry_date"]).days > _RADAR_FRESH_DAYS:
+            _answer(cq["id"], _t("radar_ok_expired", lang))
+            return
+        if was:
+            cur.execute(
+                "SELECT 1 FROM move_forwards WHERE entry_id = %s AND kind = 'radar'", (entry_id,))
+            seen = cur.fetchone() is not None
+            _answer(cq["id"], _t("radar_ok_off_seen" if seen else "radar_ok_off", lang))
+        else:
+            _answer(cq["id"], _t("radar_ok_on", lang))
+        u = _user(cur, tg_id)
+        _log(f"📡 Move: per-move radar\n• {u['participant_name'] if u else tg_id}"
+             f" · entry #{entry_id} → {'on' if not was else 'off'}")
         return
 
     if body.startswith("note:"):

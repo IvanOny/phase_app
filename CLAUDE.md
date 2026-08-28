@@ -106,6 +106,7 @@ Backend dev server: `http://localhost:5001`
 `MOVE_BOT_TOKEN` — Move bot token
 `MOVE_LOG_CHAT_ID` / `LOG_CHAT_ID` — where Move's activity and ⚠️ reports are posted
 `POOL_COOLDOWN_DAYS` — days before radar may show you the same stranger again (default 7)
+`RADAR_FRESH_DAYS` — how far back radar looks for a move to show (default 33)
 
 ## Running a migration
 

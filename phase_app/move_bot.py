@@ -290,13 +290,10 @@ _SUPPORTED_LANGS = ("en", "uk", "de")
 
 
 def _norm_lang(raw: str | None) -> str:
-    """Ukrainian is the fallback: it's who the bot is for, and a Telegram locale
-    we don't speak is far more likely to belong to a Ukrainian speaker than to
-    an English one. The picker on /start overrides it in two taps either way."""
     if not raw:
-        return "uk"
+        return "en"
     code = raw.split("-")[0].lower()
-    return code if code in _SUPPORTED_LANGS else "uk"
+    return code if code in _SUPPORTED_LANGS else "en"
 
 
 def _t(key: str, lang: str = "en", **fmt) -> str:

@@ -2287,11 +2287,27 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # it is, so this needs no lookup and works even when move_forwards has no
         # row for it. Done on every press, not just the first: if an earlier
         # attempt failed to redraw, a second tap should still fix the button.
-        # Two keyboard rows means a radar copy, whose block/report row must survive.
-        existing = (cq["message"].get("reply_markup") or {}).get("inline_keyboard") or []
+        #
+        # Keep every other row exactly as it is and swap only the ⚡. Rebuilding
+        # the whole keyboard means deciding what kind of copy this is, and the
+        # last version guessed from the row count — true when crew had one row
+        # and radar two, then wrong the moment 💬 was added to crew copies, which
+        # turned a crew copy into block-and-report on the first ⚡.
+        rows = [list(r) for r in
+                ((cq["message"].get("reply_markup") or {}).get("inline_keyboard") or [])]
+        ticked = {"text": _t("zap_btn_sent", lang), "callback_data": f"mv:zap:{entry_id}"}
+        replaced = False
+        for row in rows:
+            for i, btn in enumerate(row):
+                if (btn.get("callback_data") or "").startswith("mv:zap:"):
+                    row[i], replaced = ticked, True
+                    break
+            if replaced:
+                break
         _api_call("editMessageReplyMarkup", {
             "chat_id": chat_id, "message_id": msg_id,
-            "reply_markup": _zap_kb(entry_id, sent=True, lang=lang, radar=len(existing) > 1),
+            "reply_markup": {"inline_keyboard": rows} if replaced
+            else _zap_kb(entry_id, sent=True, lang=lang),
         })
         if fresh:
             me = _user(cur, tg_id)

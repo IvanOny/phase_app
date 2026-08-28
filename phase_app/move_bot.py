@@ -169,6 +169,62 @@ def _log(text: str, reply_markup: dict | None = None) -> None:
 _TRACE_MAX = 300                      # a pasted wall of text shouldn't fill the chat
 
 
+def _describe_callback(cur, data: str) -> str:
+    """Turn `mv:zap:15` into `⚡ zap · move #15`.
+
+    Raw callback data is an internal string that happens to be readable; it isn't
+    written for anyone. Names beat ids where we have them, since a log entry is
+    read to find out who did what to whom.
+    """
+    body = data[3:] if data.startswith("mv:") else data
+    head, _, rest = body.partition(":")
+
+    def who(tok: str) -> str:
+        u = _user(cur, int(tok)) if tok.isdigit() else None
+        return (u["participant_name"] if u and u["participant_name"] else tok)
+
+    if head == "zap":
+        return f"⚡ zap · move #{rest}"
+    if head == "undo":
+        return f"🗑 undo · move #{rest}"
+    if head == "rok":
+        return f"📡 per-move radar · move #{rest}"
+    if head == "rblock":
+        return f"🚫 block from radar · move #{rest}"
+    if head == "rreport":
+        return f"⚠️ report · move #{rest}"
+    if head == "note":
+        entry, _, to = rest.partition(":")
+        return f"💬 comment → {who(to)} · move #{entry}"
+    if head == "radarnow":
+        return "📡 radar: show me someone now"
+    if head == "radarsend":
+        return f"📡 radar sharing → {rest}"
+    if head == "radar":
+        return f"📡 radar frequency → {rest}"
+    if head == "pause":
+        return f"⏸️ pause → {rest}"
+    if head == "lang":
+        return f"🌍 language → {rest}"
+    if head == "gender":
+        return f"🌍 gender → {rest}"
+    if head == "langmenu":
+        return "🌍 language menu"
+    if head == "crew":
+        action, _, target = rest.partition(":")
+        labels = {"open": "open", "remove": "remove?", "removeok": "REMOVE",
+                  "back": "back", "list": "back to list", "accept": "accept invite",
+                  "decline": "decline invite", "cancel": "cancel",
+                  "mute1d": "hide 1 day", "mute1w": "hide 1 week", "unmute": "show again",
+                  "addback": "add back"}
+        label = labels.get(action, action)
+        return f"🤝 crew: {label}" + (f" · {who(target)}" if target else "")
+    if head == "mod":
+        action, _, target = rest.partition(":")
+        return f"🛡 mod: {action}" + (f" · {who(target)}" if target else "")
+    return data or "?"
+
+
 def _trace(cur, body: dict) -> None:
     """One line per incoming update: who, and what they sent or tapped.
 
@@ -195,7 +251,7 @@ def _trace(cur, body: dict) -> None:
         or src.get("first_name") or "?"
 
     if cq:
-        what = f"⌨ {cq.get('data') or '?'}"
+        what = "⌨ " + _describe_callback(cur, cq.get("data") or "")
     else:
         m = body.get("message") or {}
         media = next((k for k in _MEDIA_KEYS if k in m), None)
@@ -1954,8 +2010,17 @@ def _radar_candidates(cur, rid: int) -> list:
         "  AND NOT EXISTS (SELECT 1 FROM move_radar_history h "
         "                  WHERE h.telegram_user_id = %s AND h.from_tg_id = u2.telegram_user_id "
         "                    AND h.sent_at > NOW() - make_interval(days => %s)) "
+        # Never the same move twice. move_radar_history only remembers which
+        # *person* you were shown, which was enough while moves aged out in two
+        # days — shorter than the cooldown, so a repeat was impossible. With a
+        # 33-day window the same video can come round again after the cooldown
+        # lapses, so the entry itself has to be excluded.
+        "  AND NOT EXISTS (SELECT 1 FROM move_forwards mf "
+        "                  WHERE mf.entry_id = e.id AND mf.recipient_tg_id = %s "
+        "                    AND mf.kind = 'radar') "
         "ORDER BY random() LIMIT 25",
-        (date.today() - timedelta(days=_RADAR_FRESH_DAYS), rid, rid, rid, _RADAR_REPEAT_DAYS),
+        (date.today() - timedelta(days=_RADAR_FRESH_DAYS), rid, rid, rid,
+         _RADAR_REPEAT_DAYS, rid),
     )
     return [c for c in cur.fetchall() if (c["participant_name"] or "").lower() not in crew]
 

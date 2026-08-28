@@ -408,6 +408,37 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Machen wir das zusammen.",
     },
     "ask_name": {"en": "What would you like to be called?", "uk": "Як тебе називати?", "de": "Wie möchtest du genannt werden?"},
+    # The one gesture the whole product depends on, and the one nobody is born
+    # knowing. Both ways of doing it, because holding through a long take is the
+    # part people give up on.
+    "how_to_record": {
+        "en": "🎥 A round video: tap 🎤 in the message box to switch it to the "
+              "camera, then hold to record — or swipe up to lock it and let go.",
+        "uk": "🎥 Кругле відео: натисни 🎤 у полі вводу, щоб перемкнути на камеру, "
+              "і тримай — або потягни вгору, щоб зафіксувати, і відпусти.",
+        "de": "🎥 Ein rundes Video: tippe 🎤 im Eingabefeld, um zur Kamera zu "
+              "wechseln, und halte gedrückt — oder wisch nach oben zum Fixieren "
+              "und lass los.",
+    },
+    "nudge_first_move": {
+        "en": "👋 Still here? Your first move is one video away — anything you did "
+              "today counts, and nothing is measured.\n\n{how}",
+        "uk": "👋 Ти ще тут? До першого руху — одне відео. Годиться будь-що, що ти "
+              "сьогодні робив, і нічого не вимірюється.\n\n{how}",
+        "de": "👋 Noch da? Bis zur ersten Bewegung fehlt ein Video — alles zählt, "
+              "und nichts wird gemessen.\n\n{how}",
+    },
+    "hint_radar": {
+        "en": "📡 One thing you haven't tried: radar shows you a move from someone "
+              "outside your crew, as often as you like — and can show yours to "
+              "them, anonymously. Tap 📡 Radar to look.",
+        "uk": "📡 Одна річ, якої ти ще не куштував: радар показує рух від когось "
+              "поза твоїм колом, з обраною частотою — і може показати твій їм, "
+              "анонімно. Натисни 📡 Радар, щоб глянути.",
+        "de": "📡 Eine Sache, die du noch nicht probiert hast: Radar zeigt dir eine "
+              "Bewegung von außerhalb deiner Crew, so oft du willst — und kann "
+              "deine anonym zeigen. Tippe 📡 Radar.",
+    },
     "welcome": {
         "en": "Welcome, {name}! 👋\n\nNext: add your crew with 🤝 Move with.\nThey'll see every move you log — and you'll see theirs.",
         "uk": "Вітаємо, {name}! 👋\n"
@@ -2101,6 +2132,10 @@ def _radar_share_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
 
 def _cmd_radar(cur, tg_id: int, chat_id: int, lang: str) -> None:
     """Two questions, asked separately: how often you receive, and whether you share."""
+    # Remember they've been here. radar_freq is 'never' by default, so it can't
+    # tell "chose off" from "never found it" — and only the second deserves a hint.
+    cur.execute("UPDATE move_users SET radar_seen_at = COALESCE(radar_seen_at, NOW()) "
+                "WHERE telegram_user_id = %s", (tg_id,))
     for text, kb in (_radar_freq_view(cur, tg_id, lang),
                      _radar_share_view(cur, tg_id, lang)):
         _send(chat_id, text, reply_markup=kb)
@@ -2234,7 +2269,11 @@ def handle_move_webhook(body: dict, conn) -> None:
         _clear_state(cur, tg_id)
         conn.commit()
         key = "welcome" if base_state == "await_name" else "renamed"
-        _send(chat_id, _t(key, lang, name=text.strip()), reply_markup=_main_kb(lang))
+        body = _t(key, lang, name=text.strip())
+        if base_state == "await_name":
+            # Only on the way in. A rename doesn't need to be taught the gesture.
+            body += "\n\n" + _t("how_to_record", lang)
+        _send(chat_id, body, reply_markup=_main_kb(lang))
         _log(("👋 Move: registered\n• " if base_state == "await_name" else "✏️ Move: renamed\n• ")
              + text.strip())
         # A deep-link invite waited for the name; connect them now.
@@ -2320,6 +2359,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word == "radar":
         _cmd_radar(cur, tg_id, chat_id, lang)
+        conn.commit()                      # radar_seen_at
         return
     if word == "pause":
         _cmd_pause(cur, tg_id, chat_id, lang)
@@ -2976,6 +3016,63 @@ def process_move_radar(conn) -> None:
             sent_any += 1
     conn.commit()
     _log(f"📡 Move: radar pass\n• candidates: {len(users)} · sent: {sent_any}")
+
+
+_RADAR_HINT_DAYS = 21                 # how long before radar is mentioned again
+
+
+def send_move_nudges(conn) -> None:
+    """Two quiet prompts, at most one message per person per run.
+
+    Both are for people the bot has otherwise stopped talking to: someone who
+    registered and never posted hears nothing at all, and someone who has never
+    opened the radar menu can't be reached by anything inside it.
+    """
+    cur = conn.cursor()
+    today = date.today()
+    if not _claim_job(cur, conn, "move_nudges", today):
+        return
+
+    # 1) Registered, never posted, and not nudged before. Once, ever — a second
+    #    "still here?" to someone who decided not to start is just noise.
+    cur.execute(
+        "SELECT telegram_user_id, chat_id, language_code FROM move_users u "
+        "WHERE u.participant_name IS NOT NULL AND u.nudged_at IS NULL "
+        "  AND u.created_at < NOW() - INTERVAL '20 hours' "
+        "  AND (u.paused_until IS NULL OR u.paused_until < NOW()) "
+        "  AND NOT EXISTS (SELECT 1 FROM move_entries e "
+        "                  WHERE e.telegram_user_id = u.telegram_user_id)",
+    )
+    first = cur.fetchall()
+    for u in first:
+        lang = _norm_lang(u["language_code"])
+        _send(u["chat_id"] or u["telegram_user_id"],
+              _t("nudge_first_move", lang, how=_t("how_to_record", lang)),
+              reply_markup=_main_kb(lang))
+        cur.execute("UPDATE move_users SET nudged_at = %s WHERE telegram_user_id = %s",
+                    (today, u["telegram_user_id"]))
+    conn.commit()
+
+    # 2) Posting, but has never opened the radar menu. Not the same people as (1),
+    #    since these have at least one move.
+    cur.execute(
+        "SELECT telegram_user_id, chat_id, language_code FROM move_users u "
+        "WHERE u.participant_name IS NOT NULL AND u.radar_seen_at IS NULL "
+        "  AND (u.paused_until IS NULL OR u.paused_until < NOW()) "
+        "  AND (u.radar_hinted_at IS NULL "
+        "       OR u.radar_hinted_at < %s - make_interval(days => %s)) "
+        "  AND EXISTS (SELECT 1 FROM move_entries e "
+        "              WHERE e.telegram_user_id = u.telegram_user_id)",
+        (today, _RADAR_HINT_DAYS),
+    )
+    hinted = cur.fetchall()
+    for u in hinted:
+        lang = _norm_lang(u["language_code"])
+        _send(u["chat_id"] or u["telegram_user_id"], _t("hint_radar", lang))
+        cur.execute("UPDATE move_users SET radar_hinted_at = %s WHERE telegram_user_id = %s",
+                    (today, u["telegram_user_id"]))
+    conn.commit()
+    _log(f"👋 Move: nudges\n• first move: {len(first)} · radar hint: {len(hinted)}")
 
 
 def send_move_monthly_summaries(conn) -> None:

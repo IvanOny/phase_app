@@ -130,6 +130,7 @@ def _run_daily_jobs(conn) -> dict:
     from phase_app.exercise_bot import send_exercise_overview
     from phase_app.move_bot import (
         send_move_zap_reports, process_move_radar, send_move_monthly_summaries,
+        send_move_nudges,
     )
     import traceback
 
@@ -142,6 +143,7 @@ def _run_daily_jobs(conn) -> dict:
         ("move_zaps", send_move_zap_reports),
         ("move_radar", process_move_radar),
         ("move_monthly", send_move_monthly_summaries),
+        ("move_nudges", send_move_nudges),
     ]
     failed = []
     for name, fn in jobs:

@@ -252,6 +252,10 @@ def _trace(cur, body: dict) -> None:
     telegram_name = " ".join(p for p in (src.get("first_name"), src.get("last_name")) if p)
     who = (u["participant_name"] if u and u["participant_name"] else None) \
         or telegram_name or "?"
+    # The @handle even for registered users: it's the only thing here you can
+    # actually reach someone by, which is the point of reading this log.
+    if src.get("username"):
+        who += f" @{src['username']}"
 
     if cq:
         what = "⌨ " + _describe_callback(cur, cq.get("data") or "")

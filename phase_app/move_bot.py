@@ -412,13 +412,25 @@ _STRINGS: dict[str, dict[str, str]] = {
     # knowing. Both ways of doing it, because holding through a long take is the
     # part people give up on.
     "how_to_record": {
-        "en": "🎥 A round video: tap 🎤 in the message box to switch it to the "
-              "camera, then hold to record — or swipe up to lock it and let go.",
-        "uk": "🎥 Кругле відео: натисни 🎤 у полі вводу, щоб перемкнути на камеру, "
-              "і тримай — або потягни вгору, щоб зафіксувати, і відпусти.",
-        "de": "🎥 Ein rundes Video: tippe 🎤 im Eingabefeld, um zur Kamera zu "
-              "wechseln, und halte gedrückt — oder wisch nach oben zum Fixieren "
-              "und lass los.",
+        "en": "🎥 Tap 🎤 in the message box to switch to the camera, then swipe up "
+              "to lock it. Now you can take your finger off — it keeps recording.",
+        "uk": "🎥 Натисни 🎤 у полі вводу, щоб перемкнути на камеру, і потягни "
+              "вгору, щоб зафіксувати. Тепер можеш забрати палець — відео "
+              "продовжить записуватись.",
+        "de": "🎥 Tippe 🎤 im Eingabefeld, um zur Kamera zu wechseln, und wisch nach "
+              "oben zum Fixieren. Jetzt kannst du den Finger wegnehmen — es nimmt weiter auf.",
+    },
+    # Sent when someone uploads a video file instead of recording a bubble, at the
+    # moment it's useful rather than in a welcome message read before they've tried
+    # anything. Capped at _BUBBLE_HINTS: after that they've either learned it or
+    # they prefer uploading, and both are answers.
+    "hint_bubble": {
+        "en": "A round video plays right in the chat and feels closer than an "
+              "uploaded file.\n\n{how}",
+        "uk": "Кругле відео грає прямо в чаті й відчувається ближче за "
+              "завантажений файл.\n\n{how}",
+        "de": "Ein rundes Video spielt direkt im Chat und wirkt näher als eine "
+              "hochgeladene Datei.\n\n{how}",
     },
     "nudge_first_move": {
         "en": "👋 Still here? Your first move is one video away — anything you did "
@@ -1196,6 +1208,7 @@ def _logged_kb(cur, entry_id: int, lang: str) -> dict:
 
 
 _NOTE_MAX = 500                       # a comment, not a letter
+_BUBBLE_HINTS = 3                     # times we explain the bubble gesture, then stop
 
 
 def _note_kb(entry_id: int, to_id: int, lang: str, reply: bool = False) -> dict:
@@ -1479,6 +1492,17 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
               reply_markup=undo_kb)
     else:
         _send(chat_id, _t("logged", lang, streak=suffix), reply_markup=undo_kb)
+    # Uploaded a file rather than recording a bubble? Show the gesture — here,
+    # where they've just done the thing it improves, not in a welcome message
+    # read before they'd tried anything.
+    if media_type == "video":
+        cur.execute("SELECT bubble_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+        row = cur.fetchone()
+        if row and (row["bubble_hints"] or 0) < _BUBBLE_HINTS:
+            _send(chat_id, _t("hint_bubble", lang, how=_t("how_to_record", lang)))
+            cur.execute("UPDATE move_users SET bubble_hints = bubble_hints + 1 "
+                        "WHERE telegram_user_id = %s", (tg_id,))
+
     # Invite a comment: the next text is treated as one (state times out on its own).
     _set_state(cur, tg_id, "await_comment")
     conn.commit()

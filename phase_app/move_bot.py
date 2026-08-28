@@ -425,12 +425,23 @@ _STRINGS: dict[str, dict[str, str]] = {
     # anything. Capped at _BUBBLE_HINTS: after that they've either learned it or
     # they prefer uploading, and both are answers.
     "hint_bubble": {
-        "en": "A round video plays right in the chat and feels closer than an "
-              "uploaded file.\n\n{how}",
-        "uk": "Кругле відео грає прямо в чаті й відчувається ближче за "
-              "завантажений файл.\n\n{how}",
-        "de": "Ein rundes Video spielt direkt im Chat und wirkt näher als eine "
-              "hochgeladene Datei.\n\n{how}",
+        "en": "Recording a round video straight in the bot is far less work than "
+              "filming with the camera app and uploading it afterwards.\n\n{how}",
+        "uk": "Значно простіше записати кругле відео безпосередньо в боті, ніж "
+              "спочатку знімати на камеру і потім завантажувати в бот.\n\n{how}",
+        "de": "Ein rundes Video direkt im Bot aufzunehmen ist deutlich weniger "
+              "Aufwand, als erst mit der Kamera zu filmen und es dann "
+              "hochzuladen.\n\n{how}",
+    },
+    # Facts, not pressure: the number of days, and that the streak is the only
+    # thing at stake. No guilt — the whole product is built on there being none.
+    "nudge_inactive": {
+        "en": "👋 {days} days since your last move. Anything counts — a walk, a "
+              "stretch, one set. Your crew is still here.",
+        "uk": "👋 {days} днів без руху. Годиться будь-що — прогулянка, розтяжка, "
+              "один підхід. Твоє коло на місці.",
+        "de": "👋 {days} Tage ohne Bewegung. Alles zählt — ein Spaziergang, "
+              "Dehnen, ein Satz. Deine Crew ist noch da.",
     },
     "nudge_first_move": {
         "en": "👋 Still here? Your first move is one video away — anything you did "
@@ -1209,6 +1220,7 @@ def _logged_kb(cur, entry_id: int, lang: str) -> dict:
 
 _NOTE_MAX = 500                       # a comment, not a letter
 _BUBBLE_HINTS = 3                     # times we explain the bubble gesture, then stop
+_BUBBLE_HINT_AFTER = 3                # uploads with no bubble before the first hint
 
 
 def _note_kb(entry_id: int, to_id: int, lang: str, reply: bool = False) -> dict:
@@ -1496,9 +1508,21 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     # where they've just done the thing it improves, not in a welcome message
     # read before they'd tried anything.
     if media_type == "video":
-        cur.execute("SELECT bubble_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+        # Not on the first upload. Someone who uploads once may just have had a
+        # video ready; three uploads and never a bubble is a habit, and only then
+        # is the tip worth interrupting for.
+        cur.execute(
+            "SELECT u.bubble_hints, "
+            "  (SELECT COUNT(*) FROM move_entries e WHERE e.telegram_user_id = u.telegram_user_id "
+            "     AND e.media_type = 'video') AS uploads, "
+            "  (SELECT COUNT(*) FROM move_entries e WHERE e.telegram_user_id = u.telegram_user_id "
+            "     AND e.media_type = 'video_note') AS bubbles "
+            "FROM move_users u WHERE u.telegram_user_id = %s",
+            (tg_id,),
+        )
         row = cur.fetchone()
-        if row and (row["bubble_hints"] or 0) < _BUBBLE_HINTS:
+        if (row and (row["bubble_hints"] or 0) < _BUBBLE_HINTS
+                and (row["uploads"] or 0) >= _BUBBLE_HINT_AFTER and not row["bubbles"]):
             _send(chat_id, _t("hint_bubble", lang, how=_t("how_to_record", lang)))
             cur.execute("UPDATE move_users SET bubble_hints = bubble_hints + 1 "
                         "WHERE telegram_user_id = %s", (tg_id,))
@@ -3043,6 +3067,8 @@ def process_move_radar(conn) -> None:
 
 
 _RADAR_HINT_DAYS = 21                 # how long before radar is mentioned again
+_NUDGE_EVERY_DAYS = 5                 # days of silence between "still there?" messages
+_NUDGE_STOP_DAYS = 30                 # past this the bot stops asking
 
 
 def send_move_nudges(conn) -> None:
@@ -3060,7 +3086,8 @@ def send_move_nudges(conn) -> None:
     # 1) Registered, never posted, and not nudged before. Once, ever — a second
     #    "still here?" to someone who decided not to start is just noise.
     cur.execute(
-        "SELECT telegram_user_id, chat_id, language_code FROM move_users u "
+        "SELECT telegram_user_id, chat_id, language_code, participant_name "
+        "FROM move_users u "
         "WHERE u.participant_name IS NOT NULL AND u.nudged_at IS NULL "
         "  AND u.created_at < NOW() - INTERVAL '20 hours' "
         "  AND (u.paused_until IS NULL OR u.paused_until < NOW()) "
@@ -3080,7 +3107,8 @@ def send_move_nudges(conn) -> None:
     # 2) Posting, but has never opened the radar menu. Not the same people as (1),
     #    since these have at least one move.
     cur.execute(
-        "SELECT telegram_user_id, chat_id, language_code FROM move_users u "
+        "SELECT telegram_user_id, chat_id, language_code, participant_name "
+        "FROM move_users u "
         "WHERE u.participant_name IS NOT NULL AND u.radar_seen_at IS NULL "
         "  AND (u.paused_until IS NULL OR u.paused_until < NOW()) "
         "  AND (u.radar_hinted_at IS NULL "
@@ -3095,8 +3123,39 @@ def send_move_nudges(conn) -> None:
         _send(u["chat_id"] or u["telegram_user_id"], _t("hint_radar", lang))
         cur.execute("UPDATE move_users SET radar_hinted_at = %s WHERE telegram_user_id = %s",
                     (today, u["telegram_user_id"]))
+    # 3) Posted before, then went quiet. Every _NUDGE_EVERY_DAYS days of silence
+    #    up to _NUDGE_STOP_DAYS, after which the bot stops asking — someone who
+    #    hasn't moved in a month has answered, and the monthly summary still comes.
+    cur.execute(
+        "SELECT u.telegram_user_id, u.chat_id, u.language_code, u.participant_name, "
+        "       (CURRENT_DATE - MAX(e.entry_date)) AS quiet_days "
+        "FROM move_users u JOIN move_entries e ON e.telegram_user_id = u.telegram_user_id "
+        "WHERE u.participant_name IS NOT NULL "
+        "  AND (u.paused_until IS NULL OR u.paused_until < NOW()) "
+        "  AND (u.inactive_nudged_at IS NULL "
+        "       OR u.inactive_nudged_at <= CURRENT_DATE - make_interval(days => %s)) "
+        "GROUP BY u.telegram_user_id, u.chat_id, u.language_code, u.participant_name "
+        "HAVING (CURRENT_DATE - MAX(e.entry_date)) BETWEEN %s AND %s",
+        (_NUDGE_EVERY_DAYS, _NUDGE_EVERY_DAYS, _NUDGE_STOP_DAYS),
+    )
+    quiet = cur.fetchall()
+    for u in quiet:
+        lang = _norm_lang(u["language_code"])
+        _send(u["chat_id"] or u["telegram_user_id"],
+              _t("nudge_inactive", lang, days=u["quiet_days"]),
+              reply_markup=_main_kb(lang))
+        cur.execute("UPDATE move_users SET inactive_nudged_at = %s WHERE telegram_user_id = %s",
+                    (today, u["telegram_user_id"]))
     conn.commit()
-    _log(f"👋 Move: nudges\n• first move: {len(first)} · radar hint: {len(hinted)}")
+
+    # Named, not just counted: a nudge is a message the bot sent someone without
+    # being asked, and that's worth being able to see afterwards.
+    lines = [f"👋 Move: nudges\n• first move: {len(first)} · radar: {len(hinted)}"
+             f" · quiet: {len(quiet)}"]
+    lines += [f"  – first move: {u['participant_name']}" for u in first]
+    lines += [f"  – radar hint: {u['participant_name']}" for u in hinted]
+    lines += [f"  – quiet {u['quiet_days']}d: {u['participant_name']}" for u in quiet]
+    _log("\n".join(lines))
 
 
 def send_move_monthly_summaries(conn) -> None:

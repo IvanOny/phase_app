@@ -429,7 +429,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     # Sent when someone uploads a video file instead of recording a bubble, at the
     # moment it's useful rather than in a welcome message read before they've tried
-    # anything. Capped at _BUBBLE_HINTS: after that they've either learned it or
+    # anything. Capped at three: after that they've either learned it or
     # they prefer uploading, and both are answers.
     "hint_bubble": {
         "en": "💡 Next time: recording a round video straight in the bot is far "
@@ -1240,8 +1240,9 @@ def _logged_kb(cur, entry_id: int, lang: str) -> dict:
 
 
 _NOTE_MAX = 500                       # a comment, not a letter
-_BUBBLE_HINTS = 3                     # times we explain the bubble gesture, then stop
-_BUBBLE_HINT_AFTER = 3                # uploads with no bubble before the first hint
+# Which upload triggers a hint. Three in a row was nagging; spaced out, each
+# one lands on someone who has had time to forget rather than time to be annoyed.
+_BUBBLE_HINT_AT = (3, 10, 20)
 
 
 def _note_kb(entry_id: int, to_id: int, lang: str, reply: bool = False) -> dict:
@@ -1300,9 +1301,10 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
         # kind='note' so /undo takes the whole conversation with the move, and so
         # the ⚡ refresh and comment threading keep ignoring these.
         cur.execute(
-            "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id, kind) "
-            "VALUES (%s, %s, %s, %s, 'note')",
-            (entry_id, to_id, them["chat_id"] or to_id, res["message_id"]),
+            "INSERT INTO move_forwards "
+            "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+            "VALUES (%s, %s, %s, %s, 'note', %s)",
+            (entry_id, to_id, them["chat_id"] or to_id, res["message_id"], tg_id),
         )
     conn.commit()
     _send(chat_id, _t("note_sent", lang, name=tname))
@@ -1544,8 +1546,8 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
             (tg_id,),
         )
         row = cur.fetchone()
-        if (row and (row["bubble_hints"] or 0) < _BUBBLE_HINTS
-                and (row["uploads"] or 0) >= _BUBBLE_HINT_AFTER and not row["bubbles"]):
+        if (row and (row["bubble_hints"] or 0) < len(_BUBBLE_HINT_AT)
+                and (row["uploads"] or 0) in _BUBBLE_HINT_AT and not row["bubbles"]):
             body += "\n\n" + _t("hint_bubble", lang, how=_t("how_to_record", lang))
             cur.execute("UPDATE move_users SET bubble_hints = bubble_hints + 1 "
                         "WHERE telegram_user_id = %s", (tg_id,))
@@ -1561,21 +1563,22 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
 
 
 def _reply_target(cur, chat_id: int, replied_message_id: int):
-    """Who a swipe-reply is aimed at: (entry_id, author_id), or None.
+    """Who a swipe-reply is aimed at: (entry_id, recipient_id), or None.
 
     Telegram's own Reply is the gesture people already know, and the bot has
     always sent replies without ever reading one. move_forwards knows which move
-    any message it placed belongs to, so a reply to a crew copy — or to the
-    "X moved today" line, or to the caption under it — resolves to that move.
+    each message it placed belongs to and who sent it, so a reply goes back to
+    whoever wrote the thing being replied to: the mover for a crew copy, the
+    commenter for a comment they sent you.
 
-    Notes are excluded: their row records who received one, not who sent it, so
-    a reply to a note can't be routed from here. Those carry a Reply button.
+    Anything the bot said on its own account — a confirmation, a prompt, a hint —
+    isn't in this table, so replying to one falls through to whatever the bot
+    last asked, which is the right default for a message with no other author.
     """
     cur.execute(
-        "SELECT f.entry_id, e.telegram_user_id AS author FROM move_forwards f "
-        "JOIN move_entries e ON e.id = f.entry_id "
-        "WHERE f.chat_id = %s AND f.message_id = %s "
-        "  AND f.kind IN ('move', 'header', 'comment')",
+        "SELECT f.entry_id, COALESCE(f.from_tg_id, e.telegram_user_id) AS author "
+        "FROM move_forwards f JOIN move_entries e ON e.id = f.entry_id "
+        "WHERE f.chat_id = %s AND f.message_id = %s",
         (chat_id, replied_message_id),
     )
     row = cur.fetchone()
@@ -3195,6 +3198,7 @@ def process_move_radar(conn) -> None:
 
 
 _RADAR_HINT_DAYS = 21                 # how long before radar is mentioned again
+_RADAR_HINTS = 3                      # and how many times, before it stops asking
 _NUDGE_EVERY_DAYS = 5                 # days of silence between "still there?" messages
 _NUDGE_STOP_DAYS = 30                 # past this the bot stops asking
 
@@ -3239,17 +3243,19 @@ def send_move_nudges(conn) -> None:
         "FROM move_users u "
         "WHERE u.participant_name IS NOT NULL AND u.radar_seen_at IS NULL "
         "  AND (u.paused_until IS NULL OR u.paused_until < NOW()) "
+        "  AND u.radar_hints < %s "
         "  AND (u.radar_hinted_at IS NULL "
         "       OR u.radar_hinted_at < %s - make_interval(days => %s)) "
         "  AND EXISTS (SELECT 1 FROM move_entries e "
         "              WHERE e.telegram_user_id = u.telegram_user_id)",
-        (today, _RADAR_HINT_DAYS),
+        (_RADAR_HINTS, today, _RADAR_HINT_DAYS),
     )
     hinted = cur.fetchall()
     for u in hinted:
         lang = _norm_lang(u["language_code"])
         _send(u["chat_id"] or u["telegram_user_id"], _t("hint_radar", lang))
-        cur.execute("UPDATE move_users SET radar_hinted_at = %s WHERE telegram_user_id = %s",
+        cur.execute("UPDATE move_users SET radar_hinted_at = %s, "
+                    "radar_hints = radar_hints + 1 WHERE telegram_user_id = %s",
                     (today, u["telegram_user_id"]))
     # 3) Posted before, then went quiet. Every _NUDGE_EVERY_DAYS days of silence
     #    up to _NUDGE_STOP_DAYS, after which the bot stops asking — someone who

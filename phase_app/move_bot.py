@@ -1509,18 +1509,20 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
     # Inline undo and the radar decision — the persistent reply keyboard stays.
     undo_kb = _logged_kb(cur, entry_id, lang)
-    if names:
-        _send(chat_id, _t("logged_shared", lang, streak=suffix, names=", ".join(names)),
-              reply_markup=undo_kb)
-    else:
-        _send(chat_id, _t("logged", lang, streak=suffix), reply_markup=undo_kb)
-    # Uploaded a file rather than recording a bubble? Show the gesture — here,
-    # where they've just done the thing it improves, not in a welcome message
-    # read before they'd tried anything.
+    body = (_t("logged_shared", lang, streak=suffix, names=", ".join(names)) if names
+            else _t("logged", lang, streak=suffix))
+
+    # Uploaded a file rather than recording a bubble? Show the gesture — but as
+    # part of this confirmation, never as a message of its own.
+    #
+    # Logging a move opens the comment window, so for the next ten minutes any
+    # text becomes the caption the crew sees. People answer the newest message in
+    # the chat, so a separate hint turned "don't be a smartass" into the public
+    # caption on someone's workout. Folded in here, the newest message is still
+    # the move itself, and a reply to it is a comment on purpose.
     if media_type == "video":
         # Not on the first upload. Someone who uploads once may just have had a
-        # video ready; three uploads and never a bubble is a habit, and only then
-        # is the tip worth interrupting for.
+        # video ready; three uploads and never a bubble is a habit.
         cur.execute(
             "SELECT u.bubble_hints, "
             "  (SELECT COUNT(*) FROM move_entries e WHERE e.telegram_user_id = u.telegram_user_id "
@@ -1533,9 +1535,11 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         row = cur.fetchone()
         if (row and (row["bubble_hints"] or 0) < _BUBBLE_HINTS
                 and (row["uploads"] or 0) >= _BUBBLE_HINT_AFTER and not row["bubbles"]):
-            _send(chat_id, _t("hint_bubble", lang, how=_t("how_to_record", lang)))
+            body += "\n\n" + _t("hint_bubble", lang, how=_t("how_to_record", lang))
             cur.execute("UPDATE move_users SET bubble_hints = bubble_hints + 1 "
                         "WHERE telegram_user_id = %s", (tg_id,))
+
+    _send(chat_id, body, reply_markup=undo_kb)
 
     # Invite a comment: the next text is treated as one (state times out on its own).
     _set_state(cur, tg_id, "await_comment")

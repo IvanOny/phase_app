@@ -432,13 +432,15 @@ _STRINGS: dict[str, dict[str, str]] = {
     # anything. Capped at _BUBBLE_HINTS: after that they've either learned it or
     # they prefer uploading, and both are answers.
     "hint_bubble": {
-        "en": "Recording a round video straight in the bot is far less work than "
-              "filming with the camera app and uploading it afterwards.\n\n{how}",
-        "uk": "Значно простіше записати кругле відео безпосередньо в боті, ніж "
-              "спочатку знімати на камеру і потім завантажувати в бот.\n\n{how}",
-        "de": "Ein rundes Video direkt im Bot aufzunehmen ist deutlich weniger "
-              "Aufwand, als erst mit der Kamera zu filmen und es dann "
-              "hochzuladen.\n\n{how}",
+        "en": "💡 Next time: recording a round video straight in the bot is far "
+              "less work than filming with the camera app and uploading it "
+              "afterwards.\n\n{how}",
+        "uk": "💡 Наступного разу: значно простіше записати кругле "
+              "відео безпосередньо в боті, ніж спочатку знімати на камеру і "
+              "потім завантажувати в бот.\n\n{how}",
+        "de": "💡 Nächstes Mal: ein rundes Video direkt im Bot aufzunehmen ist "
+              "deutlich weniger Aufwand, als erst mit der Kamera zu filmen und es "
+              "dann hochzuladen.\n\n{how}",
     },
     # Facts, not pressure: the number of days, and that the streak is the only
     # thing at stake. No guilt — the whole product is built on there being none.
@@ -571,6 +573,15 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     # The window is in the label: the button stays on screen after it expires
     # (nothing runs a minute later to remove it), so it has to say what it promises.
+    "btn_undo_comment": {
+        "en": "🗑 Undo comment ({secs}s)", "uk": "🗑 Скасувати коментар ({secs} с)",
+        "de": "🗑 Kommentar zurücknehmen ({secs}s)",
+    },
+    "comment_undone": {
+        "en": "🗑 Comment removed — taken out of your crew's chats too.",
+        "uk": "🗑 Коментар видалено — й з чатів твого кола теж.",
+        "de": "🗑 Kommentar entfernt — auch aus den Chats deiner Crew.",
+    },
     "btn_undo": {"en": "🗑 Undo ({secs}s)", "uk": "🗑 Скасувати ({secs} с)",
                  "de": "🗑 Rückgängig ({secs}s)"},
     "undo_done": {
@@ -1549,6 +1560,28 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     _check_milestone(cur, conn, user, streak)
 
 
+def _reply_target(cur, chat_id: int, replied_message_id: int):
+    """Who a swipe-reply is aimed at: (entry_id, author_id), or None.
+
+    Telegram's own Reply is the gesture people already know, and the bot has
+    always sent replies without ever reading one. move_forwards knows which move
+    any message it placed belongs to, so a reply to a crew copy — or to the
+    "X moved today" line, or to the caption under it — resolves to that move.
+
+    Notes are excluded: their row records who received one, not who sent it, so
+    a reply to a note can't be routed from here. Those carry a Reply button.
+    """
+    cur.execute(
+        "SELECT f.entry_id, e.telegram_user_id AS author FROM move_forwards f "
+        "JOIN move_entries e ON e.id = f.entry_id "
+        "WHERE f.chat_id = %s AND f.message_id = %s "
+        "  AND f.kind IN ('move', 'header', 'comment')",
+        (chat_id, replied_message_id),
+    )
+    row = cur.fetchone()
+    return (row["entry_id"], row["author"]) if row else None
+
+
 def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     """Attach a text to today's move and deliver it as a reply under each
     forwarded copy, so it reads as one post. True if it was used.
@@ -1607,7 +1640,13 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
         key = "comment_saved_alone"      # nobody in the crew yet
     else:
         key = "comment_saved_late"       # kept, but the crew isn't re-pinged
-    _send(chat_id, _t(key, lang))
+    # Undo, because a comment is published the instant it's typed and until now
+    # could not be taken back at all — the caption the crew reads is whatever you
+    # sent, including a reply you meant for the bot.
+    kb = ({"inline_keyboard": [[
+        {"text": _t("btn_undo_comment", lang, secs=_UNDO_WINDOW_SECONDS),
+         "callback_data": f"mv:cundo:{e['id']}"}]]} if delivered else None)
+    _send(chat_id, _t(key, lang), reply_markup=kb)
     u = _user(cur, tg_id)
     _log(f"💬 Move: comment\n👤 {u['participant_name'] if u else tg_id}: {text}"
          f"\n📤 → {delivered}")
@@ -2370,6 +2409,23 @@ def handle_move_webhook(body: dict, conn) -> None:
                 pass
         return
 
+    # 2·0) a swipe-reply to someone's move is a comment on it, no button needed.
+    #      Checked before every state below: replying to a specific message is as
+    #      explicit as tapping 💬, and more explicit than whatever prompt happens
+    #      to be armed.
+    replied = (msg.get("reply_to_message") or {}).get("message_id")
+    if replied and not text.startswith("/"):
+        target = _reply_target(cur, chat_id, replied)
+        if target and target[1] != tg_id:
+            entry_id, author = target
+            if len(text) > _NOTE_MAX:
+                _send(chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
+                return
+            _clear_state(cur, tg_id)       # this reply outranks any pending prompt
+            _send_note(cur, conn, tg_id, chat_id, lang, entry_id, author, text)
+            conn.commit()
+            return
+
     # 2a) a comment typed after tapping 💬 on someone's move
     if base_state == "await_note":
         # Cleared first, like /feedback: a command typed instead of a comment
@@ -2574,6 +2630,40 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             to = cur.fetchone()
             _log(f"⚡ Move: lightning\n• {me['participant_name'] if me else tg_id}"
                  f" → {to['participant_name'] if to else '?'}")
+        return
+
+    if body.startswith("cundo:"):
+        entry_id = int(body[len("cundo:"):])
+        cur.execute(
+            "SELECT telegram_user_id, comment, created_at FROM move_entries WHERE id = %s",
+            (entry_id,))
+        e = cur.fetchone()
+        if not e or e["telegram_user_id"] != tg_id or not e["comment"]:
+            _answer(cq["id"], _t("note_gone", lang))
+            return
+        # Same window as undoing a move, and for the same reason: past it, the
+        # crew has read it, and deleting the message doesn't unread it.
+        cur.execute(
+            "SELECT chat_id, message_id, created_at FROM move_forwards "
+            "WHERE entry_id = %s AND kind = 'comment' ORDER BY id DESC", (entry_id,))
+        rows = cur.fetchall()
+        age = ((datetime.now(timezone.utc) - rows[0]["created_at"]).total_seconds()
+               if rows else 0)
+        if age > _UNDO_WINDOW_SECONDS:
+            _answer(cq["id"], _t("undo_too_late", lang, secs=_UNDO_WINDOW_SECONDS))
+            return
+        for f in rows:
+            _api_call("deleteMessage", {"chat_id": f["chat_id"], "message_id": f["message_id"]})
+        cur.execute("DELETE FROM move_forwards WHERE entry_id = %s AND kind = 'comment'",
+                    (entry_id,))
+        cur.execute("UPDATE move_entries SET comment = NULL WHERE id = %s", (entry_id,))
+        conn.commit()
+        _redraw_markup(chat_id, msg_id, {"inline_keyboard": []})
+        _answer(cq["id"])
+        _send(chat_id, _t("comment_undone", lang))
+        u = _user(cur, tg_id)
+        _log(f"🗑 Move: comment revoked\n• {u['participant_name'] if u else tg_id}"
+             f" · entry #{entry_id}")
         return
 
     if body.startswith("rok:"):

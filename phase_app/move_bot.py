@@ -657,6 +657,26 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "💬 {name} відповідає:\n\n{body}",
         "de": "💬 {name} antwortet:\n\n{body}",
     },
+    "btn_radar_join": {
+        "en": "📡 Send it to strangers on radar too",
+        "uk": "📡 Надіслати ще й незнайомцям через радар",
+        "de": "📡 Auch Fremden im Radar zeigen",
+    },
+    "btn_radar_leave": {
+        "en": "🔒 Keep it to my crew",
+        "uk": "🔒 Лишити тільки для мого кола",
+        "de": "🔒 Nur für meine Crew",
+    },
+    "own_state_radar": {
+        "en": "📡 Your crew and strangers on radar can see this move.",
+        "uk": "📡 Цей рух бачить твоє коло та незнайомці через радар.",
+        "de": "📡 Deine Crew und Fremde im Radar sehen diese Bewegung.",
+    },
+    "own_state_crew": {
+        "en": "🔒 Only your crew can see this move.",
+        "uk": "🔒 Цей рух бачить лише твоє коло.",
+        "de": "🔒 Nur deine Crew sieht diese Bewegung.",
+    },
     "btn_caption": {
         "en": "💬 Add a caption", "uk": "💬 Додати коментар",
         "de": "💬 Kommentar hinzufügen",
@@ -1329,15 +1349,26 @@ def _logged_kb(cur, entry_id: int, lang: str, tg_id: int | None = None) -> dict:
     nothing and is there when you want it.
     """
     on = _radar_ok(cur, entry_id)
+    beta = tg_id is not None and tg_id in _beta_ids()
+    # In beta the label is what tapping does, and where the move stands is the
+    # text above it. A label that states the current state has to be read twice —
+    # once to learn where you are, once to work out what pressing it would do.
+    radar_key = (("btn_radar_leave" if on else "btn_radar_join") if beta
+                 else ("btn_radar_ok_on" if on else "btn_radar_ok_off"))
     rows = [
         [{"text": _t("btn_undo", lang), "callback_data": f"mv:undo:{entry_id}"}],
-        [{"text": _t("btn_radar_ok_on" if on else "btn_radar_ok_off", lang),
-          "callback_data": f"mv:rok:{entry_id}"}],
+        [{"text": _t(radar_key, lang), "callback_data": f"mv:rok:{entry_id}"}],
     ]
-    if tg_id is not None and tg_id in _beta_ids():
+    if beta:
         rows.append([{"text": _t("btn_caption", lang),
                       "callback_data": f"mv:cmt:{entry_id}"}])
     return {"inline_keyboard": rows}
+
+
+def _own_view(cur, entry_id: int, lang: str, tg_id: int) -> tuple[str, dict]:
+    """The ⚙️ message: where this move stands, and what can still be done to it."""
+    key = "own_state_radar" if _radar_ok(cur, entry_id) else "own_state_crew"
+    return _t(key, lang), _logged_kb(cur, entry_id, lang, tg_id)
 
 
 _NOTE_MAX = 500                       # a comment, not a letter
@@ -1706,8 +1737,9 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         # two later. Telegram allows one markup per message, so the buttons need
         # their own — silent, because two pings for one move is one too many.
         track_own(_send(chat_id, body, reply_markup=_main_kb(lang, tg_id, cur)), "confirm")
+        own_text, own_kb = _own_view(cur, entry_id, lang, tg_id)
         track_own(_api_call("sendMessage", {
-            "chat_id": chat_id, "text": "⚙️", "reply_markup": undo_kb,
+            "chat_id": chat_id, "text": own_text, "reply_markup": own_kb,
             "disable_notification": True,
         }), "own")
     else:
@@ -2879,7 +2911,12 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         was = _radar_ok(cur, entry_id)
         cur.execute("UPDATE move_entries SET radar_ok = %s WHERE id = %s", (not was, entry_id))
         conn.commit()
-        _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang, tg_id))
+        if tg_id in _beta_ids():
+            # Text and buttons together: the line says where the move stands, the
+            # button says what tapping would do, and both change on every press.
+            _redraw(chat_id, msg_id, *_own_view(cur, entry_id, lang, tg_id))
+        else:
+            _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang, tg_id))
 
         # Past the window nothing more can happen either way, so say that rather
         # than implying the toggle still decides something.

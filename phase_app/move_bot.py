@@ -681,11 +681,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "your name in Move", "uk": "Напиши своє ім'я у Move",
         "de": "dein Name in Move",
     },
-    "caption_invite": {
-        "en": "💬 Add a caption to your video — just send it as the next message.",
-        "uk": "💬 Додай коментар до свого відео — просто надішли його наступним повідомленням.",
-        "de": "💬 Füg deinem Video einen Kommentar hinzu — einfach als nächste Nachricht.",
-    },
     "note_sent": {"en": "💬 Sent to {name}.", "uk": "💬 Надіслано: {name}.",
                   "de": "💬 An {name} geschickt."},
     "note_too_long": {
@@ -1635,15 +1630,13 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
             cur.execute("UPDATE move_users SET bubble_hints = bubble_hints + 1 "
                         "WHERE telegram_user_id = %s", (tg_id,))
 
-    # The caption window has no prompt of its own for ForceReply to hang on: this
-    # confirmation already carries Undo and the radar toggle, and Telegram allows
-    # one markup per message. So the invitation is words rather than a field label.
-    if tg_id in _beta_ids():
-        body += "\n\n" + _t("caption_invite", lang)
     _send(chat_id, body, reply_markup=undo_kb)
 
-    # Invite a comment: the next text is treated as one (state times out on its own).
-    _set_state(cur, tg_id, "await_comment")
+    # Outside beta, the next text is taken as the caption for ten minutes. In beta
+    # only 💬 Додати коментар arms that, so nothing typed can become a caption by
+    # accident — which is how a reply meant for the bot ended up under a workout.
+    if tg_id not in _beta_ids():
+        _set_state(cur, tg_id, "await_comment")
     conn.commit()
     _log(f"🏃 Move logged\n👤 {user['participant_name']}"
          + (f"\n📤 → {', '.join(names)}" if names else "\n📤 → nobody"))

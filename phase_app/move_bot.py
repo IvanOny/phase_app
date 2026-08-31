@@ -524,6 +524,14 @@ _STRINGS: dict[str, dict[str, str]] = {
     "register_first": {"en": "Please register first — send /start", "uk": "Спершу зареєструйся — надішли /start", "de": "Bitte zuerst registrieren — sende /start"},
     "letters_only": {"en": "Letters only please, up to 32 characters.", "uk": "Лише літери, до 32 символів.", "de": "Bitte nur Buchstaben, bis zu 32 Zeichen."},
     "name_taken": {"en": "\"{name}\" is taken. Pick another.", "uk": "Ім'я «{name}» зайняте. Обери інше.", "de": "„{name}“ ist vergeben. Wähle einen anderen."},
+    "crashed": {
+        "en": "Something went wrong on my side — that didn't go through. Try again; "
+              "if it keeps failing, /feedback reaches a human.",
+        "uk": "Щось пішло не так на моєму боці — це не записалось. "
+              "Спробуй ще раз; якщо не вийде — /feedback дойде до людини.",
+        "de": "Bei mir ist etwas schiefgegangen — das wurde nicht erfasst. Versuch es "
+              "nochmal; wenn es weiter scheitert, erreicht /feedback einen Menschen.",
+    },
     "unknown_msg": {"en": "Send a video bubble or a photo to log your move. Tap ℹ️ Info for more.", "uk": "Надішли кругле відео або фото, щоб записати свій рух. Натисни ℹ️ Інфо.", "de": "Schick ein rundes Video oder ein Foto, um deine Bewegung zu erfassen. Tippe ℹ️ Info."},
     # Same fallback, for someone who has already moved — telling them to record a
     # move they've just recorded reads as if the bot forgot.
@@ -2619,6 +2627,30 @@ def _cmd_mod(cur, conn, tg_id: int, chat_id: int, lang: str, args: str) -> None:
 
 
 # ── webhook ──────────────────────────────────────────────────────────────────
+
+def report_webhook_error(body: dict, tb: str) -> None:
+    """Say something went wrong, and put the traceback where it will be seen.
+
+    Runs after handle_move_webhook has already raised, so it assumes nothing: no
+    cursor, no working connection, no valid state. It only reads the update it
+    was handed and calls Telegram directly.
+    """
+    cq = body.get("callback_query")
+    msg = cq.get("message") if cq else body.get("message")
+    chat_id = ((msg or {}).get("chat") or {}).get("id")
+    src = (cq or body.get("message") or {}).get("from") or {}
+    if chat_id:
+        # Their language isn't reachable without the database, and English is the
+        # one this file falls back to everywhere else.
+        _send(chat_id, _t("crashed", _norm_lang(src.get("language_code"))))
+    what = (cq.get("data") if cq else
+            next((k for k in _MEDIA_KEYS if k in (msg or {})), None)
+            or (msg or {}).get("text") or "?")
+    _log(f"⚠️ Move: CRASH\n"
+         f"• {src.get('first_name') or '?'} ({src.get('id')})\n"
+         f"• on: {str(what)[:80]}\n\n"
+         f"{tb[-2500:]}")
+
 
 def handle_move_webhook(body: dict, conn) -> None:
     cur = conn.cursor()

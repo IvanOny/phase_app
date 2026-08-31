@@ -102,12 +102,21 @@ def move_bot():
     secret = os.environ.get("MOVE_BOT_SECRET", "")
     if secret and request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
         return jsonify({"error": "unauthorized"}), 403
-    from phase_app.move_bot import handle_move_webhook
+    from phase_app.move_bot import handle_move_webhook, report_webhook_error
     import traceback
+    body = request.get_json(force=True) or {}
     try:
-        handle_move_webhook(request.get_json(force=True) or {}, _get_api().conn)
+        handle_move_webhook(body, _get_api().conn)
     except Exception:
+        # Printing to stdout put the traceback in Vercel's logs and nowhere else,
+        # so a crash looked exactly like the bot ignoring you — twice now we've
+        # had to reconstruct one from the database. Tell the person something
+        # went wrong, and put the traceback where it's actually read.
         traceback.print_exc()
+        try:
+            report_webhook_error(body, traceback.format_exc())
+        except Exception:
+            traceback.print_exc()
     _release(_conn)
     return jsonify({"ok": True}), 200
 

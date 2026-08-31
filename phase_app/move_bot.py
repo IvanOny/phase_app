@@ -1408,7 +1408,10 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
             (entry_id, to_id, them["chat_id"] or to_id, res["message_id"], tg_id),
         )
     conn.commit()
-    _send(chat_id, _t("note_sent", lang, name=tname))
+    # Carries the keyboard: a ForceReply prompt hides it, and it only comes back
+    # when a message brings one. Ending the flow is exactly that moment.
+    _send(chat_id, _t("note_sent", lang, name=tname),
+          reply_markup=_main_kb(lang, tg_id, cur))
     _log(f"💬 Move: note\n• {me['participant_name']} → {tname}\n• {body[:120]}")
 
 
@@ -1808,10 +1811,23 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     # Undo, because a comment is published the instant it's typed and until now
     # could not be taken back at all — the caption the crew reads is whatever you
     # sent, including a reply you meant for the bot.
-    kb = ({"inline_keyboard": [[
-        {"text": _t("btn_undo_comment", lang, secs=_COMMENT_UNDO_SECONDS),
-         "callback_data": f"mv:cundo:{e['id']}"}]]} if delivered else None)
-    _send(chat_id, _t(key, lang), reply_markup=kb)
+    undo_btn = ({"text": _t("btn_undo_comment", lang, secs=_COMMENT_UNDO_SECONDS),
+                 "callback_data": f"mv:cundo:{e['id']}"} if delivered else None)
+
+    # Where the ⚙️ message exists, the undo joins the buttons already there and
+    # this confirmation carries the keyboard instead — a caption is typed through
+    # a ForceReply, which hides the keyboard until something brings it back.
+    cur.execute("SELECT chat_id, message_id FROM move_forwards "
+                "WHERE entry_id = %s AND kind = 'own'", (e["id"],))
+    own = cur.fetchone() if undo_btn else None
+    if own:
+        kb = _logged_kb(cur, e["id"], lang, tg_id)
+        kb["inline_keyboard"].append([undo_btn])
+        _redraw_markup(own["chat_id"], own["message_id"], kb)
+        _send(chat_id, _t(key, lang), reply_markup=_main_kb(lang, tg_id, cur))
+    else:
+        _send(chat_id, _t(key, lang),
+              reply_markup={"inline_keyboard": [[undo_btn]]} if undo_btn else None)
     u = _user(cur, tg_id)
     _log(f"💬 Move: comment\n👤 {u['participant_name'] if u else tg_id}: {text}"
          f"\n📤 → {delivered}")
@@ -2841,9 +2857,12 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                     (entry_id,))
         cur.execute("UPDATE move_entries SET comment = NULL WHERE id = %s", (entry_id,))
         conn.commit()
-        _redraw_markup(chat_id, msg_id, {"inline_keyboard": []})
+        # Rebuild rather than blank: this button may be sitting on the ⚙️ message
+        # alongside Undo, the radar toggle and Add caption, and clearing the
+        # markup would take all of them with it.
+        _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang, tg_id))
         _answer(cq["id"])
-        _send(chat_id, _t("comment_undone", lang))
+        _send(chat_id, _t("comment_undone", lang), reply_markup=_main_kb(lang, tg_id, cur))
         u = _user(cur, tg_id)
         _log(f"🗑 Move: comment revoked\n• {u['participant_name'] if u else tg_id}"
              f" · entry #{entry_id}")

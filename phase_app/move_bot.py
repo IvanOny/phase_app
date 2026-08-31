@@ -366,6 +366,20 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_radar": {"en": "📡 Radar", "uk": "📡 Радар", "de": "📡 Radar"},
     "btn_pause": {"en": "⏸️ Pause", "uk": "⏸️ Пауза", "de": "⏸️ Pause"},
     "btn_info":  {"en": "ℹ️ Info", "uk": "ℹ️ Інфо", "de": "ℹ️ Info"},
+    "btn_settings": {"en": "⚙️ Settings", "uk": "⚙️ Налаштування",
+                     "de": "⚙️ Einstellungen"},
+    "settings_title": {
+        "en": "⚙️ Settings", "uk": "⚙️ Налаштування",
+        "de": "⚙️ Einstellungen",
+    },
+    "set_radar": {"en": "📡 Radar: {value}", "uk": "📡 Радар: {value}",
+                  "de": "📡 Radar: {value}"},
+    "set_pause": {"en": "⏸️ Pause: {value}", "uk": "⏸️ Пауза: {value}",
+                  "de": "⏸️ Pause: {value}"},
+    "set_lang": {"en": "🌍 Language: {value}", "uk": "🌍 Мова: {value}",
+                 "de": "🌍 Sprache: {value}"},
+    "pause_off": {"en": "off", "uk": "вимкнена", "de": "aus"},
+    "pause_until": {"en": "until {until}", "uk": "до {until}", "de": "bis {until}"},
     "kb_done":   {"en": "Done", "uk": "Готово", "de": "Fertig"},
     "kb_cancel": {"en": "Cancel", "uk": "Скасувати", "de": "Abbrechen"},
     "kb_yes":    {"en": "Yes", "uk": "Так", "de": "Ja"},
@@ -1123,15 +1137,21 @@ def _main_kb(lang: str = "en", tg_id: int | None = None, cur=None) -> dict:
     placeholder applies whatever the newest message happens to be — and a
     ForceReply prompt overrides it for as long as that question is open.
     """
+    beta = tg_id is not None and tg_id in _beta_ids()
     kb = {
         "keyboard": [
-            [{"text": _t("btn_move", lang)}, {"text": _t("btn_radar", lang)}],
+            # Beta: radar and pause live inside Settings, so the keyboard keeps
+            # to the two things you do (post with your crew, read about it) plus
+            # one place for everything you configure.
+            [{"text": _t("btn_move", lang)},
+             {"text": _t("btn_settings" if beta else "btn_radar", lang)}],
+            [{"text": _t("btn_info", lang)}] if beta else
             [{"text": _t("btn_pause", lang)}, {"text": _t("btn_info", lang)}],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
     }
-    if tg_id is not None and tg_id in _beta_ids():
+    if beta:
         # "Record your move" is wrong once today's move exists, and the field
         # would keep asking for something already done. The confirmation itself
         # can't correct it — that message is carrying three inline buttons and
@@ -1156,7 +1176,8 @@ _LEGACY_BUTTONS = {"🤝 Рухатись з": "/move"}
 def _build_button_map() -> dict[str, str]:
     m: dict[str, str] = dict(_LEGACY_BUTTONS)
     for key, cmd in (("btn_move", "/move"), ("btn_radar", "/radar"),
-                     ("btn_pause", "/pause"), ("btn_info", "/info")):
+                     ("btn_pause", "/pause"), ("btn_info", "/info"),
+                     ("btn_settings", "/settings")):
         for lang in _SUPPORTED_LANGS:
             m[_STRINGS[key][lang]] = cmd
     return m
@@ -2012,11 +2033,12 @@ def _cmd_info(cur, tg_id: int, chat_id: int, lang: str, name: str | None = None)
               mins=_COMMENT_WINDOW_MINUTES,
               rdays=_RADAR_REPEAT_DAYS,
               miles="/".join(str(m) for m in _MILESTONES))
-    # Inline button, not the reply keyboard — the persistent one stays put anyway.
-    _send(chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}",
-          reply_markup={"inline_keyboard": [[
-              {"text": _t("btn_language", lang), "callback_data": "mv:langmenu"}
-          ]]})
+    # No language button in beta: Settings owns language now, and two doors to
+    # one setting is worse than one.
+    kb = (None if tg_id in _beta_ids() else
+          {"inline_keyboard": [[
+              {"text": _t("btn_language", lang), "callback_data": "mv:langmenu"}]]})
+    _send(chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}", reply_markup=kb)
 
 
 def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
@@ -2468,14 +2490,54 @@ def _radar_share_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
             ]]})
 
 
+_LANG_NAMES = {"en": "English", "uk": "Українська", "de": "Deutsch"}
+
+
+def _with_back(view: tuple, lang: str) -> tuple:
+    """Add a way out of a submenu. Without it the only exit is reopening ⚙️."""
+    text, kb = view
+    rows = list(kb["inline_keyboard"]) + [
+        [{"text": _t("btn_back", lang), "callback_data": "mv:set:back"}]]
+    return text, {"inline_keyboard": rows}
+
+
+def _settings_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
+    """One place for everything configurable, with each value on its button.
+
+    Radar and pause were two of four keyboard buttons, which gave the two things
+    you *set* the same weight as the two things you *do*. Reading the current
+    value off the button means opening a submenu just to check is unnecessary.
+    """
+    u = _user(cur, tg_id)
+    freq = (u["radar_freq"] if u else "never") or "never"
+    paused = u and u["paused_until"] and u["paused_until"] > datetime.now(timezone.utc)
+    return _t("settings_title", lang), {"inline_keyboard": [
+        [{"text": _t("set_radar", lang, value=_radar_label(freq, lang)),
+          "callback_data": "mv:set:radar"}],
+        [{"text": _t("set_pause", lang,
+                     value=(_t("pause_until", lang, until=_short_date(u["paused_until"]))
+                            if paused else _t("pause_off", lang))),
+          "callback_data": "mv:set:pause"}],
+        [{"text": _t("set_lang", lang, value=_LANG_NAMES.get(lang, lang)),
+          "callback_data": "mv:set:lang"}],
+    ]}
+
+
 def _cmd_radar(cur, tg_id: int, chat_id: int, lang: str) -> None:
-    """Two questions, asked separately: how often you receive, and whether you share."""
+    """How often you receive — and, outside beta, whether you share by default.
+
+    In beta the sharing question is gone. Each move now decides for itself on the
+    ⚙️ message, which is a better place for it: consent given per move beats a
+    standing "yes to everything, from now on" that's easy to forget agreeing to.
+    """
     # Remember they've been here. radar_freq is 'never' by default, so it can't
     # tell "chose off" from "never found it" — and only the second deserves a hint.
     cur.execute("UPDATE move_users SET radar_seen_at = COALESCE(radar_seen_at, NOW()) "
                 "WHERE telegram_user_id = %s", (tg_id,))
-    for text, kb in (_radar_freq_view(cur, tg_id, lang),
-                     _radar_share_view(cur, tg_id, lang)):
+    views = [_radar_freq_view(cur, tg_id, lang)]
+    if tg_id not in _beta_ids():
+        views.append(_radar_share_view(cur, tg_id, lang))
+    for text, kb in views:
         _send(chat_id, text, reply_markup=kb)
 
 
@@ -2718,6 +2780,10 @@ def handle_move_webhook(body: dict, conn) -> None:
         _cmd_radar(cur, tg_id, chat_id, lang)
         conn.commit()                      # radar_seen_at
         return
+    if word == "settings":
+        text, kb = _settings_view(cur, tg_id, lang)
+        _send(chat_id, text, reply_markup=kb)
+        return
     if word == "pause":
         _cmd_pause(cur, tg_id, chat_id, lang)
         return
@@ -2898,6 +2964,22 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         u = _user(cur, tg_id)
         _log(f"🗑 Move: comment revoked\n• {u['participant_name'] if u else tg_id}"
              f" · entry #{entry_id}")
+        return
+
+    if body.startswith("set:"):
+        what = body[len("set:"):]
+        if what == "back":
+            _redraw(chat_id, msg_id, *_settings_view(cur, tg_id, lang))
+        elif what == "radar":
+            cur.execute("UPDATE move_users SET radar_seen_at = COALESCE(radar_seen_at, NOW()) "
+                        "WHERE telegram_user_id = %s", (tg_id,))
+            conn.commit()
+            _redraw(chat_id, msg_id, *_with_back(_radar_freq_view(cur, tg_id, lang), lang))
+        elif what == "pause":
+            _redraw(chat_id, msg_id, *_with_back(_pause_view(cur, tg_id, lang), lang))
+        elif what == "lang":
+            _redraw(chat_id, msg_id, _LANG_PROMPT, _with_back((None, _kb_lang()), lang)[1])
+        _answer(cq["id"])
         return
 
     if body.startswith("rok:"):

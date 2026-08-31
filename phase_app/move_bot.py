@@ -2640,9 +2640,23 @@ def report_webhook_error(body: dict, tb: str) -> None:
     chat_id = ((msg or {}).get("chat") or {}).get("id")
     src = (cq or body.get("message") or {}).get("from") or {}
     if chat_id:
-        # Their language isn't reachable without the database, and English is the
-        # one this file falls back to everywhere else.
-        _send(chat_id, _t("crashed", _norm_lang(src.get("language_code"))))
+        # Their chosen language, not their Telegram client's — the first version
+        # of this apologised in German to someone who reads the bot in Ukrainian.
+        # Its own connection, because the one that just failed can't be trusted,
+        # and its own try, because a broken database must not silence the apology.
+        lang = _norm_lang(src.get("language_code"))
+        try:
+            from phase_app.db_pg import get_connection
+            with get_connection() as c:
+                cur = c.cursor()
+                cur.execute("SELECT language_code FROM move_users WHERE telegram_user_id = %s",
+                            (src.get("id"),))
+                row = cur.fetchone()
+                if row and row["language_code"]:
+                    lang = _norm_lang(row["language_code"])
+        except Exception:
+            pass
+        _send(chat_id, _t("crashed", lang))
     what = (cq.get("data") if cq else
             next((k for k in _MEDIA_KEYS if k in (msg or {})), None)
             or (msg or {}).get("text") or "?")

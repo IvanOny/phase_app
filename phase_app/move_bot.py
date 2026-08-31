@@ -793,13 +793,16 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "💬 Не доставлено — {name} зараз не отримує повідомлень.",
         "de": "💬 Nicht zugestellt — {name} empfängt gerade nichts.",
     },
+    # Doesn't name a cause. The move may well still be there — the usual reason
+    # is a prompt older than the tracking that would route it — and guessing
+    # wrong in the text is worse than not saying.
     "reply_stale": {
-        "en": "That prompt is too old to answer — the move it belonged to is gone. "
-              "Tap 💬 under a move to write about it.",
-        "uk": "Цей запит занадто старий — руху, до якого він належав, уже "
-              "немає. Натисни 💬 під рухом, щоб написати про нього.",
-        "de": "Diese Frage ist zu alt — die Bewegung dazu gibt es nicht mehr. Tippe "
-              "💬 unter einer Bewegung, um etwas dazu zu schreiben.",
+        "en": "This prompt is no longer active. Tap 💬 under a move to write "
+              "about it.",
+        "uk": "Цей запит уже не активний. Натисни 💬 під рухом, "
+              "щоб написати про нього.",
+        "de": "Diese Frage ist nicht mehr aktiv. Tippe 💬 unter einer Bewegung, "
+              "um etwas dazu zu schreiben.",
     },
     "note_gone": {
         "en": "That move is no longer available.",

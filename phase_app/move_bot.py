@@ -703,6 +703,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     "caption_placeholder": {
         "en": "your caption…", "uk": "твій коментар…", "de": "dein Kommentar…",
     },
+    "kb_placeholder_short": {
+        "en": "Your move of the day",
+        "uk": "Твій рух дня",
+        "de": "Deine Bewegung des Tages",
+    },
     "kb_placeholder_done": {
         "en": "Today's move is in ✓",
         "uk": "Сьогодні рух записано ✓",
@@ -1156,14 +1161,21 @@ def _main_kb(lang: str = "en", tg_id: int | None = None, cur=None) -> dict:
         # would keep asking for something already done. The confirmation itself
         # can't correct it — that message is carrying three inline buttons and
         # Telegram allows one markup — so every other send does.
-        done = False
+        done, moves = False, _PLACEHOLDER_LESSONS
         if cur is not None:
             cur.execute(
-                "SELECT 1 FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",
-                (tg_id, date.today()))
-            done = cur.fetchone() is not None
-        kb["input_field_placeholder"] = _t(
-            "kb_placeholder_done" if done else "kb_placeholder", lang)[:64]
+                "SELECT COUNT(*) AS n, "
+                "       COUNT(*) FILTER (WHERE entry_date = %s) AS today "
+                "FROM move_entries WHERE telegram_user_id = %s",
+                (date.today(), tg_id))
+            row = cur.fetchone()
+            done, moves = bool(row["today"]), row["n"] or 0
+        # The instruction is for someone who hasn't done it yet. After a few
+        # moves it's a daily order to do something they already know how to do,
+        # so it stands down to a label.
+        key = ("kb_placeholder_done" if done else
+               "kb_placeholder" if moves < _PLACEHOLDER_LESSONS else "kb_placeholder_short")
+        kb["input_field_placeholder"] = _t(key, lang)[:64]
     return kb
 
 
@@ -1396,6 +1408,7 @@ _NOTE_MAX = 500                       # a comment, not a letter
 # Which upload triggers a hint. Three in a row was nagging; spaced out, each
 # one lands on someone who has had time to forget rather than time to be annoyed.
 _BUBBLE_HINT_AT = (3, 10, 20)
+_PLACEHOLDER_LESSONS = 3              # moves before the input field stops instructing
 
 
 def _note_kb(entry_id: int, to_id: int, lang: str, reply: bool = False) -> dict:

@@ -224,7 +224,7 @@ def _describe_callback(cur, data: str) -> str:
     return data or "?"
 
 
-def _trace(cur, body: dict) -> None:
+def _trace(cur, conn, body: dict) -> None:
     """One line per incoming update: who, and what they sent or tapped.
 
     The other _log calls record outcomes — a move logged, a crew link made. This
@@ -270,13 +270,51 @@ def _trace(cur, body: dict) -> None:
             # sending one and getting nothing back is exactly what's worth seeing.
             what = "· " + ", ".join(k for k in m if k not in ("message_id", "from", "chat", "date"))
     try:
-        _api_call("sendMessage", {
-            "chat_id": int(target),
-            "text": f"👤 {who} ({tg_id})\n{what}",
-            "disable_notification": True,      # a firehose must not buzz the phone
-        })
+        _summary_append(cur, conn, int(target), tg_id, who, what)
     except Exception:
         pass
+
+
+_SUMMARY_MAX = 3600                   # Telegram caps a message at 4096
+
+
+def _summary_append(cur, conn, chat: int, tg_id: int, who: str, line: str) -> None:
+    """One message per person per day in the log, edited as the day goes on.
+
+    A message per update buried the ⚠️ reports and crashes the log exists for.
+    Telegram has no way to append to a message — an edit replaces the whole text
+    — so the body is kept here and rewritten each time. When it approaches the
+    4096-character limit a fresh message starts and this row points at that one.
+    """
+    today = date.today()
+    stamp = datetime.now(timezone(timedelta(hours=2))).strftime("%H:%M")
+    entry = f"{stamp}  {line}"
+    header = f"👤 {who} ({tg_id}) · {today:%d.%m}"
+
+    cur.execute("SELECT message_id, body FROM move_log_summary "
+                "WHERE telegram_user_id = %s AND log_date = %s", (tg_id, today))
+    row = cur.fetchone()
+    if row and len(row["body"]) + len(entry) < _SUMMARY_MAX:
+        body = f"{row['body']}\n{entry}"
+        if _api_call("editMessageText", {"chat_id": chat, "message_id": row["message_id"],
+                                         "text": f"{header}\n{body}"}) is None:
+            return                     # message gone or unchanged; leave the row alone
+        cur.execute("UPDATE move_log_summary SET body = %s, updated_at = NOW() "
+                    "WHERE telegram_user_id = %s AND log_date = %s", (body, tg_id, today))
+    else:
+        res = _api_call("sendMessage", {
+            "chat_id": chat, "text": f"{header}\n{entry}",
+            "disable_notification": True,      # a firehose must not buzz the phone
+        })
+        if not res:
+            return
+        cur.execute(
+            "INSERT INTO move_log_summary (telegram_user_id, log_date, message_id, body) "
+            "VALUES (%s, %s, %s, %s) "
+            "ON CONFLICT (telegram_user_id, log_date) DO UPDATE "
+            "SET message_id = EXCLUDED.message_id, body = EXCLUDED.body, updated_at = NOW()",
+            (tg_id, today, res["message_id"], entry))
+    conn.commit()
 
 
 def _force_reply(tg_id: int, lang: str, placeholder_key: str) -> dict | None:
@@ -2703,7 +2741,7 @@ def handle_move_webhook(body: dict, conn) -> None:
     cur = conn.cursor()
     # Before dispatch, so an update that goes on to crash is still recorded —
     # a silent failure at least leaves a trace of what triggered it.
-    _trace(cur, body)
+    _trace(cur, conn, body)
 
     cq = body.get("callback_query")
     if cq:

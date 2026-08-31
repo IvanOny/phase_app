@@ -317,15 +317,12 @@ def _summary_append(cur, conn, chat: int, tg_id: int, who: str, line: str) -> No
     conn.commit()
 
 
-def _force_reply(tg_id: int, lang: str, placeholder_key: str) -> dict | None:
-    """Beta: open the keyboard on the question and label the field.
+def _force_reply(tg_id: int, lang: str, placeholder_key: str) -> dict:
+    """Open the keyboard on the question and label the field.
 
-    None for everyone else, which leaves the prompt exactly as it was. Only for
-    questions that own their message — one reply_markup per message, so a prompt
-    carrying buttons can't also carry this.
+    Only for questions that own their message — one reply_markup per message, so
+    a prompt carrying buttons can't also carry this.
     """
-    if tg_id not in _beta_ids():
-        return None
     return {"force_reply": True,
             "input_field_placeholder": _t(placeholder_key, lang)[:64]}
 
@@ -624,14 +621,6 @@ _STRINGS: dict[str, dict[str, str]] = {
     # moves it. Live for as long as the move is still eligible for radar — with a
     # month-long window a move keeps circulating, so the off switch has to keep
     # working rather than expiring after the first stranger sees it.
-    "btn_radar_ok_on": {
-        "en": "📡 In radar range", "uk": "📡 В зоні дії радару",
-        "de": "📡 In Radar-Reichweite",
-    },
-    "btn_radar_ok_off": {
-        "en": "🚫 Out of radar range", "uk": "🚫 Поза зоною дії радару",
-        "de": "🚫 Außerhalb der Radar-Reichweite",
-    },
     "radar_ok_on": {
         "en": "📡 Strangers can be shown this move.",
         "uk": "📡 Цей рух можуть побачити незнайомці.",
@@ -963,31 +952,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "📡 Radar zeigt dir eine Bewegung von jemandem außerhalb deiner Crew.\n\n"
               "Empfangen: {current}\n\nWie oft?",
     },
-    "radar_share_menu": {
-        "en": "📡 And your own moves — may radar show them to people outside your crew?\n\n"
-              "Always anonymous: they see the move, never your name.\n\nNow: {current}",
-        "uk": "📡 А твої власні рухи — чи може радар показувати їх людям поза твоїм колом?\n"
-              "\n"
-              "Завжди анонімно: вони бачать рух, але не твоє ім'я.\n"
-              "\n"
-              "Зараз: {current}",
-        "de": "📡 Und deine eigenen Bewegungen — darf Radar sie Leuten außerhalb deiner "
-              "Crew zeigen?\n\nImmer anonym: sie sehen die Bewegung, nie deinen Namen.\n\n"
-              "Jetzt: {current}",
-    },
-    "radar_state_on": {"en": "sharing ✅", "uk": "ділюся ✅", "de": "wird geteilt ✅"},
-    "radar_state_off": {"en": "private 🚫", "uk": "приватно 🚫", "de": "privat 🚫"},
-    "btn_share_yes": {"en": "Yes, share ✅", "uk": "Так, ділитися ✅", "de": "Ja, teilen ✅"},
-    "btn_share_no": {"en": "No, keep private 🚫", "uk": "Ні, лишити приватним 🚫",
-                     "de": "Nein, privat behalten 🚫"},
     "radar_pull_btn": {"en": "👀 Show me someone now", "uk": "👀 Показати когось зараз",
                        "de": "👀 Zeig mir jetzt jemanden"},
     "radar_pull_none": {
-        "en": "📡 Nothing new right now — you've seen everyone who moved lately. "
+        "en": "📡 Nothing new right now — nobody new has moved lately. "
               "Try again tomorrow.",
-        "uk": "📡 Зараз нічого нового — нових облич поки немає. Спробуй завтра.",
-        "de": "📡 Gerade nichts Neues — du hast alle gesehen, die sich zuletzt bewegt "
-              "haben. Versuch es morgen wieder.",
+        "uk": "📡 Зараз нічого нового — нових облич поки немає. "
+              "Спробуй завтра.",
+        "de": "📡 Gerade nichts Neues — niemand Neues hat sich zuletzt bewegt. "
+              "Versuch es morgen wieder.",
     },
     "radar_block_btn": {"en": "🚫 Not this person again", "uk": "🚫 Більше не показувати цю людину",
                         "de": "🚫 Diese Person nicht mehr"},
@@ -1199,21 +1172,18 @@ def _main_kb(lang: str = "en", tg_id: int | None = None, cur=None) -> dict:
     placeholder applies whatever the newest message happens to be — and a
     ForceReply prompt overrides it for as long as that question is open.
     """
-    beta = tg_id is not None and tg_id in _beta_ids()
     kb = {
         "keyboard": [
-            # Beta: radar and pause live inside Settings, so the keyboard keeps
-            # to the two things you do (post with your crew, read about it) plus
-            # one place for everything you configure.
-            [{"text": _t("btn_move", lang)},
-             {"text": _t("btn_settings" if beta else "btn_radar", lang)}],
-            [{"text": _t("btn_info", lang)}] if beta else
-            [{"text": _t("btn_pause", lang)}, {"text": _t("btn_info", lang)}],
+            # Radar and pause live inside Settings, so the keyboard keeps to the
+            # two things you do — post with your crew, read about it — plus one
+            # place for everything you configure.
+            [{"text": _t("btn_move", lang)}, {"text": _t("btn_settings", lang)}],
+            [{"text": _t("btn_info", lang)}],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
     }
-    if beta:
+    if tg_id is not None:
         # "Record your move" is wrong once today's move exists, and the field
         # would keep asking for something already done. The confirmation itself
         # can't correct it — that message is carrying three inline buttons and
@@ -1225,8 +1195,8 @@ def _main_kb(lang: str = "en", tg_id: int | None = None, cur=None) -> dict:
                 "       COUNT(*) FILTER (WHERE entry_date = %s) AS today "
                 "FROM move_entries WHERE telegram_user_id = %s",
                 (date.today(), tg_id))
-            row = cur.fetchone()
-            done, moves = bool(row["today"]), row["n"] or 0
+            row = cur.fetchone() or {}
+            done, moves = bool(row.get("today")), row.get("n") or 0
         # The instruction is for someone who hasn't done it yet. After a few
         # moves it's a daily order to do something they already know how to do,
         # so it stands down to a label.
@@ -1435,9 +1405,7 @@ def _radar_ok(cur, entry_id: int) -> bool:
     row = cur.fetchone()
     if not row:
         return False
-    if row["radar_ok"] is not None:
-        return bool(row["radar_ok"])
-    return False if row["telegram_user_id"] in _beta_ids() else bool(row["radar_send"])
+    return bool(row["radar_ok"])
 
 
 def _logged_kb(cur, entry_id: int, lang: str, tg_id: int | None = None) -> dict:
@@ -1450,17 +1418,15 @@ def _logged_kb(cur, entry_id: int, lang: str, tg_id: int | None = None) -> dict:
     nothing and is there when you want it.
     """
     on = _radar_ok(cur, entry_id)
-    beta = tg_id is not None and tg_id in _beta_ids()
-    # In beta the label is what tapping does, and where the move stands is the
-    # text above it. A label that states the current state has to be read twice —
-    # once to learn where you are, once to work out what pressing it would do.
-    radar_key = (("btn_radar_leave" if on else "btn_radar_join") if beta
-                 else ("btn_radar_ok_on" if on else "btn_radar_ok_off"))
+    # The label is what tapping does; where the move stands is the text above
+    # it. A label stating the current state has to be read twice — once to learn
+    # where you are, once to work out what pressing it would do.
+    radar_key = "btn_radar_leave" if on else "btn_radar_join"
     rows = [
         [{"text": _t("btn_undo", lang), "callback_data": f"mv:undo:{entry_id}"}],
         [{"text": _t(radar_key, lang), "callback_data": f"mv:rok:{entry_id}"}],
     ]
-    if beta:
+    if tg_id is not None:
         rows.append([{"text": _t("btn_caption", lang),
                       "callback_data": f"mv:cmt:{entry_id}"}])
     return {"inline_keyboard": rows}
@@ -1796,7 +1762,6 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     streak = _streak(cur, tg_id, today)
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
     # Inline undo and the radar decision — the persistent reply keyboard stays.
-    undo_kb = _logged_kb(cur, entry_id, lang, tg_id)
     body = (_t("logged_shared", lang, streak=suffix, names=", ".join(names)) if names
             else _t("logged", lang, streak=suffix))
 
@@ -1841,25 +1806,20 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
                 (entry_id, tg_id, chat_id, result["message_id"], kind, tg_id, entry_id),
             )
 
-    if tg_id in _beta_ids():
-        # The confirmation carries the keyboard, so the input placeholder switches
-        # to "today's move is in" the moment it's sent, rather than a message or
-        # two later. Telegram allows one markup per message, so the buttons need
-        # their own — silent, because two pings for one move is one too many.
-        track_own(_send(chat_id, body, reply_markup=_main_kb(lang, tg_id, cur)), "confirm")
-        own_text, own_kb = _own_view(cur, entry_id, lang, tg_id)
-        track_own(_api_call("sendMessage", {
-            "chat_id": chat_id, "text": own_text, "reply_markup": own_kb,
-            "disable_notification": True,
-        }), "own")
-    else:
-        track_own(_send(chat_id, body, reply_markup=undo_kb), "own")
+    # The confirmation carries the keyboard, so the input placeholder switches
+    # to "today's move is in" the moment it's sent, rather than a message or
+    # two later. Telegram allows one markup per message, so the buttons need
+    # their own — silent, because two pings for one move is one too many.
+    track_own(_send(chat_id, body, reply_markup=_main_kb(lang, tg_id, cur)), "confirm")
+    own_text, own_kb = _own_view(cur, entry_id, lang, tg_id)
+    track_own(_api_call("sendMessage", {
+        "chat_id": chat_id, "text": own_text, "reply_markup": own_kb,
+        "disable_notification": True,
+    }), "own")
 
-    # Outside beta, the next text is taken as the caption for ten minutes. In beta
-    # only 💬 Додати коментар arms that, so nothing typed can become a caption by
-    # accident — which is how a reply meant for the bot ended up under a workout.
-    if tg_id not in _beta_ids():
-        _set_state(cur, tg_id, "await_comment")
+    # No automatic caption window: only 💬 Додати коментар arms one, so nothing
+    # typed can become a caption by accident — which is how a reply meant for the
+    # bot ended up under someone's workout.
     conn.commit()
     _log(f"🏃 Move logged\n👤 {user['participant_name']}"
          + (f"\n📤 → {', '.join(names)}" if names else "\n📤 → nobody"))
@@ -1907,10 +1867,9 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
         return False
     invited = forced or _get_state(cur, tg_id) == "await_comment"
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds() / 60
-    # In beta the invitation is the only route: the window caught text that was
-    # never meant as a caption, which is how a reply to the bot ended up under
-    # someone's workout. Everyone else keeps the window.
-    if not invited and (tg_id in _beta_ids() or age > _COMMENT_WINDOW_MINUTES):
+    # The invitation is the only route. The old ten-minute window caught text
+    # that was never meant as a caption.
+    if not invited:
         return False
 
     # Each comment is delivered on its own, but the record keeps them all.
@@ -2123,12 +2082,9 @@ def _cmd_info(cur, tg_id: int, chat_id: int, lang: str, name: str | None = None)
               mins=_COMMENT_WINDOW_MINUTES,
               rdays=_RADAR_REPEAT_DAYS,
               miles="/".join(str(m) for m in _MILESTONES))
-    # No language button in beta: Settings owns language now, and two doors to
-    # one setting is worse than one.
-    kb = (None if tg_id in _beta_ids() else
-          {"inline_keyboard": [[
-              {"text": _t("btn_language", lang), "callback_data": "mv:langmenu"}]]})
-    _send(chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}", reply_markup=kb)
+    # No language button: Settings owns language, and two doors to one setting
+    # is worse than one.
+    _send(chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}")
 
 
 def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
@@ -2483,12 +2439,9 @@ def _radar_candidates(cur, rid: int) -> list:
         "SELECT e.id, e.chat_id, e.message_id, e.text_body, "
         "       u2.telegram_user_id AS from_id, u2.participant_name "
         "FROM move_entries e JOIN move_users u2 ON u2.telegram_user_id = e.telegram_user_id "
-        # Same rule as _radar_ok, or the button and the radar would disagree: for
-        # a beta author only the move's own answer counts; for everyone else the
-        # standing preference still fills in when a move hasn't decided.
-        "WHERE e.entry_date >= %s "
-        "  AND (CASE WHEN u2.telegram_user_id = ANY(%s) THEN e.radar_ok IS TRUE "
-        "            ELSE COALESCE(e.radar_ok, u2.radar_send) END) = TRUE "
+        # Same rule as _radar_ok: only the move's own answer counts, so the
+        # button and the radar can't disagree about the same move.
+        "WHERE e.entry_date >= %s AND e.radar_ok IS TRUE "
         "  AND u2.banned_at IS NULL "
         "  AND u2.telegram_user_id <> %s "
         "  AND NOT EXISTS (SELECT 1 FROM move_radar_block b "
@@ -2505,7 +2458,7 @@ def _radar_candidates(cur, rid: int) -> list:
         "                  WHERE mf.entry_id = e.id AND mf.recipient_tg_id = %s "
         "                    AND mf.kind = 'radar') "
         "ORDER BY random() LIMIT 25",
-        (date.today() - timedelta(days=_RADAR_FRESH_DAYS), sorted(_beta_ids()) or [0],
+        (date.today() - timedelta(days=_RADAR_FRESH_DAYS),
          rid, rid, rid, _RADAR_REPEAT_DAYS, rid),
     )
     return [c for c in cur.fetchall() if (c["participant_name"] or "").lower() not in crew]
@@ -2571,20 +2524,6 @@ def _radar_freq_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
             {"inline_keyboard": rows})
 
 
-def _radar_share_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
-    """The sharing question, rendered from current state."""
-    u = _user(cur, tg_id)
-    on = bool(u and u["radar_send"])
-    return (_t("radar_share_menu", lang,
-               current=_t("radar_state_on" if on else "radar_state_off", lang)),
-            {"inline_keyboard": [[
-                {"text": ("✓ " if on else "") + _t("btn_share_yes", lang),
-                 "callback_data": "mv:radarsend:on"},
-                {"text": ("✓ " if not on else "") + _t("btn_share_no", lang),
-                 "callback_data": "mv:radarsend:off"},
-            ]]})
-
-
 _LANG_NAMES = {"en": "English", "uk": "Українська", "de": "Deutsch"}
 
 
@@ -2629,11 +2568,8 @@ def _cmd_radar(cur, tg_id: int, chat_id: int, lang: str) -> None:
     # tell "chose off" from "never found it" — and only the second deserves a hint.
     cur.execute("UPDATE move_users SET radar_seen_at = COALESCE(radar_seen_at, NOW()) "
                 "WHERE telegram_user_id = %s", (tg_id,))
-    views = [_radar_freq_view(cur, tg_id, lang)]
-    if tg_id not in _beta_ids():
-        views.append(_radar_share_view(cur, tg_id, lang))
-    for text, kb in views:
-        _send(chat_id, text, reply_markup=kb)
+    text, kb = _radar_freq_view(cur, tg_id, lang)
+    _send(chat_id, text, reply_markup=kb)
 
 
 def _pause_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
@@ -3149,12 +3085,9 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         was = _radar_ok(cur, entry_id)
         cur.execute("UPDATE move_entries SET radar_ok = %s WHERE id = %s", (not was, entry_id))
         conn.commit()
-        if tg_id in _beta_ids():
-            # Text and buttons together: the line says where the move stands, the
-            # button says what tapping would do, and both change on every press.
-            _redraw(chat_id, msg_id, *_own_view(cur, entry_id, lang, tg_id))
-        else:
-            _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang, tg_id))
+        # Text and buttons together: the line says where the move stands, the
+        # button says what tapping would do, and both change on every press.
+        _redraw(chat_id, msg_id, *_own_view(cur, entry_id, lang, tg_id))
 
         # Past the window nothing more can happen either way, so say that rather
         # than implying the toggle still decides something.
@@ -3195,10 +3128,9 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # Beta: ForceReply opens the keyboard on the question and labels the input
         # field, and — the part that matters — ties the answer to this exact
         # prompt instead of to a ten-minute window that catches anything typed.
-        kb = ({"force_reply": True,
-               "input_field_placeholder":
-                   _t("note_placeholder", lang, name=them["participant_name"])[:64]}
-              if tg_id in _beta_ids() else None)
+        kb = {"force_reply": True,
+              "input_field_placeholder":
+                  _t("note_placeholder", lang, name=them["participant_name"])[:64]}
         res = _send(chat_id, _t(key, lang, name=them["participant_name"]), reply_markup=kb)
         # Track the question itself, so an answer to it routes even when the
         # ten-minute state is long gone. Replying an hour later is a normal thing

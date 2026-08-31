@@ -119,7 +119,8 @@ own transaction. `--dry-run` prints the SQL instead of applying it. There is no
 migration ledger — migrations are written to be re-runnable.
 `MOVE_TRACE_CHAT_ID` — every incoming Move update, one line each. Unset falls back
 to the log chat (where it buries the ⚠️ reports); `off` disables tracing.
-`MOVE_BETA_IDS` — telegram ids that see changes before everyone else (comma-separated)
+`MOVE_BETA_IDS` — telegram ids that see changes before everyone else (comma-separated).
+Currently unused: everything it gated has shipped to all users.
 
 Move's trace collapses into one message per person per day (`move_log_summary`),
 edited as the day goes on. ⚠️ reports, crashes and moderation still send their own

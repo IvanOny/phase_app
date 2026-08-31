@@ -39,9 +39,8 @@ _TRACE_CHAT_ID = os.environ.get("MOVE_TRACE_CHAT_ID", "")
 
 _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
-# Long enough to watch back what you just sent. The cap exists so a move the
-# crew has already seen and cheered can't vanish, and a minute doesn't risk that.
-_UNDO_WINDOW_SECONDS = 60
+_COMMENT_UNDO_SECONDS = 60            # a caption's own recall window
+_DELETE_LIMIT_HOURS = 48              # Telegram's limit on a bot deleting its own messages
 # Same stranger can't reappear within a week. Env-tunable: while the pool is
 # small a hard 7 days runs everyone dry, so it can be dialled down and raised
 # again as the pool grows, without a code change.
@@ -605,8 +604,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "🗑 Коментар видалено — й з чатів твого кола теж.",
         "de": "🗑 Kommentar entfernt — auch aus den Chats deiner Crew.",
     },
-    "btn_undo": {"en": "🗑 Undo ({secs}s)", "uk": "🗑 Скасувати ({secs} с)",
-                 "de": "🗑 Rückgängig ({secs}s)"},
+    "btn_undo": {"en": "🗑 Undo", "uk": "🗑 Скасувати", "de": "🗑 Rückgängig"},
+    "undo_seen": {
+        "en": "⚡ Someone has already cheered this move, so it stays.",
+        "uk": "⚡ Цей рух уже підтримали — він лишається.",
+        "de": "⚡ Diese Bewegung wurde schon beklatscht — sie bleibt.",
+    },
+    "undo_too_old": {
+        "en": "Older than {hours}h — Telegram no longer lets the bot take it back.",
+        "uk": "Старше за {hours} год — Telegram уже не дозволяє боту це прибрати.",
+        "de": "Älter als {hours} h — Telegram lässt den Bot das nicht mehr zurücknehmen.",
+    },
     "undo_done": {
         "en": "🗑 Move removed — deleted from your crew's chats too.",
         "uk": "🗑 Рух видалено — прибрано і з чатів твого кола.",
@@ -1306,8 +1314,7 @@ def _logged_kb(cur, entry_id: int, lang: str, tg_id: int | None = None) -> dict:
     """
     on = _radar_ok(cur, entry_id)
     rows = [
-        [{"text": _t("btn_undo", lang, secs=_UNDO_WINDOW_SECONDS),
-          "callback_data": f"mv:undo:{entry_id}"}],
+        [{"text": _t("btn_undo", lang), "callback_data": f"mv:undo:{entry_id}"}],
         [{"text": _t("btn_radar_ok_on" if on else "btn_radar_ok_off", lang),
           "callback_data": f"mv:rok:{entry_id}"}],
     ]
@@ -1389,6 +1396,25 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     _log(f"💬 Move: note\n• {me['participant_name']} → {tname}\n• {body[:120]}")
 
 
+def _drop_undo(cur, entry_id: int) -> None:
+    """Take Undo off the author's confirmation: someone has now seen the move.
+
+    That confirmation is the only place the button exists, and leaving it there
+    would promise something _revoke now refuses.
+    """
+    cur.execute("SELECT chat_id, message_id, recipient_tg_id FROM move_forwards "
+                "WHERE entry_id = %s AND kind = 'own'", (entry_id,))
+    row = cur.fetchone()
+    if not row:
+        return                                  # move predates the tracking
+    owner = row["recipient_tg_id"]
+    kb = _logged_kb(cur, entry_id, _lang(cur, owner), owner)
+    kb["inline_keyboard"] = [r for r in kb["inline_keyboard"]
+                             if not any((b.get("callback_data") or "").startswith("mv:undo:")
+                                        for b in r)]
+    _redraw_markup(row["chat_id"], row["message_id"], kb)
+
+
 def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = False,
             note_to: int | None = None) -> dict:
     """No running total — a move isn't a popularity contest. You only see whether
@@ -1419,8 +1445,14 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     then drop the entry. Telegram lets a bot delete its own messages for 48h,
     which covers a same-day move; anything it can't delete is skipped silently.
 
-    Only within _UNDO_WINDOW_SECONDS of logging: a move your crew has already
-    seen and cheered shouldn't be able to vanish. Returns False if refused.
+    No time limit while nobody has responded to it. A clock was the wrong rule:
+    what should stop a move vanishing isn't how long it's been up, it's that
+    somebody has seen it — and a move nobody reacted to at 3am is as private an
+    hour later as it was at the start. Telegram gives bots no read receipts, so
+    the first ⚡ is the signal, being the only proof of a viewer we ever get.
+
+    Two things still refuse: a ⚡ already landed, or the copies are past the 48
+    hours in which a bot may delete its own messages. Returns False if refused.
 
     Needs an explicit trigger: Telegram never tells a bot that the user deleted
     their original message in a private chat.
@@ -1434,9 +1466,15 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     if not e or (entry_id is not None and e["id"] != entry_id):
         _send(chat_id, _t("undo_none", lang))
         return False
+    cur.execute("SELECT 1 FROM move_reactions WHERE entry_id = %s", (e["id"],))
+    if cur.fetchone():
+        _send(chat_id, _t("undo_seen", lang))
+        return False
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds()
-    if age > _UNDO_WINDOW_SECONDS:
-        _send(chat_id, _t("undo_too_late", lang, secs=_UNDO_WINDOW_SECONDS))
+    if age > _DELETE_LIMIT_HOURS * 3600:
+        # Past this the deletes would fail one by one and leave the copies up
+        # while the entry disappeared — worse than refusing.
+        _send(chat_id, _t("undo_too_old", lang, hours=_DELETE_LIMIT_HOURS))
         return False
     cur.execute("SELECT chat_id, message_id FROM move_forwards WHERE entry_id = %s", (e["id"],))
     for f in cur.fetchall():
@@ -1630,7 +1668,17 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
             cur.execute("UPDATE move_users SET bubble_hints = bubble_hints + 1 "
                         "WHERE telegram_user_id = %s", (tg_id,))
 
-    _send(chat_id, body, reply_markup=undo_kb)
+    res = _send(chat_id, body, reply_markup=undo_kb)
+    # kind='own' — the author's own confirmation, not a copy sent to anyone. It's
+    # tracked so the first ⚡, which ends the undo window, can reach back and take
+    # the button off it. Cascades away with the entry like every other row here.
+    if res and res.get("message_id"):
+        cur.execute(
+            "INSERT INTO move_forwards "
+            "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+            "VALUES (%s, %s, %s, %s, 'own', %s)",
+            (entry_id, tg_id, chat_id, res["message_id"], tg_id),
+        )
 
     # Outside beta, the next text is taken as the caption for ten minutes. In beta
     # only 💬 Додати коментар arms that, so nothing typed can become a caption by
@@ -1731,7 +1779,7 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     # could not be taken back at all — the caption the crew reads is whatever you
     # sent, including a reply you meant for the bot.
     kb = ({"inline_keyboard": [[
-        {"text": _t("btn_undo_comment", lang, secs=_UNDO_WINDOW_SECONDS),
+        {"text": _t("btn_undo_comment", lang, secs=_COMMENT_UNDO_SECONDS),
          "callback_data": f"mv:cundo:{e['id']}"}]]} if delivered else None)
     _send(chat_id, _t(key, lang), reply_markup=kb)
     u = _user(cur, tg_id)
@@ -1885,7 +1933,6 @@ def _cmd_info(cur, tg_id: int, chat_id: int, lang: str, name: str | None = None)
               tagline=_t("tagline", lang),
               mins=_COMMENT_WINDOW_MINUTES,
               rdays=_RADAR_REPEAT_DAYS,
-              undo=_UNDO_WINDOW_SECONDS,
               miles="/".join(str(m) for m in _MILESTONES))
     # Inline button, not the reply keyboard — the persistent one stays put anyway.
     _send(chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}",
@@ -2711,6 +2758,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             else _zap_kb(entry_id, sent=True, lang=lang),
         })
         if fresh:
+            # The move has a viewer now, so it can no longer be taken back.
+            _drop_undo(cur, entry_id)
             me = _user(cur, tg_id)
             cur.execute(
                 "SELECT u.participant_name FROM move_entries e "
@@ -2753,8 +2802,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         rows = cur.fetchall()
         age = ((datetime.now(timezone.utc) - rows[0]["created_at"]).total_seconds()
                if rows else 0)
-        if age > _UNDO_WINDOW_SECONDS:
-            _answer(cq["id"], _t("undo_too_late", lang, secs=_UNDO_WINDOW_SECONDS))
+        if age > _COMMENT_UNDO_SECONDS:
+            _answer(cq["id"], _t("undo_too_late", lang, secs=_COMMENT_UNDO_SECONDS))
             return
         for f in rows:
             _api_call("deleteMessage", {"chat_id": f["chat_id"], "message_id": f["message_id"]})

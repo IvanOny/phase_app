@@ -1370,14 +1370,25 @@ def _zap_count(cur, entry_id: int) -> int:
 
 
 def _radar_ok(cur, entry_id: int) -> bool:
-    """Whether this move may be shown to strangers — the override, or the default."""
+    """Whether this move may be shown to strangers.
+
+    In beta, only the move's own answer counts. radar_send still exists and is
+    still true for people who said yes to it before the question was removed from
+    /radar — which left them with a standing "share everything" they could no
+    longer see or change. Per-move consent means a move nobody has decided about
+    is private, and sharing is always a deliberate tap.
+    """
     cur.execute(
-        "SELECT COALESCE(e.radar_ok, u.radar_send) AS ok FROM move_entries e "
+        "SELECT e.radar_ok, u.radar_send, e.telegram_user_id FROM move_entries e "
         "JOIN move_users u ON u.telegram_user_id = e.telegram_user_id WHERE e.id = %s",
         (entry_id,),
     )
     row = cur.fetchone()
-    return bool(row and row["ok"])
+    if not row:
+        return False
+    if row["radar_ok"] is not None:
+        return bool(row["radar_ok"])
+    return False if row["telegram_user_id"] in _beta_ids() else bool(row["radar_send"])
 
 
 def _logged_kb(cur, entry_id: int, lang: str, tg_id: int | None = None) -> dict:
@@ -1829,7 +1840,8 @@ def _reply_target(cur, chat_id: int, replied_message_id: int):
     return (row["entry_id"], row["author"]) if row else None
 
 
-def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
+def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
+                    forced: bool = False) -> bool:
     """Attach a text to today's move and deliver it as a reply under each
     forwarded copy, so it reads as one post. True if it was used.
 
@@ -1844,7 +1856,7 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
     e = cur.fetchone()
     if not e:
         return False
-    invited = _get_state(cur, tg_id) == "await_comment"
+    invited = forced or _get_state(cur, tg_id) == "await_comment"
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds() / 60
     # In beta the invitation is the only route: the window caught text that was
     # never meant as a caption, which is how a reply to the bot ended up under
@@ -2422,7 +2434,12 @@ def _radar_candidates(cur, rid: int) -> list:
         "SELECT e.id, e.chat_id, e.message_id, e.text_body, "
         "       u2.telegram_user_id AS from_id, u2.participant_name "
         "FROM move_entries e JOIN move_users u2 ON u2.telegram_user_id = e.telegram_user_id "
-        "WHERE e.entry_date >= %s AND COALESCE(e.radar_ok, u2.radar_send) = TRUE "
+        # Same rule as _radar_ok, or the button and the radar would disagree: for
+        # a beta author only the move's own answer counts; for everyone else the
+        # standing preference still fills in when a move hasn't decided.
+        "WHERE e.entry_date >= %s "
+        "  AND (CASE WHEN u2.telegram_user_id = ANY(%s) THEN e.radar_ok IS TRUE "
+        "            ELSE COALESCE(e.radar_ok, u2.radar_send) END) = TRUE "
         "  AND u2.banned_at IS NULL "
         "  AND u2.telegram_user_id <> %s "
         "  AND NOT EXISTS (SELECT 1 FROM move_radar_block b "
@@ -2439,8 +2456,8 @@ def _radar_candidates(cur, rid: int) -> list:
         "                  WHERE mf.entry_id = e.id AND mf.recipient_tg_id = %s "
         "                    AND mf.kind = 'radar') "
         "ORDER BY random() LIMIT 25",
-        (date.today() - timedelta(days=_RADAR_FRESH_DAYS), rid, rid, rid,
-         _RADAR_REPEAT_DAYS, rid),
+        (date.today() - timedelta(days=_RADAR_FRESH_DAYS), sorted(_beta_ids()) or [0],
+         rid, rid, rid, _RADAR_REPEAT_DAYS, rid),
     )
     return [c for c in cur.fetchall() if (c["participant_name"] or "").lower() not in crew]
 
@@ -2758,13 +2775,19 @@ def handle_move_webhook(body: dict, conn) -> None:
     replied = (msg.get("reply_to_message") or {}).get("message_id")
     if replied and not text.startswith("/"):
         target = _reply_target(cur, chat_id, replied)
-        if target and target[1] != tg_id:
+        if target:
             entry_id, author = target
             if len(text) > _NOTE_MAX:
                 _send(chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
                 return
             _clear_state(cur, tg_id)       # this reply outranks any pending prompt
-            _send_note(cur, conn, tg_id, chat_id, lang, entry_id, author, text)
+            if author == tg_id:
+                # Their own message — the confirmation, the ⚙️ line, or the
+                # caption prompt. A reply to any of those is a caption on their
+                # own move, whatever the ten-minute window thinks.
+                _attach_comment(cur, conn, tg_id, chat_id, text, forced=True)
+            else:
+                _send_note(cur, conn, tg_id, chat_id, lang, entry_id, author, text)
             conn.commit()
             return
 
@@ -2990,10 +3013,20 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _answer(cq["id"], _t("note_gone", lang))       # undone, or not yours
             return
         _set_state(cur, tg_id, "await_comment")
-        conn.commit()
         _answer(cq["id"])
-        _send(chat_id, _t("caption_ask", lang),
-              reply_markup=_force_reply(tg_id, lang, "caption_placeholder"))
+        res = _send(chat_id, _t("caption_ask", lang),
+                    reply_markup=_force_reply(tg_id, lang, "caption_placeholder"))
+        # from_tg_id is themselves: a reply to this is a caption on their own
+        # move, not a message to somebody else.
+        if res and res.get("message_id"):
+            cur.execute(
+                "INSERT INTO move_forwards "
+                "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+                "SELECT %s, %s, %s, %s, 'ask', %s "
+                "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+                (entry_id, tg_id, chat_id, res["message_id"], tg_id, entry_id),
+            )
+        conn.commit()
         return
 
     if body.startswith("cundo:"):
@@ -3110,7 +3143,21 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                "input_field_placeholder":
                    _t("note_placeholder", lang, name=them["participant_name"])[:64]}
               if tg_id in _beta_ids() else None)
-        _send(chat_id, _t(key, lang, name=them["participant_name"]), reply_markup=kb)
+        res = _send(chat_id, _t(key, lang, name=them["participant_name"]), reply_markup=kb)
+        # Track the question itself, so an answer to it routes even when the
+        # ten-minute state is long gone. Replying an hour later is a normal thing
+        # to do, and until now it landed in the fallback: "you've already moved
+        # today". from_tg_id is who the answer goes to, which is what a reply to
+        # this message means.
+        if res and res.get("message_id"):
+            cur.execute(
+                "INSERT INTO move_forwards "
+                "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+                "SELECT %s, %s, %s, %s, 'ask', %s "
+                "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+                (entry_id, tg_id, chat_id, res["message_id"], to_id, entry_id),
+            )
+            conn.commit()
         return
 
     if body.startswith("undo"):

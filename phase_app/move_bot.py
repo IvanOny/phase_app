@@ -1684,17 +1684,31 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
             cur.execute("UPDATE move_users SET bubble_hints = bubble_hints + 1 "
                         "WHERE telegram_user_id = %s", (tg_id,))
 
-    res = _send(chat_id, body, reply_markup=undo_kb)
-    # kind='own' — the author's own confirmation, not a copy sent to anyone. It's
-    # tracked so the first ⚡, which ends the undo window, can reach back and take
-    # the button off it. Cascades away with the entry like every other row here.
-    if res and res.get("message_id"):
-        cur.execute(
-            "INSERT INTO move_forwards "
-            "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
-            "VALUES (%s, %s, %s, %s, 'own', %s)",
-            (entry_id, tg_id, chat_id, res["message_id"], tg_id),
-        )
+    def track_own(result, kind):
+        """Remember the author's own messages: 'own' carries the buttons, so the
+        first ⚡ can take Undo off it, and both are deleted if the move is
+        revoked — a leftover ⚙️ with dead buttons under a move that no longer
+        exists would be worse than no undo at all."""
+        if result and result.get("message_id"):
+            cur.execute(
+                "INSERT INTO move_forwards "
+                "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (entry_id, tg_id, chat_id, result["message_id"], kind, tg_id),
+            )
+
+    if tg_id in _beta_ids():
+        # The confirmation carries the keyboard, so the input placeholder switches
+        # to "today's move is in" the moment it's sent, rather than a message or
+        # two later. Telegram allows one markup per message, so the buttons need
+        # their own — silent, because two pings for one move is one too many.
+        track_own(_send(chat_id, body, reply_markup=_main_kb(lang, tg_id, cur)), "confirm")
+        track_own(_api_call("sendMessage", {
+            "chat_id": chat_id, "text": "⚙️", "reply_markup": undo_kb,
+            "disable_notification": True,
+        }), "own")
+    else:
+        track_own(_send(chat_id, body, reply_markup=undo_kb), "own")
 
     # Outside beta, the next text is taken as the caption for ten minutes. In beta
     # only 💬 Додати коментар arms that, so nothing typed can become a caption by

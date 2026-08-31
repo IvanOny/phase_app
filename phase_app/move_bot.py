@@ -1667,10 +1667,17 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
 
     def track(rid, chat_id, res, kind):
         if res and res.get("message_id"):
+            # WHERE EXISTS, because the move is committed before this runs and
+            # delivery takes several HTTP calls — long enough for /undo to remove
+            # the entry mid-flight. The plain insert then raised a foreign key
+            # violation that killed the whole handler, and the person saw nothing
+            # at all. Now the row is simply skipped: the move is already gone, so
+            # there's nothing to remember about where it went.
             cur.execute(
                 "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id, kind) "
-                "VALUES (%s, %s, %s, %s, %s)",
-                (entry_id, rid, chat_id, res["message_id"], kind),
+                "SELECT %s, %s, %s, %s, %s "
+                "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+                (entry_id, rid, chat_id, res["message_id"], kind, entry_id),
             )
 
     for rid, chat_id, rname in _recipients(cur, user["telegram_user_id"], sender):
@@ -1766,11 +1773,12 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         revoked — a leftover ⚙️ with dead buttons under a move that no longer
         exists would be worse than no undo at all."""
         if result and result.get("message_id"):
-            cur.execute(
+            cur.execute(                              # guarded like track(), same race
                 "INSERT INTO move_forwards "
                 "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (entry_id, tg_id, chat_id, result["message_id"], kind, tg_id),
+                "SELECT %s, %s, %s, %s, %s, %s "
+                "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+                (entry_id, tg_id, chat_id, result["message_id"], kind, tg_id, entry_id),
             )
 
     if tg_id in _beta_ids():

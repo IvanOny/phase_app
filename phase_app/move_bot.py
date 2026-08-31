@@ -649,9 +649,21 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "💬 {name} відповідає:\n\n{body}",
         "de": "💬 {name} antwortet:\n\n{body}",
     },
+    "btn_caption": {
+        "en": "💬 Add a caption", "uk": "💬 Додати коментар",
+        "de": "💬 Kommentar hinzufügen",
+    },
+    "caption_ask": {
+        "en": "💬 Add a caption to your video:",
+        "uk": "💬 Додай коментар до свого відео:",
+        "de": "💬 Füg deinem Video einen Kommentar hinzu:",
+    },
+    "caption_placeholder": {
+        "en": "your caption…", "uk": "твій коментар…", "de": "dein Kommentar…",
+    },
     "kb_placeholder": {
-        "en": "Pick your move of the day and record it",
-        "uk": "Обери свій рух дня та запиши відео",
+        "en": "Record your move of the day",
+        "uk": "Запиши на відео свій рух дня",
         "de": "Wähl deine Bewegung des Tages und nimm sie auf",
     },
     "note_placeholder": {
@@ -1288,15 +1300,26 @@ def _radar_ok(cur, entry_id: int) -> bool:
     return bool(row and row["ok"])
 
 
-def _logged_kb(cur, entry_id: int, lang: str) -> dict:
-    """Undo, and where this one move stands with radar."""
+def _logged_kb(cur, entry_id: int, lang: str, tg_id: int | None = None) -> dict:
+    """Undo, where this move stands with radar, and — in beta — add a caption.
+
+    The caption button replaces the ten-minute window that silently treated any
+    text as the caption. A ForceReply after every move would be worse than the
+    window: it opens the keyboard daily and asks for something most days don't
+    need, from a bot whose whole premise is that nothing is owed. A button asks
+    nothing and is there when you want it.
+    """
     on = _radar_ok(cur, entry_id)
-    return {"inline_keyboard": [
+    rows = [
         [{"text": _t("btn_undo", lang, secs=_UNDO_WINDOW_SECONDS),
           "callback_data": f"mv:undo:{entry_id}"}],
         [{"text": _t("btn_radar_ok_on" if on else "btn_radar_ok_off", lang),
           "callback_data": f"mv:rok:{entry_id}"}],
-    ]}
+    ]
+    if tg_id is not None and tg_id in _beta_ids():
+        rows.append([{"text": _t("btn_caption", lang),
+                      "callback_data": f"mv:cmt:{entry_id}"}])
+    return {"inline_keyboard": rows}
 
 
 _NOTE_MAX = 500                       # a comment, not a letter
@@ -1581,7 +1604,7 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     streak = _streak(cur, tg_id, today)
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
     # Inline undo and the radar decision — the persistent reply keyboard stays.
-    undo_kb = _logged_kb(cur, entry_id, lang)
+    undo_kb = _logged_kb(cur, entry_id, lang, tg_id)
     body = (_t("logged_shared", lang, streak=suffix, names=", ".join(names)) if names
             else _t("logged", lang, streak=suffix))
 
@@ -1667,7 +1690,10 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str) -> bool:
         return False
     invited = _get_state(cur, tg_id) == "await_comment"
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds() / 60
-    if not invited and age > _COMMENT_WINDOW_MINUTES:
+    # In beta the invitation is the only route: the window caught text that was
+    # never meant as a caption, which is how a reply to the bot ended up under
+    # someone's workout. Everyone else keeps the window.
+    if not invited and (tg_id in _beta_ids() or age > _COMMENT_WINDOW_MINUTES):
         return False
 
     # Each comment is delivered on its own, but the record keeps them all.
@@ -2703,6 +2729,20 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                  f" → {to['participant_name'] if to else '?'}")
         return
 
+    if body.startswith("cmt:"):
+        entry_id = int(body[len("cmt:"):])
+        cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
+        e = cur.fetchone()
+        if not e or e["telegram_user_id"] != tg_id:
+            _answer(cq["id"], _t("note_gone", lang))       # undone, or not yours
+            return
+        _set_state(cur, tg_id, "await_comment")
+        conn.commit()
+        _answer(cq["id"])
+        _send(chat_id, _t("caption_ask", lang),
+              reply_markup=_force_reply(tg_id, lang, "caption_placeholder"))
+        return
+
     if body.startswith("cundo:"):
         entry_id = int(body[len("cundo:"):])
         cur.execute(
@@ -2748,7 +2788,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         was = _radar_ok(cur, entry_id)
         cur.execute("UPDATE move_entries SET radar_ok = %s WHERE id = %s", (not was, entry_id))
         conn.commit()
-        _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang))
+        _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang, tg_id))
 
         # Past the window nothing more can happen either way, so say that rather
         # than implying the toggle still decides something.

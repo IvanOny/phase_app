@@ -280,6 +280,16 @@ def _trace(cur, body: dict) -> None:
         pass
 
 
+def _beta_ids() -> set[int]:
+    """Who sees a change before everyone does. MOVE_BETA_IDS, comma-separated.
+
+    Env rather than a column: a test group changes far more often than a schema,
+    and this way widening it is one edit in Vercel with no deploy of its own.
+    """
+    raw = os.environ.get("MOVE_BETA_IDS", "")
+    return {int(p) for p in raw.replace(";", ",").split(",") if p.strip().isdigit()}
+
+
 def _admin_ids() -> set[int]:
     """Who may act on a report. MOVE_ADMIN_IDS, or the burpee bot's ADMIN_TG_ID."""
     raw = os.environ.get("MOVE_ADMIN_IDS", "") or os.environ.get("ADMIN_TG_ID", "")
@@ -625,6 +635,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "💬 {name} replied:\n\n{body}",
         "uk": "💬 {name} відповідає:\n\n{body}",
         "de": "💬 {name} antwortet:\n\n{body}",
+    },
+    "note_placeholder": {
+        "en": "your comment…", "uk": "твій коментар…", "de": "dein Kommentar…",
     },
     "note_sent": {"en": "💬 Sent to {name}.", "uk": "💬 Надіслано: {name}.",
                   "de": "💬 An {name} geschickt."},
@@ -2718,7 +2731,13 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         conn.commit()
         _answer(cq["id"])
         key = "note_ask" if owner["telegram_user_id"] == to_id else "note_ask_reply"
-        _send(chat_id, _t(key, lang, name=them["participant_name"]))
+        # Beta: ForceReply opens the keyboard on the question and labels the input
+        # field, and — the part that matters — ties the answer to this exact
+        # prompt instead of to a ten-minute window that catches anything typed.
+        kb = ({"force_reply": True,
+               "input_field_placeholder": _t("note_placeholder", lang)[:64]}
+              if tg_id in _beta_ids() else None)
+        _send(chat_id, _t(key, lang, name=them["participant_name"]), reply_markup=kb)
         return
 
     if body.startswith("undo"):

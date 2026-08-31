@@ -649,6 +649,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "💬 {name} відповідає:\n\n{body}",
         "de": "💬 {name} antwortet:\n\n{body}",
     },
+    "kb_placeholder": {
+        "en": "Pick your move of the day and record it",
+        "uk": "Обери свій рух дня та запиши відео",
+        "de": "Wähl deine Bewegung des Tages und nimm sie auf",
+    },
     "note_placeholder": {
         "en": "your comment for {name}", "uk": "твій коментар для {name}",
         "de": "dein Kommentar für {name}",
@@ -1068,8 +1073,17 @@ def _kb_lang() -> dict:
     ]}
 
 
-def _main_kb(lang: str = "en") -> dict:
-    return {
+def _main_kb(lang: str = "en", tg_id: int | None = None) -> dict:
+    """The persistent keyboard, and with it the default input placeholder.
+
+    The placeholder rides on this keyboard rather than on any one message, which
+    is the only way to have both: a message can carry exactly one reply_markup,
+    so the move confirmation can't hold Undo, the radar toggle *and* a labelled
+    input. The keyboard lives in the client until it's re-sent, so its
+    placeholder applies whatever the newest message happens to be — and a
+    ForceReply prompt overrides it for as long as that question is open.
+    """
+    kb = {
         "keyboard": [
             [{"text": _t("btn_move", lang)}, {"text": _t("btn_radar", lang)}],
             [{"text": _t("btn_pause", lang)}, {"text": _t("btn_info", lang)}],
@@ -1077,6 +1091,9 @@ def _main_kb(lang: str = "en") -> dict:
         "resize_keyboard": True,
         "is_persistent": True,
     }
+    if tg_id is not None and tg_id in _beta_ids():
+        kb["input_field_placeholder"] = _t("kb_placeholder", lang)[:64]
+    return kb
 
 
 # Labels from earlier versions. A reply keyboard lives in the user's client until
@@ -1409,7 +1426,7 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     # move_forwards / move_reactions cascade off the entry.
     cur.execute("DELETE FROM move_entries WHERE id = %s", (e["id"],))
     conn.commit()
-    _send(chat_id, _t("undo_done", lang), reply_markup=_main_kb(lang))
+    _send(chat_id, _t("undo_done", lang), reply_markup=_main_kb(lang, tg_id))
     u = _user(cur, tg_id)
     _log(f"🗑 Move: revoked\n• {u['participant_name'] if u else tg_id}")
     return True
@@ -1738,7 +1755,7 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
             _apply_invite(cur, conn, tg_id, chat_id, lang, inviter_id)
         else:
             _send(chat_id, _t("already_registered", lang, name=u["participant_name"]),
-                  reply_markup=_main_kb(lang))
+                  reply_markup=_main_kb(lang, tg_id))
         return
 
     cur.execute(
@@ -1872,7 +1889,7 @@ def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     # do it (it uses an inline keyboard), and the old label still routes here via
     # _LEGACY_BUTTONS — so tapping the stale button upgrades it.
     _send(chat_id, _invite_line(cur, tg_id, lang, me["participant_name"] if me else None),
-          reply_markup=_main_kb(lang))
+          reply_markup=_main_kb(lang, tg_id))
     # The crew goes in its own message: one message can hold either the main
     # keyboard or an inline one, and the buttons need the inline slot.
     text, kb = _crew_pick_view(cur, tg_id, lang)
@@ -2348,7 +2365,7 @@ def _cmd_mod(cur, conn, tg_id: int, chat_id: int, lang: str, args: str) -> None:
     """
     if tg_id not in _admin_ids():
         # Answer exactly as any other unknown word would — no hint that /mod exists.
-        _send(chat_id, _t("unknown_msg", lang), reply_markup=_main_kb(lang))
+        _send(chat_id, _t("unknown_msg", lang), reply_markup=_main_kb(lang, tg_id))
         return
     action, _, name = args.strip().partition(" ")
     name = name.strip()
@@ -2450,7 +2467,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         if base_state == "await_name":
             # Only on the way in. A rename doesn't need to be taught the gesture.
             body += "\n\n" + _t("how_to_record", lang)
-        _send(chat_id, body, reply_markup=_main_kb(lang))
+        _send(chat_id, body, reply_markup=_main_kb(lang, tg_id))
         _log(("👋 Move: registered\n• " if base_state == "await_name" else "✏️ Move: renamed\n• ")
              + text.strip())
         # A deep-link invite waited for the name; connect them now.
@@ -2511,7 +2528,7 @@ def handle_move_webhook(body: dict, conn) -> None:
             # reply by hand.
             _log("💬 Move: feedback\n• {} ({})\n\n{}".format(
                 (u or {}).get("participant_name") or "?", tg_id, text))
-            _send(chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang))
+            _send(chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang, tg_id))
             return
         # A command instead of an answer means they changed their mind — the state
         # is already cleared, so let it fall through and run.
@@ -2546,7 +2563,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         # Inline form supported too: "/feedback the radar is confusing" skips the ask.
         if args:
             _log("💬 Move: feedback\n• {} ({})\n\n{}".format(u["participant_name"], tg_id, args))
-            _send(chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang))
+            _send(chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang, tg_id))
             return
         _set_state(cur, tg_id, "await_feedback")
         conn.commit()
@@ -2606,7 +2623,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         (tg_id, date.today()),
     )
     _send(chat_id, _t("unknown_msg_done" if cur.fetchone() else "unknown_msg", lang),
-          reply_markup=_main_kb(lang))
+          reply_markup=_main_kb(lang, tg_id))
     conn.commit()
 
 
@@ -2810,7 +2827,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             conn.commit()
             _api_call("editMessageReplyMarkup",
                       {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-            _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code))
+            _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id))
             _log(f"🌍 Move: language → {code}\n• {u['participant_name']}")
             return
         # Registration flow — keep any pending inviter from the /start payload.
@@ -2849,7 +2866,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if u and u["participant_name"]:          # changing it later, not onboarding
             _clear_state(cur, tg_id)
             conn.commit()
-            _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code))
+            _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id))
             return
         _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
         conn.commit()
@@ -3291,7 +3308,7 @@ def send_move_nudges(conn) -> None:
         lang = _norm_lang(u["language_code"])
         _send(u["chat_id"] or u["telegram_user_id"],
               _t("nudge_first_move", lang),
-              reply_markup=_main_kb(lang))
+              reply_markup=_main_kb(lang, u["telegram_user_id"]))
         cur.execute("UPDATE move_users SET nudged_at = %s WHERE telegram_user_id = %s",
                     (today, u["telegram_user_id"]))
     conn.commit()
@@ -3337,7 +3354,7 @@ def send_move_nudges(conn) -> None:
         lang = _norm_lang(u["language_code"])
         _send(u["chat_id"] or u["telegram_user_id"],
               _t("nudge_inactive", lang, days=u["quiet_days"]),
-              reply_markup=_main_kb(lang))
+              reply_markup=_main_kb(lang, u["telegram_user_id"]))
         cur.execute("UPDATE move_users SET inactive_nudged_at = %s WHERE telegram_user_id = %s",
                     (today, u["telegram_user_id"]))
     conn.commit()

@@ -755,6 +755,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "💬 Не доставлено — {name} зараз не отримує повідомлень.",
         "de": "💬 Nicht zugestellt — {name} empfängt gerade nichts.",
     },
+    "reply_stale": {
+        "en": "That prompt is too old to answer — the move it belonged to is gone. "
+              "Tap 💬 under a move to write about it.",
+        "uk": "Цей запит занадто старий — руху, до якого він належав, уже "
+              "немає. Натисни 💬 під рухом, щоб написати про нього.",
+        "de": "Diese Frage ist zu alt — die Bewegung dazu gibt es nicht mehr. Tippe "
+              "💬 unter einer Bewegung, um etwas dazu zu schreiben.",
+    },
     "note_gone": {
         "en": "That move is no longer available.",
         "uk": "Цей рух уже недоступний.",
@@ -2789,6 +2797,13 @@ def handle_move_webhook(body: dict, conn) -> None:
             else:
                 _send_note(cur, conn, tg_id, chat_id, lang, entry_id, author, text)
             conn.commit()
+            return
+        if (msg.get("reply_to_message") or {}).get("from", {}).get("is_bot"):
+            # A reply to one of the bot's messages that isn't tracked: a prompt
+            # from before tracking existed, or one whose move has been deleted.
+            # Answering "you've already moved today" to a considered reply is the
+            # worst response available — say what happened and where the button is.
+            _send(chat_id, _t("reply_stale", lang))
             return
 
     # 2a) a comment typed after tapping 💬 on someone's move

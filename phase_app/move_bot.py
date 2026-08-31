@@ -119,6 +119,32 @@ def _edit(chat_id: int, message_id: int, text: str,
     return _api_call("editMessageText", payload)
 
 
+def _send_t(cur, chat_id: int, text: str, reply_markup: dict | None = None) -> dict | None:
+    """Send something the chat shouldn't keep: a menu, a prompt, a confirmation.
+
+    Recorded so the morning sweep can delete it. What stays is the record —
+    moves, comments, the ⚡ report — and what goes is the scaffolding used to
+    produce it.
+    """
+    res = _send(chat_id, text, reply_markup=reply_markup)
+    if res and res.get("message_id"):
+        _mark_transient(cur, chat_id, res["message_id"])
+    return res
+
+
+def _mark_transient(cur, chat_id: int, message_id: int) -> None:
+    cur.execute("INSERT INTO move_transient (chat_id, message_id) VALUES (%s, %s)",
+                (chat_id, message_id))
+
+
+def _drop_transient(cur, chat_id: int, message_id: int) -> None:
+    """Delete one now — an answered prompt has no future use, and leaving it
+    invites answering it twice."""
+    _api_call("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
+    cur.execute("DELETE FROM move_transient WHERE chat_id = %s AND message_id = %s",
+                (chat_id, message_id))
+
+
 def _redraw_markup(chat_id: int, message_id: int, reply_markup: dict) -> None:
     """Swap the buttons, keep the text — for a message whose words don't change."""
     _api_call("editMessageReplyMarkup",
@@ -1473,6 +1499,24 @@ def _note_deliverable(cur, to_id: int, from_name: str) -> bool:
     return cur.fetchone() is None
 
 
+def _clear_prompts(cur, tg_id: int, entry_id: int) -> None:
+    """Delete the questions this answer just answered.
+
+    A prompt that's been answered has no future use, and leaving it on screen
+    invites answering it again — which is how a reply written an hour later ended
+    up going nowhere.
+    """
+    cur.execute("SELECT chat_id, message_id FROM move_forwards "
+                "WHERE entry_id = %s AND recipient_tg_id = %s AND kind = 'ask'",
+                (entry_id, tg_id))
+    for row in cur.fetchall():
+        _api_call("deleteMessage",
+                  {"chat_id": row["chat_id"], "message_id": row["message_id"]})
+    cur.execute("DELETE FROM move_forwards "
+                "WHERE entry_id = %s AND recipient_tg_id = %s AND kind = 'ask'",
+                (entry_id, tg_id))
+
+
 def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
                entry_id: int, to_id: int, body: str) -> None:
     """Deliver one comment, with a Reply button pointing back at its sender."""
@@ -1509,8 +1553,9 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     conn.commit()
     # Carries the keyboard: a ForceReply prompt hides it, and it only comes back
     # when a message brings one. Ending the flow is exactly that moment.
-    _send(chat_id, _t("note_sent", lang, name=tname),
-          reply_markup=_main_kb(lang, tg_id, cur))
+    _clear_prompts(cur, tg_id, entry_id)
+    _send_t(cur, chat_id, _t("note_sent", lang, name=tname),
+            reply_markup=_main_kb(lang, tg_id, cur))
     _log(f"💬 Move: note\n• {me['participant_name']} → {tname}\n• {body[:120]}")
 
 
@@ -1812,10 +1857,17 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     # their own — silent, because two pings for one move is one too many.
     track_own(_send(chat_id, body, reply_markup=_main_kb(lang, tg_id, cur)), "confirm")
     own_text, own_kb = _own_view(cur, entry_id, lang, tg_id)
-    track_own(_api_call("sendMessage", {
+    own_res = _api_call("sendMessage", {
         "chat_id": chat_id, "text": own_text, "reply_markup": own_kb,
         "disable_notification": True,
-    }), "own")
+    })
+    track_own(own_res, "own")
+    if own_res and own_res.get("message_id"):
+        # Swept with the rest tomorrow. The cost, chosen deliberately: this is
+        # the only route to a move's radar setting, so from tomorrow that
+        # decision is fixed even though the move stays in the pool for
+        # RADAR_FRESH_DAYS.
+        _mark_transient(cur, chat_id, own_res["message_id"])
 
     # No automatic caption window: only 💬 Додати коментар arms one, so nothing
     # typed can become a caption by accident — which is how a reply meant for the
@@ -1913,6 +1965,7 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
     # Undo, because a comment is published the instant it's typed and until now
     # could not be taken back at all — the caption the crew reads is whatever you
     # sent, including a reply you meant for the bot.
+    _clear_prompts(cur, tg_id, e["id"])
     undo_btn = ({"text": _t("btn_undo_comment", lang, secs=_COMMENT_UNDO_SECONDS),
                  "callback_data": f"mv:cundo:{e['id']}"} if delivered else None)
 
@@ -2569,7 +2622,7 @@ def _cmd_radar(cur, tg_id: int, chat_id: int, lang: str) -> None:
     cur.execute("UPDATE move_users SET radar_seen_at = COALESCE(radar_seen_at, NOW()) "
                 "WHERE telegram_user_id = %s", (tg_id,))
     text, kb = _radar_freq_view(cur, tg_id, lang)
-    _send(chat_id, text, reply_markup=kb)
+    _send_t(cur, chat_id, text, reply_markup=kb)
 
 
 def _pause_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
@@ -2592,7 +2645,7 @@ def _pause_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
 
 def _cmd_pause(cur, tg_id: int, chat_id: int, lang: str) -> None:
     text, kb = _pause_view(cur, tg_id, lang)
-    _send(chat_id, text, reply_markup=kb)
+    _send_t(cur, chat_id, text, reply_markup=kb)
 
 
 def _cmd_mod(cur, conn, tg_id: int, chat_id: int, lang: str, args: str) -> None:
@@ -2864,7 +2917,8 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word == "settings":
         text, kb = _settings_view(cur, tg_id, lang)
-        _send(chat_id, text, reply_markup=kb)
+        _send_t(cur, chat_id, text, reply_markup=kb)
+        conn.commit()
         return
     if word == "pause":
         _cmd_pause(cur, tg_id, chat_id, lang)
@@ -2879,7 +2933,8 @@ def handle_move_webhook(body: dict, conn) -> None:
         _cmd_mod(cur, conn, tg_id, chat_id, lang, args)
         return
     if word in ("language", "lang"):
-        _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
+        _send_t(cur, chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
+        conn.commit()
         return
     if word in ("undo", "delete"):
         _revoke(cur, conn, tg_id, chat_id, lang)
@@ -3052,7 +3107,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # markup would take all of them with it.
         _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang, tg_id))
         _answer(cq["id"])
-        _send(chat_id, _t("comment_undone", lang), reply_markup=_main_kb(lang, tg_id, cur))
+        _send_t(cur, chat_id, _t("comment_undone", lang), reply_markup=_main_kb(lang, tg_id, cur))
         u = _user(cur, tg_id)
         _log(f"🗑 Move: comment revoked\n• {u['participant_name'] if u else tg_id}"
              f" · entry #{entry_id}")
@@ -3719,6 +3774,34 @@ def send_move_nudges(conn) -> None:
     lines += [f"  – radar hint: {u['participant_name']}" for u in hinted]
     lines += [f"  – quiet {u['quiet_days']}d: {u['participant_name']}" for u in quiet]
     _log("\n".join(lines))
+
+
+def purge_move_transient(conn) -> None:
+    """Sweep yesterday's menus, prompts and confirmations out of people's chats.
+
+    What's left is the record: moves, the comments on them, the morning ⚡ line.
+    Anything older than _DELETE_LIMIT_HOURS is dropped from the table without an
+    attempt — Telegram won't delete it, and retrying daily forever would mean a
+    growing pile of calls that can only fail.
+    """
+    cur = conn.cursor()
+    today = date.today()
+    if not _claim_job(cur, conn, "move_transient", today):
+        return
+
+    cur.execute("DELETE FROM move_transient "
+                "WHERE created_at < NOW() - make_interval(hours => %s)", (_DELETE_LIMIT_HOURS,))
+    expired = cur.rowcount
+
+    cur.execute("SELECT id, chat_id, message_id FROM move_transient "
+                "WHERE created_at < %s", (today,))
+    rows = cur.fetchall()
+    for r in rows:
+        _api_call("deleteMessage", {"chat_id": r["chat_id"], "message_id": r["message_id"]})
+    if rows:
+        cur.execute("DELETE FROM move_transient WHERE id = ANY(%s)", ([r["id"] for r in rows],))
+    conn.commit()
+    _log(f"🧹 Move: swept\n• deleted: {len(rows)} · too old to delete: {expired}")
 
 
 def send_move_monthly_summaries(conn) -> None:

@@ -125,3 +125,8 @@ Currently unused: everything it gated has shipped to all users.
 Move's trace collapses into one message per person per day (`move_log_summary`),
 edited as the day goes on. ⚠️ reports, crashes and moderation still send their own
 messages so they aren't buried.
+
+Bot messages that are scaffolding — menus, prompts, confirmations, the ⚙️ buttons
+under a move — are recorded in `move_transient` and deleted the next morning by
+the `move_sweep` job. Moves, comments and the ⚡ report stay. Answered prompts are
+deleted immediately.

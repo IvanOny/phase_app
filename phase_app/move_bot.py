@@ -209,7 +209,14 @@ def _describe_callback(cur, data: str) -> str:
         return (u["participant_name"] if u and u["participant_name"] else tok)
 
     if head == "zap":
-        return f"⚡ zap · move #{rest}"
+        # Names the author: the standalone "X → Y" log this replaced is gone, and
+        # who you cheered is the part worth reading.
+        cur.execute("SELECT u.participant_name FROM move_entries e "
+                    "JOIN move_users u ON u.telegram_user_id = e.telegram_user_id "
+                    "WHERE e.id = %s", (rest,))
+        row = cur.fetchone() if rest.isdigit() else None
+        to = f" → {row['participant_name']}" if row else ""
+        return f"⚡ zap{to} · move #{rest}"
     if head == "undo":
         return f"🗑 undo · move #{rest}"
     if head == "rok":
@@ -266,7 +273,6 @@ def _trace(cur, conn, body: dict) -> None:
         return
 
     cq = body.get("callback_query")
-    msg = cq.get("message") if cq else body.get("message")
     src = (cq or body.get("message") or {}).get("from") or {}
     tg_id = src.get("id")
     if not tg_id:
@@ -1556,7 +1562,6 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     _clear_prompts(cur, tg_id, entry_id)
     _send_t(cur, chat_id, _t("note_sent", lang, name=tname),
             reply_markup=_main_kb(lang, tg_id, cur))
-    _log(f"💬 Move: note\n• {me['participant_name']} → {tname}\n• {body[:120]}")
 
 
 def _drop_undo(cur, entry_id: int) -> None:
@@ -1646,8 +1651,6 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     cur.execute("DELETE FROM move_entries WHERE id = %s", (e["id"],))
     conn.commit()
     _send(chat_id, _t("undo_done", lang), reply_markup=_main_kb(lang, tg_id, cur))
-    u = _user(cur, tg_id)
-    _log(f"🗑 Move: revoked\n• {u['participant_name'] if u else tg_id}")
     return True
 
 
@@ -1786,7 +1789,6 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         # is hours old, so the note goes nowhere useful and the crew shouldn't
         # be re-pinged. Comments belong to a move you *just* logged.
         _send(chat_id, _t("already_logged", lang))
-        _log(f"🔁 Move: second attempt\n👤 {user['participant_name']}")
         return
 
     media_type = None
@@ -1983,9 +1985,6 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
     else:
         _send(chat_id, _t(key, lang),
               reply_markup={"inline_keyboard": [[undo_btn]]} if undo_btn else None)
-    u = _user(cur, tg_id)
-    _log(f"💬 Move: comment\n👤 {u['participant_name'] if u else tg_id}: {text}"
-         f"\n📤 → {delivered}")
     return True
 
 
@@ -2213,8 +2212,6 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         # wanted to add a person and couldn't. It's how you find out people are
         # typing @usernames, or that a name is spelled differently than they think.
         me = _user(cur, tg_id)
-        _log(f"🔍 Move: name not found\n• {me['participant_name'] if me else tg_id}"
-             f" searched: {name[:64]}")
         _send(chat_id, _t("crew_not_found", lang, name=name))
         return
     tname = target["participant_name"]
@@ -2243,7 +2240,6 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
     # The ask went out — that's the end of this prompt, so stop reading text as names.
     _clear_state(cur, tg_id)
     _send(chat_id, _t("crew_request_sent", lang, name=tname))
-    _log(f"🤝 Move: crew request\n• {myname} → {tname}")
 
 
 def _crew_target(cur, token: str):
@@ -3041,15 +3037,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if fresh:
             # The move has a viewer now, so it can no longer be taken back.
             _drop_undo(cur, entry_id)
-            me = _user(cur, tg_id)
-            cur.execute(
-                "SELECT u.participant_name FROM move_entries e "
-                "JOIN move_users u ON u.telegram_user_id = e.telegram_user_id WHERE e.id = %s",
-                (entry_id,),
-            )
-            to = cur.fetchone()
-            _log(f"⚡ Move: lightning\n• {me['participant_name'] if me else tg_id}"
-                 f" → {to['participant_name'] if to else '?'}")
         return
 
     if body.startswith("cmt:"):
@@ -3109,8 +3096,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _answer(cq["id"])
         _send_t(cur, chat_id, _t("comment_undone", lang), reply_markup=_main_kb(lang, tg_id, cur))
         u = _user(cur, tg_id)
-        _log(f"🗑 Move: comment revoked\n• {u['participant_name'] if u else tg_id}"
-             f" · entry #{entry_id}")
         return
 
     if body.startswith("set:"):
@@ -3157,8 +3142,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         else:
             _answer(cq["id"], _t("radar_ok_on", lang))
         u = _user(cur, tg_id)
-        _log(f"📡 Move: per-move radar\n• {u['participant_name'] if u else tg_id}"
-             f" · entry #{entry_id} → {'on' if not was else 'off'}")
         return
 
     if body.startswith("note:"):
@@ -3235,7 +3218,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _api_call("editMessageReplyMarkup",
                       {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
             _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id, cur))
-            _log(f"🌍 Move: language → {code}\n• {u['participant_name']}")
             return
         # Registration flow — keep any pending inviter from the /start payload.
         state = _get_state(cur, tg_id) or ""
@@ -3315,7 +3297,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _send(requester["chat_id"] or requester["telegram_user_id"],
                   _t("crew_request_accepted", _norm_lang(requester["language_code"]),
                      name=me["participant_name"]))
-            _log(f"🤝 Move: crew ↔\n• {rname} ↔ {me['participant_name']}")
             return
         if action == "addback":
             cur.execute(
@@ -3326,7 +3307,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             conn.commit()
             _send(chat_id, _t("crew_added_back", lang, name=name))
             me = _user(cur, tg_id)
-            _log(f"🤝 Move: crew +\n• {me['participant_name'] if me else tg_id} → {name}")
             return
         # Everything below acts on someone in your crew, addressed by id (or by
         # name, for buttons sent before the switch).
@@ -3358,7 +3338,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _disconnect(cur, conn, tg_id, target["telegram_user_id"],
                         me["participant_name"], tname)
             _send(chat_id, _t("crew_removed", lang, name=tname))
-            _log(f"🗑 Move: crew − (both ways)\n• {me['participant_name']} ✗ {tname}")
             return
         # Hiding leaves the person in your crew, so the menu stays open and is
         # redrawn — its text carries the hidden-until date, which would otherwise
@@ -3395,7 +3374,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _send(chat_id, _t("radar_pull_none", lang))
             return
         u = _user(cur, tg_id)
-        _log(f"📡 Move: radar pull\n• → {u['participant_name'] if u else tg_id}")
         return
 
     if body.startswith("rblock:"):
@@ -3418,7 +3396,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _answer(cq["id"])
         _send(chat_id, _t("radar_blocked", lang))
         u = _user(cur, tg_id)
-        _log(f"🚫 Move: radar block\n• {u['participant_name'] if u else tg_id} ✗ (anon)")
         return
 
     if body.startswith("rreport:"):
@@ -3538,8 +3515,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # under a later line saying it's off — two answers, one of them wrong.
         _redraw(chat_id, msg_id, *_radar_share_view(cur, tg_id, lang))
         _answer(cq["id"], _t("radar_share_on" if on else "radar_share_off", lang))
-        _log(f"📡 Move: radar share\n• {u['participant_name'] if u else tg_id}"
-             f" → {'yes' if on else 'no'}")
         return
 
     if body.startswith("radar:"):
@@ -3551,8 +3526,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _redraw(chat_id, msg_id, *_radar_freq_view(cur, tg_id, lang))
         _answer(cq["id"], _t("radar_set", lang, label=_radar_label(freq, lang)))
         u = _user(cur, tg_id)
-        _log(f"📡 Move: radar set\n• {u['participant_name'] if u else tg_id}"
-             f" → {_radar_label(freq, 'en')}")
         return
 
     if body.startswith("pause:"):
@@ -3566,7 +3539,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             # "paused until Sep 04" after the pause has been lifted.
             _redraw(chat_id, msg_id, *_pause_view(cur, tg_id, lang))
             _answer(cq["id"], _t("pause_resumed", lang))
-            _log(f"▶️ Move: resumed\n• {who}")
             return
         days = {"1d": 1, "1w": 7, "1m": 30}.get(what, 1)
         until = datetime.now(timezone.utc) + timedelta(days=days)
@@ -3574,7 +3546,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         conn.commit()
         _redraw(chat_id, msg_id, *_pause_view(cur, tg_id, lang))
         _answer(cq["id"], _t("pause_set", lang, until=_short_date(until)))
-        _log(f"⏸️ Move: paused {what}\n• {who}")
         return
 
 

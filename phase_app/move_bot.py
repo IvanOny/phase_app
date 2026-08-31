@@ -280,6 +280,19 @@ def _trace(cur, body: dict) -> None:
         pass
 
 
+def _force_reply(tg_id: int, lang: str, placeholder_key: str) -> dict | None:
+    """Beta: open the keyboard on the question and label the field.
+
+    None for everyone else, which leaves the prompt exactly as it was. Only for
+    questions that own their message — one reply_markup per message, so a prompt
+    carrying buttons can't also carry this.
+    """
+    if tg_id not in _beta_ids():
+        return None
+    return {"force_reply": True,
+            "input_field_placeholder": _t(placeholder_key, lang)[:64]}
+
+
 def _beta_ids() -> set[int]:
     """Who sees a change before everyone does. MOVE_BETA_IDS, comma-separated.
 
@@ -637,7 +650,24 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "💬 {name} antwortet:\n\n{body}",
     },
     "note_placeholder": {
-        "en": "your comment…", "uk": "твій коментар…", "de": "dein Kommentar…",
+        "en": "your comment for {name}", "uk": "твій коментар для {name}",
+        "de": "dein Kommentar für {name}",
+    },
+    "rename_placeholder": {
+        "en": "new name…", "uk": "нове ім'я…", "de": "neuer Name…",
+    },
+    "feedback_placeholder": {
+        "en": "question or idea…", "uk": "питання або ідея…",
+        "de": "Frage oder Idee…",
+    },
+    "name_placeholder": {
+        "en": "your name in Move", "uk": "Напиши своє ім'я у Move",
+        "de": "dein Name in Move",
+    },
+    "caption_invite": {
+        "en": "💬 Add a caption to your video — just send it as the next message.",
+        "uk": "💬 Додай коментар до свого відео — просто надішли його наступним повідомленням.",
+        "de": "💬 Füg deinem Video einen Kommentar hinzu — einfach als nächste Nachricht.",
     },
     "note_sent": {"en": "💬 Sent to {name}.", "uk": "💬 Надіслано: {name}.",
                   "de": "💬 An {name} geschickt."},
@@ -1565,6 +1595,11 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
             cur.execute("UPDATE move_users SET bubble_hints = bubble_hints + 1 "
                         "WHERE telegram_user_id = %s", (tg_id,))
 
+    # The caption window has no prompt of its own for ForceReply to hang on: this
+    # confirmation already carries Undo and the radar toggle, and Telegram allows
+    # one markup per message. So the invitation is words rather than a field label.
+    if tg_id in _beta_ids():
+        body += "\n\n" + _t("caption_invite", lang)
     _send(chat_id, body, reply_markup=undo_kb)
 
     # Invite a comment: the next text is treated as one (state times out on its own).
@@ -1730,7 +1765,8 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
     # Re-ask the question they're actually on, not the first one.
     if step == "await_name":
         code = _norm_lang((_user(cur, tg_id) or {}).get("language_code")) or lang
-        _send(chat_id, _t("ask_name", code))
+        _send(chat_id, _t("ask_name", code),
+              reply_markup=_force_reply(tg_id, code, "name_placeholder"))
     elif step == "await_gender":
         code = _norm_lang((_user(cur, tg_id) or {}).get("language_code")) or lang
         _send(chat_id, _t("ask_gender", code), reply_markup={"inline_keyboard": [[
@@ -2498,7 +2534,8 @@ def handle_move_webhook(body: dict, conn) -> None:
     if word == "rename":
         _set_state(cur, tg_id, "await_rename")
         conn.commit()
-        _send(chat_id, _t("ask_rename", lang))
+        _send(chat_id, _t("ask_rename", lang), reply_markup=_force_reply(tg_id, lang,
+                                                                        "rename_placeholder"))
         return
     if word == "move":
         _cmd_move(cur, tg_id, chat_id, lang)
@@ -2513,7 +2550,8 @@ def handle_move_webhook(body: dict, conn) -> None:
             return
         _set_state(cur, tg_id, "await_feedback")
         conn.commit()
-        _send(chat_id, _t("ask_feedback", lang))
+        _send(chat_id, _t("ask_feedback", lang), reply_markup=_force_reply(tg_id, lang,
+                                                                          "feedback_placeholder"))
         return
     if word == "radar":
         _cmd_radar(cur, tg_id, chat_id, lang)
@@ -2735,7 +2773,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # field, and — the part that matters — ties the answer to this exact
         # prompt instead of to a ten-minute window that catches anything typed.
         kb = ({"force_reply": True,
-               "input_field_placeholder": _t("note_placeholder", lang)[:64]}
+               "input_field_placeholder":
+                   _t("note_placeholder", lang, name=them["participant_name"])[:64]}
               if tg_id in _beta_ids() else None)
         _send(chat_id, _t(key, lang, name=them["participant_name"]), reply_markup=kb)
         return
@@ -2792,7 +2831,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 {"text": _t("gender_f", code), "callback_data": "mv:gender:f"},
             ]]})
             return
-        _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)))
+        _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)),
+              reply_markup=_force_reply(tg_id, code, "name_placeholder"))
         return
 
     if body.startswith("gender:"):
@@ -2813,7 +2853,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             return
         _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
         conn.commit()
-        _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)))
+        _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)),
+              reply_markup=_force_reply(tg_id, code, "name_placeholder"))
         return
 
     if body.startswith("crew:"):

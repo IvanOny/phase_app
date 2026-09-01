@@ -1107,7 +1107,15 @@ _STRINGS: dict[str, dict[str, str]] = {
     "milestone": {"en": "🎉 {name}, {days} days in a row! Keep moving 💪", "uk": "🎉 {name}, {days} днів поспіль! Так тримати 💪", "de": "🎉 {name}, {days} Tage in Folge! Weiter so 💪"},
     "summary_header": {"en": "📅 {month} — {name}", "uk": "📅 {month} — {name}", "de": "📅 {month} — {name}"},
     "summary_days": {"en": "🏃 Days moved: {count} of {total} ({pct}%)", "uk": "🏃 Днів у русі: {count} з {total} ({pct}%)", "de": "🏃 Bewegte Tage: {count} von {total} ({pct}%)"},
-    "summary_streak": {"en": "🔥 Longest streak: {days} days", "uk": "🔥 Найдовша серія: {days} днів", "de": "🔥 Längste Serie: {days} Tage"},
+    # {word} because Ukrainian inflects it: 1 день, 3 дні, 5 днів. The old
+    # string hard-coded "днів" and printed "1 днів" for anyone whose best run
+    # was a single day — which is everyone, in their first month.
+    "summary_streak": {"en": "🔥 Longest streak: {days} {word}",
+                       "uk": "🔥 Найдовша серія: {days} {word}",
+                       "de": "🔥 Längste Serie: {days} {word}"},
+    "day_word_one": {"en": "day", "uk": "день", "de": "Tag"},
+    "day_word_few": {"en": "days", "uk": "дні", "de": "Tage"},
+    "day_word_many": {"en": "days", "uk": "днів", "de": "Tage"},
     "summary_zaps": {"en": "⚡ Lightnings received: {n}", "uk": "⚡ Отримано блискавок: {n}", "de": "⚡ Erhaltene Blitze: {n}"},
     "btn_new_link": {
         "en": "🔄 New link", "uk": "🔄 Нове посилання", "de": "🔄 Neuer Link",
@@ -2389,73 +2397,86 @@ def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: in
     _log(f"🔗 Move: invite link opened\n• {me['participant_name']} → {inviter['participant_name']}")
 
 
-def _month_stats(cur, tg_id: int, start: date, end: date) -> dict | None:
-    """Days moved / consistency / longest streak / ⚡ for one month."""
-    import calendar
-    cur.execute(
-        "SELECT entry_date FROM move_entries WHERE telegram_user_id = %s "
-        "AND entry_date >= %s AND entry_date <= %s ORDER BY entry_date",
-        (tg_id, start, end),
-    )
-    rows = cur.fetchall()
-    if not rows:
+def _summary_periods(first: date, last: date, today: date) -> list:
+    """What /summary shows, newest first: (kind, start, end).
+
+    Months for the current and previous calendar year; everything older as one
+    line per year. Older history gets coarser, which is the only way a summary
+    stays readable for someone who has been here for years — and it grows by one
+    line per year rather than twelve, so it never needs a cap.
+
+    Whole years only: rolling up "the last 12 months" would split a year in half
+    every January, and print a 2027 line beside three months of 2027.
+    """
+    months_from = date(today.year - 1, 1, 1)
+    periods = []
+    m = date(last.year, last.month, 1)
+    floor_m = max(months_from, date(first.year, first.month, 1))
+    while m >= floor_m:
+        nxt = date(m.year + (m.month == 12), (m.month % 12) + 1, 1)
+        periods.append(("month", m, nxt - timedelta(days=1)))
+        m = date(m.year - (m.month == 1), 12 if m.month == 1 else m.month - 1, 1)
+    for y in range(min(last.year, months_from.year - 1), first.year - 1, -1):
+        periods.append(("year", date(y, 1, 1), date(y, 12, 31)))
+    return periods
+
+
+def _period_stats(days: list, zaps: dict, start: date, end: date,
+                  first: date, today: date) -> dict | None:
+    """Days moved, consistency, longest streak and ⚡ over one span.
+
+    Consistency counts only days the person could have moved: a month they
+    joined halfway through is measured from the day they arrived, and the
+    current month up to today — otherwise every first and last period looks
+    like a slump.
+    """
+    inside = [d for d in days if start <= d <= end]
+    if not inside:
         return None
-    days = [r["entry_date"] if hasattr(r["entry_date"], "toordinal")
-            else date.fromisoformat(str(r["entry_date"])[:10]) for r in rows]
     longest = run = 1
-    for i in range(1, len(days)):
-        run = run + 1 if (days[i] - days[i - 1]).days == 1 else 1
+    for i in range(1, len(inside)):
+        run = run + 1 if (inside[i] - inside[i - 1]).days == 1 else 1
         longest = max(longest, run)
-    cur.execute(
-        "SELECT COUNT(*) AS n FROM move_reactions r JOIN move_entries e ON e.id = r.entry_id "
-        "WHERE e.telegram_user_id = %s AND e.entry_date >= %s AND e.entry_date <= %s",
-        (tg_id, start, end),
-    )
-    total_days = calendar.monthrange(start.year, start.month)[1]
-    return {
-        "count": len(days),
-        "total": total_days,
-        "pct": round(len(days) / total_days * 100),
-        "longest": longest,
-        "zaps": cur.fetchone()["n"] or 0,
-    }
+    span_from, span_to = max(start, first), min(end, today)
+    total = max((span_to - span_from).days + 1, len(inside))
+    return {"count": len(inside), "total": total,
+            "pct": round(len(inside) / total * 100), "longest": longest,
+            "zaps": sum(n for d, n in zaps.items() if start <= d <= end)}
 
 
 def _cmd_summary(cur, tg_id: int, chat_id: int, lang: str) -> None:
     """Every month on record, newest first — computed from entries, so it works
     retroactively rather than only for months a report was sent for."""
-    cur.execute(
-        "SELECT MIN(entry_date) AS first, MAX(entry_date) AS last FROM move_entries "
-        "WHERE telegram_user_id = %s",
-        (tg_id,),
-    )
-    span = cur.fetchone()
-    if not span or not span["first"]:
-        _send(chat_id, _t("summary_none", lang))
-        return
+    cur.execute("SELECT entry_date FROM move_entries WHERE telegram_user_id = %s "
+                "ORDER BY entry_date", (tg_id,))
 
     def as_date(v):
         return v if hasattr(v, "toordinal") else date.fromisoformat(str(v)[:10])
 
-    first, last = as_date(span["first"]), as_date(span["last"])
-    months = []
-    cursor_m = date(last.year, last.month, 1)
-    floor_m = date(first.year, first.month, 1)
-    while cursor_m >= floor_m and len(months) < 24:
-        nxt = date(cursor_m.year + (cursor_m.month == 12), (cursor_m.month % 12) + 1, 1)
-        months.append((cursor_m, nxt - timedelta(days=1)))
-        cursor_m = date(cursor_m.year - (cursor_m.month == 1),
-                        12 if cursor_m.month == 1 else cursor_m.month - 1, 1)
+    days = [as_date(r["entry_date"]) for r in cur.fetchall()]
+    if not days:
+        _send(chat_id, _t("summary_none", lang))
+        return
+    # Both queries up front: the old version ran two per month inside the loop,
+    # which was 48 round trips for two years of history.
+    cur.execute(
+        "SELECT e.entry_date, COUNT(*) AS n FROM move_reactions r "
+        "JOIN move_entries e ON e.id = r.entry_id "
+        "WHERE e.telegram_user_id = %s GROUP BY e.entry_date", (tg_id,))
+    zaps = {as_date(r["entry_date"]): r["n"] for r in cur.fetchall()}
 
+    today = date.today()
     lines = [_t("summary_all_header", lang), ""]
-    for m_start, m_end in months:
-        st = _month_stats(cur, tg_id, m_start, m_end)
+    for kind, start, end in _summary_periods(days[0], days[-1], today):
+        st = _period_stats(days, zaps, start, end, days[0], today)
         if not st:
             continue
-        month = _MONTHS.get(lang, _MONTHS["en"])[m_start.month]
-        lines.append(f"📅 {month} {m_start.year}")
+        label = (f"{_MONTHS.get(lang, _MONTHS['en'])[start.month]} {start.year}"
+                 if kind == "month" else str(start.year))
+        lines.append(f"📅 {label}")
         lines.append(_t("summary_days", lang, count=st["count"], total=st["total"], pct=st["pct"]))
-        lines.append(_t("summary_streak", lang, days=st["longest"]))
+        lines.append(_t("summary_streak", lang, days=st["longest"],
+                        word=_t(f"day_word_{_plural_form(st['longest'], lang)}", lang)))
         if st["zaps"]:
             lines.append(_t("summary_zaps", lang, n=st["zaps"]))
         lines.append("")
@@ -3829,7 +3850,8 @@ def send_move_monthly_summaries(conn) -> None:
             "",
             _t("summary_days", lang, count=len(days), total=days_in_month,
                pct=round(len(days) / days_in_month * 100)),
-            _t("summary_streak", lang, days=longest),
+            _t("summary_streak", lang, days=longest,
+               word=_t(f"day_word_{_plural_form(longest, lang)}", lang)),
         ]
         if zaps:
             lines.append(_t("summary_zaps", lang, n=zaps))

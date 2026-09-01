@@ -2460,7 +2460,7 @@ def _cmd_summary(cur, tg_id: int, chat_id: int, lang: str) -> None:
 
     days = [as_date(r["entry_date"]) for r in cur.fetchall()]
     if not days:
-        _send(chat_id, _t("summary_none", lang))
+        _send_t(cur, chat_id, _t("summary_none", lang))
         return
     # Both queries up front: the old version ran two per month inside the loop,
     # which was 48 round trips for two years of history.
@@ -2916,6 +2916,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word in ("info", "help"):
         _cmd_info(cur, tg_id, chat_id, lang, u["participant_name"])
+        conn.commit()                      # the transient record of that text
         return
     if word == "rename":
         _set_state(cur, tg_id, "await_rename")
@@ -2953,6 +2954,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word == "summary":
         _cmd_summary(cur, tg_id, chat_id, lang)
+        conn.commit()                      # the transient record of that view
         return
     if word == "invite":
         _cmd_invite(cur, tg_id, chat_id, lang)

@@ -2551,7 +2551,11 @@ def _radar_deliver(cur, conn, rid: int, chat_id: int, lang: str, cand,
             "VALUES (%s, %s, %s, %s, 'radar')",
             (cand["id"], rid, chat_id, res["message_id"]),
         )
-    _send(chat_id, _t("radar_received", lang))
+    # Carries the keyboard, like the crew header and the morning report: a
+    # message the bot sends anyway, with no markup of its own. Radar reaches
+    # people who haven't done anything, which is exactly who a keyboard sent
+    # only in reply never reaches.
+    _send(chat_id, _t("radar_received", lang), reply_markup=_main_kb(lang, rid, cur))
     cur.execute("INSERT INTO move_radar_history (telegram_user_id, from_tg_id) VALUES (%s, %s)",
                 (rid, cand["from_id"]))
     if touch_schedule:

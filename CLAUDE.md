@@ -86,6 +86,29 @@ listed at the top of `docs/adding-a-new-phase-type.md` before writing any code.
 (e.g. a missing type in a config table, a missing null guard, a constraint error),
 always append it to `docs/adding-a-new-phase-type.md` so the checklist stays complete.
 
+## This machine (Windows)
+
+Facts that have each cost a debugging round already. They are here rather than in
+a session summary because this file is reloaded every session and summaries are not.
+
+**Python** is not on `PATH`. Bare `python` / `python3` / `py` open the Windows Store
+stub, which exits without running anything. Call the interpreter by full path:
+
+```bash
+"C:/Users/nebel/AppData/Local/Programs/Python/Python313/python.exe" script.py
+```
+
+`pip.exe` is blocked by an application control policy. Use `python -m pip` instead.
+
+**git identity** lives only in this repo's `.git/config` (`IvanOny <nebel911@gmail.com>`).
+There is no `~/.gitconfig` and no system-level identity. If a commit ever fails with
+"Author identity unknown", the fix is to restore that local config — never to invent a
+name, and never to set a global one.
+
+**Supabase's direct host** (`db.<ref>.supabase.co`) is IPv6-only, and this network has
+no IPv6, so it fails with "could not translate host name". Use the Session pooler
+string for anything run locally. `scripts/run_migration.py` prints this hint on failure.
+
 ## Running locally
 
 ```bash

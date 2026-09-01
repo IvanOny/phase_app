@@ -101,10 +101,6 @@ def _get_ex_by_name(cur, user_id: int, name: str):
     return cur.fetchone()
 
 
-def _tier(ex) -> int:
-    return 3 if ex["schedule_type"] == "queue" else 2
-
-
 # ── Timezone-aware due check ─────────────────────────────────────────────────
 
 def _user_tz(cur, user_id: int):

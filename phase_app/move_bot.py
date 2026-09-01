@@ -3023,7 +3023,16 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         entry_id = int(body[4:])
         cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
         owner = cur.fetchone()
-        if owner and owner["telegram_user_id"] == tg_id:
+        if not owner:
+            # The move was undone after this copy was delivered. The lookup was
+            # already here but only guarded "is it mine"; a missing row fell
+            # through to the insert and hit move_reactions_entry_id_fkey. Take
+            # the buttons away too, so the next tap doesn't ask the same thing.
+            _answer(cq["id"], _t("note_gone", lang))
+            _api_call("editMessageReplyMarkup",
+                      {"chat_id": chat_id, "message_id": msg_id})
+            return
+        if owner["telegram_user_id"] == tg_id:
             _answer(cq["id"], _t("zap_own", lang))
             return
         cur.execute(

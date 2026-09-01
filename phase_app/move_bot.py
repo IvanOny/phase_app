@@ -119,16 +119,26 @@ def _edit(chat_id: int, message_id: int, text: str,
     return _api_call("editMessageText", payload)
 
 
-def _send_t(cur, chat_id: int, text: str, reply_markup: dict | None = None) -> dict | None:
+def _send_t(cur, conn, chat_id: int, text: str,
+            reply_markup: dict | None = None) -> dict | None:
     """Send something the chat shouldn't keep: a menu, a prompt, a confirmation.
 
     Recorded so the morning sweep can delete it. What stays is the record —
     moves, comments, the ⚡ report — and what goes is the scaffolding used to
     produce it.
+
+    The record is committed here rather than left to the caller. Most of these
+    sends sit on a `return` in the webhook that never commits, so the row would
+    be written and then lost — and a lost row is worse than none, because the
+    sweep goes on looking like it works while quietly skipping the message.
+    Pass conn=None only where the caller commits right after (the _cmd_*
+    helpers, which don't take a connection).
     """
     res = _send(chat_id, text, reply_markup=reply_markup)
     if res and res.get("message_id"):
         _mark_transient(cur, chat_id, res["message_id"])
+        if conn is not None:
+            conn.commit()
     return res
 
 
@@ -1531,16 +1541,16 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     """Deliver one comment, with a Reply button pointing back at its sender."""
     me, them = _user(cur, tg_id), _user(cur, to_id)
     if not me or not them:
-        _send(chat_id, _t("note_gone", lang))
+        _send_t(cur, conn, chat_id, _t("note_gone", lang))
         return
     cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
     owner = cur.fetchone()
     if not owner:
-        _send(chat_id, _t("note_gone", lang))       # move was undone meanwhile
+        _send_t(cur, conn, chat_id, _t("note_gone", lang))       # move was undone meanwhile
         return
     tname = them["participant_name"]
     if not _note_deliverable(cur, to_id, me["participant_name"]):
-        _send(chat_id, _t("note_undelivered", lang, name=tname))
+        _send_t(cur, conn, chat_id, _t("note_undelivered", lang, name=tname))
         return
 
     tlang = _norm_lang(them["language_code"])
@@ -1563,7 +1573,7 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     # Carries the keyboard: a ForceReply prompt hides it, and it only comes back
     # when a message brings one. Ending the flow is exactly that moment.
     _clear_prompts(cur, tg_id, entry_id)
-    _send_t(cur, chat_id, _t("note_sent", lang, name=tname),
+    _send_t(cur, conn, chat_id, _t("note_sent", lang, name=tname),
             reply_markup=_main_kb(lang, tg_id, cur))
 
 
@@ -1635,17 +1645,17 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     e = cur.fetchone()
     # entry_id guards a stale button from an earlier day revoking today's move.
     if not e or (entry_id is not None and e["id"] != entry_id):
-        _send(chat_id, _t("undo_none", lang))
+        _send_t(cur, conn, chat_id, _t("undo_none", lang))
         return False
     cur.execute("SELECT 1 FROM move_reactions WHERE entry_id = %s", (e["id"],))
     if cur.fetchone():
-        _send(chat_id, _t("undo_seen", lang))
+        _send_t(cur, conn, chat_id, _t("undo_seen", lang))
         return False
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds()
     if age > _DELETE_LIMIT_HOURS * 3600:
         # Past this the deletes would fail one by one and leave the copies up
         # while the entry disappeared — worse than refusing.
-        _send(chat_id, _t("undo_too_old", lang, hours=_DELETE_LIMIT_HOURS))
+        _send_t(cur, conn, chat_id, _t("undo_too_old", lang, hours=_DELETE_LIMIT_HOURS))
         return False
     cur.execute("SELECT chat_id, message_id FROM move_forwards WHERE entry_id = %s", (e["id"],))
     for f in cur.fetchall():
@@ -1653,7 +1663,7 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     # move_forwards / move_reactions cascade off the entry.
     cur.execute("DELETE FROM move_entries WHERE id = %s", (e["id"],))
     conn.commit()
-    _send(chat_id, _t("undo_done", lang), reply_markup=_main_kb(lang, tg_id, cur))
+    _send_t(cur, conn, chat_id, _t("undo_done", lang), reply_markup=_main_kb(lang, tg_id, cur))
     return True
 
 
@@ -1798,7 +1808,7 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         # Deliberately no comment invitation here: the move it would attach to
         # is hours old, so the note goes nowhere useful and the crew shouldn't
         # be re-pinged. Comments belong to a move you *just* logged.
-        _send(chat_id, _t("already_logged", lang))
+        _send_t(cur, conn, chat_id, _t("already_logged", lang))
         return
 
     media_type = None
@@ -1991,9 +2001,9 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
         kb = _logged_kb(cur, e["id"], lang, tg_id)
         kb["inline_keyboard"].append([undo_btn])
         _redraw_markup(own["chat_id"], own["message_id"], kb)
-        _send(chat_id, _t(key, lang), reply_markup=_main_kb(lang, tg_id, cur))
+        _send_t(cur, conn, chat_id, _t(key, lang), reply_markup=_main_kb(lang, tg_id, cur))
     else:
-        _send(chat_id, _t(key, lang),
+        _send_t(cur, conn, chat_id, _t(key, lang),
               reply_markup={"inline_keyboard": [[undo_btn]]} if undo_btn else None)
     return True
 
@@ -2031,7 +2041,7 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
         if inviter_id is not None:
             _apply_invite(cur, conn, tg_id, chat_id, lang, inviter_id)
         else:
-            _send(chat_id, _t("already_registered", lang, name=u["participant_name"]),
+            _send_t(cur, conn, chat_id, _t("already_registered", lang, name=u["participant_name"]),
                   reply_markup=_main_kb(lang, tg_id, cur))
         return
 
@@ -2138,7 +2148,7 @@ def _invite_line(cur, tg_id: int, lang: str, name: str | None = None) -> str:
     return _t("invite_line", lang, link=_invite_link(cur, tg_id, name))
 
 
-def _cmd_info(cur, tg_id: int, chat_id: int, lang: str, name: str | None = None) -> None:
+def _cmd_info(cur, conn, tg_id: int, chat_id: int, lang: str, name: str | None = None) -> None:
     body = _t("info_body", lang,
               tagline=_t("tagline", lang),
               mins=_COMMENT_WINDOW_MINUTES,
@@ -2146,10 +2156,10 @@ def _cmd_info(cur, tg_id: int, chat_id: int, lang: str, name: str | None = None)
               miles="/".join(str(m) for m in _MILESTONES))
     # No language button: Settings owns language, and two doors to one setting
     # is worse than one.
-    _send_t(cur, chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}")
+    _send_t(cur, conn, chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}")
 
 
-def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
+def _cmd_move(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     """The invite link, then the crew as buttons.
 
     The crew used to be spelled out as a sentence above the link, with a second
@@ -2166,13 +2176,13 @@ def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     # Both messages are scaffolding, so both are recorded for the morning
     # sweep. Deleting the first one doesn't take the keyboard with it — a reply
     # keyboard lives in the client, not in the message that delivered it.
-    _send_t(cur, chat_id,
+    _send_t(cur, conn, chat_id,
             _invite_line(cur, tg_id, lang, me["participant_name"] if me else None),
             reply_markup=_main_kb(lang, tg_id, cur))
     # The crew goes in its own message: one message can hold either the main
     # keyboard or an inline one, and the buttons need the inline slot.
     text, kb = _crew_pick_view(cur, tg_id, lang)
-    _send_t(cur, chat_id, text, reply_markup=kb)
+    _send_t(cur, conn, chat_id, text, reply_markup=kb)
 
 
 # Telegram takes far more, but a wall of buttons stops being a shortcut. Beyond
@@ -2227,7 +2237,7 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         # wanted to add a person and couldn't. It's how you find out people are
         # typing @usernames, or that a name is spelled differently than they think.
         me = _user(cur, tg_id)
-        _send(chat_id, _t("crew_not_found", lang, name=name))
+        _send_t(cur, conn, chat_id, _t("crew_not_found", lang, name=name))
         return
     tname = target["participant_name"]
     cur.execute(
@@ -2238,7 +2248,7 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
         # Also left armed: the menu is informational and the prompt still invites
         # another name, so typing one has to keep working — within the window.
         text, kb = _crew_member_view(cur, tg_id, target, lang)
-        _send(chat_id, text, reply_markup=kb)
+        _send_t(cur, conn, chat_id, text, reply_markup=kb)
         return
     # Not added — asked. Nothing enters either crew until the other side accepts,
     # and the accept wires up both directions at once.
@@ -2254,7 +2264,7 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
           ]]})
     # The ask went out — that's the end of this prompt, so stop reading text as names.
     _clear_state(cur, tg_id)
-    _send(chat_id, _t("crew_request_sent", lang, name=tname))
+    _send_t(cur, conn, chat_id, _t("crew_request_sent", lang, name=tname))
 
 
 def _crew_target(cur, token: str):
@@ -2355,10 +2365,10 @@ def _invite_kb(lang: str) -> dict:
     ]]}
 
 
-def _cmd_invite(cur, tg_id: int, chat_id: int, lang: str) -> None:
+def _cmd_invite(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     me = _user(cur, tg_id)
     link = _invite_link(cur, tg_id, me["participant_name"] if me else None)
-    _send_t(cur, chat_id, _t("invite_text", lang, link=link), reply_markup=_invite_kb(lang))
+    _send_t(cur, conn, chat_id, _t("invite_text", lang, link=link), reply_markup=_invite_kb(lang))
 
 
 def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: int) -> None:
@@ -2375,7 +2385,7 @@ def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: in
     the opener is the requester, the owner decides.
     """
     if inviter_id == tg_id:
-        _send(chat_id, _t("invite_self", lang))
+        _send_t(cur, conn, chat_id, _t("invite_self", lang))
         return
     inviter = _user(cur, inviter_id)
     if not inviter or not inviter["participant_name"]:
@@ -2389,7 +2399,7 @@ def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: in
         (tg_id, inviter["participant_name"]),
     )
     if cur.fetchone():
-        _send(chat_id, _t("invite_already", lang, name=inviter["participant_name"]))
+        _send_t(cur, conn, chat_id, _t("invite_already", lang, name=inviter["participant_name"]))
         return
     ilang = _norm_lang(inviter["language_code"])
     _send(inviter["chat_id"] or inviter_id,
@@ -2398,7 +2408,7 @@ def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: in
               {"text": _t("btn_accept", ilang), "callback_data": f"mv:crew:accept:{tg_id}"},
               {"text": _t("btn_decline", ilang), "callback_data": "mv:crew:decline"},
           ]]})
-    _send(chat_id, _t("crew_request_sent", lang, name=inviter["participant_name"]))
+    _send_t(cur, conn, chat_id, _t("crew_request_sent", lang, name=inviter["participant_name"]))
     _log(f"🔗 Move: invite link opened\n• {me['participant_name']} → {inviter['participant_name']}")
 
 
@@ -2449,7 +2459,7 @@ def _period_stats(days: list, zaps: dict, start: date, end: date,
             "zaps": sum(n for d, n in zaps.items() if start <= d <= end)}
 
 
-def _cmd_summary(cur, tg_id: int, chat_id: int, lang: str) -> None:
+def _cmd_summary(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     """Every month on record, newest first — computed from entries, so it works
     retroactively rather than only for months a report was sent for."""
     cur.execute("SELECT entry_date FROM move_entries WHERE telegram_user_id = %s "
@@ -2460,7 +2470,7 @@ def _cmd_summary(cur, tg_id: int, chat_id: int, lang: str) -> None:
 
     days = [as_date(r["entry_date"]) for r in cur.fetchall()]
     if not days:
-        _send_t(cur, chat_id, _t("summary_none", lang))
+        _send_t(cur, conn, chat_id, _t("summary_none", lang))
         return
     # Both queries up front: the old version ran two per month inside the loop,
     # which was 48 round trips for two years of history.
@@ -2485,7 +2495,7 @@ def _cmd_summary(cur, tg_id: int, chat_id: int, lang: str) -> None:
         if st["zaps"]:
             lines.append(_t("summary_zaps", lang, n=st["zaps"]))
         lines.append("")
-    _send_t(cur, chat_id, "\n".join(lines).strip())
+    _send_t(cur, conn, chat_id, "\n".join(lines).strip())
 
 
 _RADAR_FREQS = ("daily", "weekly", "monthly", "never")
@@ -2577,16 +2587,16 @@ def _radar_deliver(cur, conn, rid: int, chat_id: int, lang: str, cand,
             "VALUES (%s, %s, %s, %s, 'radar')",
             (cand["id"], rid, chat_id, res["message_id"]),
         )
-    # Carries the keyboard, like the crew header and the morning report: a
-    # message the bot sends anyway, with no markup of its own. Radar reaches
-    # people who haven't done anything, which is exactly who a keyboard sent
-    # only in reply never reaches.
-    _send(chat_id, _t("radar_received", lang), reply_markup=_main_kb(lang, rid, cur))
     cur.execute("INSERT INTO move_radar_history (telegram_user_id, from_tg_id) VALUES (%s, %s)",
                 (rid, cand["from_id"]))
     if touch_schedule:
         cur.execute("UPDATE move_users SET radar_last_received = NOW() WHERE telegram_user_id = %s",
                     (rid,))
+    # Carries the keyboard, like the crew header and the morning report: a
+    # message the bot sends anyway, with no markup of its own. Radar reaches
+    # people who haven't done anything, which is exactly who a keyboard sent
+    # only in reply never reaches.
+    _send_t(cur, conn, chat_id, _t("radar_received", lang), reply_markup=_main_kb(lang, rid, cur))
     conn.commit()
     return True
 
@@ -2638,7 +2648,7 @@ def _settings_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     ]}
 
 
-def _cmd_radar(cur, tg_id: int, chat_id: int, lang: str) -> None:
+def _cmd_radar(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     """How often you receive — and, outside beta, whether you share by default.
 
     In beta the sharing question is gone. Each move now decides for itself on the
@@ -2650,7 +2660,7 @@ def _cmd_radar(cur, tg_id: int, chat_id: int, lang: str) -> None:
     cur.execute("UPDATE move_users SET radar_seen_at = COALESCE(radar_seen_at, NOW()) "
                 "WHERE telegram_user_id = %s", (tg_id,))
     text, kb = _radar_freq_view(cur, tg_id, lang)
-    _send_t(cur, chat_id, text, reply_markup=kb)
+    _send_t(cur, conn, chat_id, text, reply_markup=kb)
 
 
 def _pause_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
@@ -2671,9 +2681,9 @@ def _pause_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     return text, {"inline_keyboard": rows}
 
 
-def _cmd_pause(cur, tg_id: int, chat_id: int, lang: str) -> None:
+def _cmd_pause(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     text, kb = _pause_view(cur, tg_id, lang)
-    _send_t(cur, chat_id, text, reply_markup=kb)
+    _send_t(cur, conn, chat_id, text, reply_markup=kb)
 
 
 def _cmd_mod(cur, conn, tg_id: int, chat_id: int, lang: str, args: str) -> None:
@@ -2683,23 +2693,23 @@ def _cmd_mod(cur, conn, tg_id: int, chat_id: int, lang: str, args: str) -> None:
     """
     if tg_id not in _admin_ids():
         # Answer exactly as any other unknown word would — no hint that /mod exists.
-        _send(chat_id, _t("unknown_msg", lang), reply_markup=_main_kb(lang, tg_id, cur))
+        _send_t(cur, conn, chat_id, _t("unknown_msg", lang), reply_markup=_main_kb(lang, tg_id, cur))
         return
     action, _, name = args.strip().partition(" ")
     name = name.strip()
     if action not in ("status", "restore", "ban") or not name:
-        _send(chat_id, "Usage:\n/mod status <name>\n/mod restore <name>\n/mod ban <name>")
+        _send_t(cur, conn, chat_id, "Usage:\n/mod status <name>\n/mod restore <name>\n/mod ban <name>")
         return
     who = _by_name(cur, name)
     if not who:
-        _send(chat_id, f"No one named \"{name}\".")
+        _send_t(cur, conn, chat_id, f"No one named \"{name}\".")
         return
     target_id = who["telegram_user_id"]
     if action == "status":
         cur.execute("SELECT COUNT(*) AS n FROM move_reports r JOIN move_entries e "
                     "ON e.id = r.entry_id WHERE e.telegram_user_id = %s", (target_id,))
         reports = cur.fetchone()["n"] or 0
-        _send(chat_id,
+        _send_t(cur, conn, chat_id,
               f"{who['participant_name']} (id {target_id})\n"
               f"• active warnings: {_active_warnings(cur, target_id)}"
               f"/{_WARNINGS_PER_SUSPENSION}\n"
@@ -2786,7 +2796,7 @@ def handle_move_webhook(body: dict, conn) -> None:
             break
     if media:
         if not (u and u["participant_name"]):
-            _send(chat_id, _t("register_first", lang))
+            _send_t(cur, conn, chat_id, _t("register_first", lang))
             return
         # Sending a move ends any half-finished prompt. Otherwise an armed
         # "await_crew" outranks the comment window below, and the text you type
@@ -2807,10 +2817,10 @@ def handle_move_webhook(body: dict, conn) -> None:
     base_state = (state or "").split(":")[0]
     if base_state in ("await_name", "await_rename") and not text.startswith("/"):
         if not _valid_name(text):
-            _send(chat_id, _t("letters_only", lang))
+            _send_t(cur, conn, chat_id, _t("letters_only", lang))
             return
         if _by_name(cur, text):
-            _send(chat_id, _t("name_taken", lang, name=text))
+            _send_t(cur, conn, chat_id, _t("name_taken", lang, name=text))
             return
         cur.execute(
             "UPDATE move_users SET participant_name = %s, language_code = %s WHERE telegram_user_id = %s",
@@ -2844,7 +2854,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         if target:
             entry_id, author = target
             if len(text) > _NOTE_MAX:
-                _send(chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
+                _send_t(cur, conn, chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
                 return
             _clear_state(cur, tg_id)       # this reply outranks any pending prompt
             if author == tg_id:
@@ -2861,7 +2871,7 @@ def handle_move_webhook(body: dict, conn) -> None:
             # from before tracking existed, or one whose move has been deleted.
             # Answering "you've already moved today" to a considered reply is the
             # worst response available — say what happened and where the button is.
-            _send(chat_id, _t("reply_stale", lang))
+            _send_t(cur, conn, chat_id, _t("reply_stale", lang))
             return
 
     # 2a) a comment typed after tapping 💬 on someone's move
@@ -2875,14 +2885,14 @@ def handle_move_webhook(body: dict, conn) -> None:
             try:
                 entry_id, to_id = (int(x) for x in (state or "").split(":")[1:3])
             except ValueError:
-                _send(chat_id, _t("note_gone", lang))
+                _send_t(cur, conn, chat_id, _t("note_gone", lang))
                 return
             if len(text) > _NOTE_MAX:
                 # Re-arm rather than lose what they wrote: it's still on screen to
                 # trim, and the prompt is still the one they were answering.
                 _set_state(cur, tg_id, f"await_note:{entry_id}:{to_id}")
                 conn.commit()
-                _send(chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
+                _send_t(cur, conn, chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
                 return
             _send_note(cur, conn, tg_id, chat_id, lang, entry_id, to_id, text)
             return
@@ -2897,7 +2907,7 @@ def handle_move_webhook(body: dict, conn) -> None:
             # reply by hand.
             _log("💬 Move: feedback\n• {} ({})\n\n{}".format(
                 (u or {}).get("participant_name") or "?", tg_id, text))
-            _send(chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang, tg_id, cur))
+            _send_t(cur, conn, chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang, tg_id, cur))
             return
         # A command instead of an answer means they changed their mind — the state
         # is already cleared, so let it fall through and run.
@@ -2912,11 +2922,10 @@ def handle_move_webhook(body: dict, conn) -> None:
         conn.commit()
         return
     if not (u and u["participant_name"]):
-        _send(chat_id, _t("register_first", lang))
+        _send_t(cur, conn, chat_id, _t("register_first", lang))
         return
     if word in ("info", "help"):
-        _cmd_info(cur, tg_id, chat_id, lang, u["participant_name"])
-        conn.commit()                      # the transient record of that text
+        _cmd_info(cur, conn, tg_id, chat_id, lang, u["participant_name"])
         return
     if word == "rename":
         _set_state(cur, tg_id, "await_rename")
@@ -2925,7 +2934,7 @@ def handle_move_webhook(body: dict, conn) -> None:
                                                                         "rename_placeholder"))
         return
     if word == "move":
-        _cmd_move(cur, tg_id, chat_id, lang)
+        _cmd_move(cur, conn, tg_id, chat_id, lang)
         _set_state(cur, tg_id, "await_crew")
         conn.commit()
         return
@@ -2933,7 +2942,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         # Inline form supported too: "/feedback the radar is confusing" skips the ask.
         if args:
             _log("💬 Move: feedback\n• {} ({})\n\n{}".format(u["participant_name"], tg_id, args))
-            _send(chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang, tg_id, cur))
+            _send_t(cur, conn, chat_id, _t("feedback_sent", lang), reply_markup=_main_kb(lang, tg_id, cur))
             return
         _set_state(cur, tg_id, "await_feedback")
         conn.commit()
@@ -2941,30 +2950,28 @@ def handle_move_webhook(body: dict, conn) -> None:
                                                                           "feedback_placeholder"))
         return
     if word == "radar":
-        _cmd_radar(cur, tg_id, chat_id, lang)
+        _cmd_radar(cur, conn, tg_id, chat_id, lang)
         conn.commit()                      # radar_seen_at
         return
     if word == "settings":
         text, kb = _settings_view(cur, tg_id, lang)
-        _send_t(cur, chat_id, text, reply_markup=kb)
+        _send_t(cur, conn, chat_id, text, reply_markup=kb)
         conn.commit()
         return
     if word == "pause":
-        _cmd_pause(cur, tg_id, chat_id, lang)
+        _cmd_pause(cur, conn, tg_id, chat_id, lang)
         return
     if word == "summary":
-        _cmd_summary(cur, tg_id, chat_id, lang)
-        conn.commit()                      # the transient record of that view
+        _cmd_summary(cur, conn, tg_id, chat_id, lang)
         return
     if word == "invite":
-        _cmd_invite(cur, tg_id, chat_id, lang)
-        conn.commit()                      # the transient record of that menu
+        _cmd_invite(cur, conn, tg_id, chat_id, lang)
         return
     if word == "mod":
         _cmd_mod(cur, conn, tg_id, chat_id, lang, args)
         return
     if word in ("language", "lang"):
-        _send_t(cur, chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
+        _send_t(cur, conn, chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
         conn.commit()
         return
     if word in ("undo", "delete"):
@@ -2972,7 +2979,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word == "log":
         if not args:
-            _send(chat_id, _t("log_usage", lang))
+            _send_t(cur, conn, chat_id, _t("log_usage", lang))
             return
         _log_move(cur, conn, tg_id, chat_id, None, args)
         conn.commit()
@@ -3000,7 +3007,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         "SELECT 1 FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",
         (tg_id, date.today()),
     )
-    _send(chat_id, _t("unknown_msg_done" if cur.fetchone() else "unknown_msg", lang),
+    _send_t(cur, conn, chat_id, _t("unknown_msg_done" if cur.fetchone() else "unknown_msg", lang),
           reply_markup=_main_kb(lang, tg_id, cur))
     conn.commit()
 
@@ -3021,7 +3028,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _answer(cq["id"])
         # New message rather than an edit: the old link stays visible above it,
         # which is what makes "the old one no longer works" legible.
-        _send(chat_id, _t("invite_rotated", lang, link=_invite_link(cur, tg_id)),
+        _send_t(cur, conn, chat_id, _t("invite_rotated", lang, link=_invite_link(cur, tg_id)),
               reply_markup=_invite_kb(lang))
         _log("🔄 Move: invite link rotated\n• " + str((_user(cur, tg_id) or {}).get(
             "participant_name") or tg_id))
@@ -3138,7 +3145,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # markup would take all of them with it.
         _redraw_markup(chat_id, msg_id, _logged_kb(cur, entry_id, lang, tg_id))
         _answer(cq["id"])
-        _send_t(cur, chat_id, _t("comment_undone", lang), reply_markup=_main_kb(lang, tg_id, cur))
+        _send_t(cur, conn, chat_id, _t("comment_undone", lang), reply_markup=_main_kb(lang, tg_id, cur))
         u = _user(cur, tg_id)
         return
 
@@ -3261,7 +3268,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             conn.commit()
             _api_call("editMessageReplyMarkup",
                       {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-            _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id, cur))
+            _send_t(cur, conn, chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id, cur))
             return
         # Registration flow — keep any pending inviter from the /start payload.
         state = _get_state(cur, tg_id) or ""
@@ -3299,7 +3306,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if u and u["participant_name"]:          # changing it later, not onboarding
             _clear_state(cur, tg_id)
             conn.commit()
-            _send(chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id, cur))
+            _send_t(cur, conn, chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id, cur))
             return
         _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
         conn.commit()
@@ -3324,20 +3331,20 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if sub in ("cancel", "decline"):
             # A decline stays between the button and the person who pressed it —
             # telling the asker they were turned down only invites a second ask.
-            _send(chat_id, _t("cancelled", lang))
+            _send_t(cur, conn, chat_id, _t("cancelled", lang))
             return
         action, _, name = sub.partition(":")
         if action == "accept":
             requester = _crew_target(cur, name)
             me = _user(cur, tg_id)
             if not requester or not me or requester["telegram_user_id"] == tg_id:
-                _send(chat_id, _t("crew_request_gone", lang))
+                _send_t(cur, conn, chat_id, _t("crew_request_gone", lang))
                 return
             if _connect(cur, conn, tg_id, requester["telegram_user_id"]) == "bad":
-                _send(chat_id, _t("crew_request_gone", lang))
+                _send_t(cur, conn, chat_id, _t("crew_request_gone", lang))
                 return
             rname = requester["participant_name"]
-            _send(chat_id, _t("crew_added_back", lang, name=rname))
+            _send_t(cur, conn, chat_id, _t("crew_added_back", lang, name=rname))
             _send(requester["chat_id"] or requester["telegram_user_id"],
                   _t("crew_request_accepted", _norm_lang(requester["language_code"]),
                      name=me["participant_name"]))
@@ -3349,14 +3356,14 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 (tg_id, name),
             )
             conn.commit()
-            _send(chat_id, _t("crew_added_back", lang, name=name))
+            _send_t(cur, conn, chat_id, _t("crew_added_back", lang, name=name))
             me = _user(cur, tg_id)
             return
         # Everything below acts on someone in your crew, addressed by id (or by
         # name, for buttons sent before the switch).
         target = _crew_target(cur, name)
         if not target or not target["participant_name"]:
-            _send(chat_id, _t("crew_request_gone", lang))
+            _send_t(cur, conn, chat_id, _t("crew_request_gone", lang))
             return
         tname = target["participant_name"]
 
@@ -3377,11 +3384,11 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if action == "removeok":
             me = _user(cur, tg_id)
             if not me:
-                _send(chat_id, _t("crew_request_gone", lang))
+                _send_t(cur, conn, chat_id, _t("crew_request_gone", lang))
                 return
             _disconnect(cur, conn, tg_id, target["telegram_user_id"],
                         me["participant_name"], tname)
-            _send(chat_id, _t("crew_removed", lang, name=tname))
+            _send_t(cur, conn, chat_id, _t("crew_removed", lang, name=tname))
             return
         # Hiding leaves the person in your crew, so the menu stays open and is
         # redrawn — its text carries the hidden-until date, which would otherwise
@@ -3415,7 +3422,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             return
         _answer(cq["id"])
         if not _radar_show(cur, conn, tg_id, chat_id, lang, touch_schedule=False):
-            _send(chat_id, _t("radar_pull_none", lang))
+            _send_t(cur, conn, chat_id, _t("radar_pull_none", lang))
             return
         u = _user(cur, tg_id)
         return
@@ -3438,7 +3445,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _api_call("editMessageReplyMarkup",
                   {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         _answer(cq["id"])
-        _send(chat_id, _t("radar_blocked", lang))
+        _send_t(cur, conn, chat_id, _t("radar_blocked", lang))
         u = _user(cur, tg_id)
         return
 
@@ -3475,7 +3482,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _api_call("editMessageReplyMarkup",
                   {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         _answer(cq["id"])
-        _send(chat_id, _t("radar_reported", lang))
+        _send_t(cur, conn, chat_id, _t("radar_reported", lang))
         me = _user(cur, tg_id)
         # Distinct reporters, not reports: the PK on move_reports already makes
         # one person's second tap a no-op, so a row is a person.
@@ -3550,7 +3557,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # A suspension the user can undo from a menu isn't a suspension.
         if on and (_is_suspended(cur, tg_id) or _banned(u)):
             _answer(cq["id"])
-            _send(chat_id, _t("radar_share_locked", lang))
+            _send_t(cur, conn, chat_id, _t("radar_share_locked", lang))
             return
         cur.execute("UPDATE move_users SET radar_send = %s WHERE telegram_user_id = %s", (on, tg_id))
         conn.commit()

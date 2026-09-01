@@ -2146,7 +2146,7 @@ def _cmd_info(cur, tg_id: int, chat_id: int, lang: str, name: str | None = None)
               miles="/".join(str(m) for m in _MILESTONES))
     # No language button: Settings owns language, and two doors to one setting
     # is worse than one.
-    _send(chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}")
+    _send_t(cur, chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}")
 
 
 def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
@@ -2485,7 +2485,7 @@ def _cmd_summary(cur, tg_id: int, chat_id: int, lang: str) -> None:
         if st["zaps"]:
             lines.append(_t("summary_zaps", lang, n=st["zaps"]))
         lines.append("")
-    _send(chat_id, "\n".join(lines).strip())
+    _send_t(cur, chat_id, "\n".join(lines).strip())
 
 
 _RADAR_FREQS = ("daily", "weekly", "monthly", "never")

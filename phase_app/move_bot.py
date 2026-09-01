@@ -770,11 +770,6 @@ _STRINGS: dict[str, dict[str, str]] = {
     "caption_placeholder": {
         "en": "your caption…", "uk": "твій коментар…", "de": "dein Kommentar…",
     },
-    "kb_placeholder_short": {
-        "en": "Your move of the day",
-        "uk": "Твій рух дня",
-        "de": "Deine Bewegung des Tages",
-    },
     "kb_placeholder": {
         "en": "Record your move of the day",
         "uk": "Запиши на відео свій рух дня",
@@ -1234,10 +1229,15 @@ def _main_kb(lang: str = "en", tg_id: int | None = None, cur=None) -> dict:
         # Total moves can't go stale that way.
         #
         # The instruction is for someone who hasn't done it yet; after a few
-        # moves it's a daily order to do what they already know, so it stands
-        # down to a label.
-        key = "kb_placeholder" if moves < _PLACEHOLDER_LESSONS else "kb_placeholder_short"
-        kb["input_field_placeholder"] = _t(key, lang)[:64]
+        # moves it's a daily order to do what they already know, so the field
+        # goes back to Telegram's own empty state.
+        #
+        # Nothing replaces it. A label about moves is still a label the client
+        # holds until some message happens to replace it, and every version of
+        # one we've tried eventually said something that wasn't true any more.
+        # An empty field can't.
+        if moves < _PLACEHOLDER_LESSONS:
+            kb["input_field_placeholder"] = _t("kb_placeholder", lang)[:64]
     return kb
 
 

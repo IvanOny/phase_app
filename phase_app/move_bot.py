@@ -1758,8 +1758,15 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
                   _copy(from_chat, msg_id, chat_id,
                         reply_markup=_zap_kb(entry_id, lang=rlang, note_to=author_id)),
                   "move")
-            # Tracked too, so /undo takes the "X moved today" line with it.
-            track(rid, chat_id, _send(chat_id, header), "header")
+            # Carries the recipient's keyboard. It's a message the bot sends
+            # anyway, with no markup of its own, so refreshing here costs
+            # nothing — and a reply keyboard is client-side state with no
+            # expiry, only ever replaced by a message that brings a new one.
+            # Without a free ride like this it can only refresh when someone
+            # taps something, which is how a stale label survived overnight.
+            track(rid, chat_id,
+                  _send(chat_id, header, reply_markup=_main_kb(rlang, rid, cur)),
+                  "header")
         else:
             track(rid, chat_id,
                   _send(chat_id, f"{header}\n{text_body or ''}".strip(),
@@ -3597,7 +3604,10 @@ def send_move_zap_reports(conn) -> None:
             text += "\n" + (_t("zap_report_all_radar", lang) if strangers == n
                             else _t("zap_report_split", lang,
                                     crew=n - strangers, radar=strangers))
-        _send(r["chat_id"] or r["telegram_user_id"], text)
+        # Same free ride: the morning report reaches everyone who moved
+        # yesterday and carries no markup of its own.
+        _send(r["chat_id"] or r["telegram_user_id"], text,
+              reply_markup=_main_kb(lang, r["telegram_user_id"], cur))
         notified += 1
     conn.commit()
     # Always log, so a missing report can be told apart from a job that never ran.

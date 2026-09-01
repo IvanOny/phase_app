@@ -715,25 +715,25 @@ def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool,
 
 def _cmd_list(cur, user_id: int, chat_id: int) -> None:
     cur.execute(
-        "SELECT name, schedule_type, repeat_interval_days, acq_interval_days, "
-        "       acq_sessions_done, acq_target_sessions, status "
-        "FROM exercise_items WHERE user_id = %s ORDER BY schedule_type, name",
+        "SELECT name, tier, status FROM exercise_items "
+        "WHERE user_id = %s ORDER BY tier, name",
         (user_id,),
     )
     rows = cur.fetchall()
     if not rows:
         _send(chat_id, "No exercises yet. Use /add.")
         return
+    # Grouped by tier: the tier is the only thing that varies between items now,
+    # so a flat list would repeat it on every line to say the same thing.
     lines = ["🗂 All exercises:"]
-    for r in rows:
-        if r["schedule_type"] == "fixed":
-            sched = f"fixed/{r['repeat_interval_days']}d"
-        elif r["schedule_type"] == "acquisition":
-            sched = f"acq {r['acq_sessions_done']}/{r['acq_target_sessions']}·{r['acq_interval_days']}d"
-        else:
-            sched = "queue"
-        flag = "" if r["status"] == "active" else f" [{r['status']}]"
-        lines.append(f"• {r['name']} — {sched}{flag}")
+    for tier, label in ((1, "most often"), (2, "regular"), (3, "occasional")):
+        group = [r for r in rows if r["tier"] == tier]
+        if not group:
+            continue
+        lines.append(f"\nTier {tier} — {label} ({len(group)})")
+        for r in group:
+            flag = "" if r["status"] == "active" else f" [{r['status']}]"
+            lines.append(f"• {r['name']}{flag}")
     _send(chat_id, "\n".join(lines))
 
 

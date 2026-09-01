@@ -91,16 +91,19 @@ export default function ScheduleCalendar({
     return m;
   }, [schedule]);
 
-  // Days between repeats — sorts the recurring group most-frequent first.
-  const freq = e => e.scheduleType === 'acquisition' ? (e.acqIntervalDays ?? 9999) : (e.repeatIntervalDays ?? 9999);
+  // Grouped by tier, most-frequent first. The rail used to split queue from
+  // recurring, but every item is a queue item now, so that put everything in
+  // one bucket. Tier is the distinction that's left, and it's the one that
+  // decides how often something comes up.
+  const TIER_LABELS = { 1: 'Tier 1 — most often', 2: 'Tier 2 — regular', 3: 'Tier 3 — occasional' };
   const groups = useMemo(() => {
     const active = exercises.filter(e => e.status === 'active');
-    const queue = active.filter(e => e.scheduleType === 'queue')
-      .sort((a, b) => a.name.localeCompare(b.name));
-    const recurring = active.filter(e => e.scheduleType !== 'queue')
-      .sort((a, b) => (freq(a) - freq(b)) || a.name.localeCompare(b.name));
-    return { queue, recurring };
+    const byTier = { 1: [], 2: [], 3: [] };
+    for (const e of active) (byTier[e.tier] ?? byTier[2]).push(e);
+    for (const t of [1, 2, 3]) byTier[t].sort((a, b) => a.name.localeCompare(b.name));
+    return byTier;
   }, [exercises]);
+  const total = groups[1].length + groups[2].length + groups[3].length;
 
   const [collapsed, setCollapsed] = useState(() => {
     try { return JSON.parse(localStorage.getItem('exq-rail-collapsed') || '{}'); }
@@ -115,24 +118,22 @@ export default function ScheduleCalendar({
   }
 
   function renderPill(ex) {
-    const tag = ex.scheduleType === 'queue' ? 'queue' : `${freq(ex)}d`;
+    const tier = ex.tier ?? 2;
     return (
       <div
         key={ex.id}
-        className={`exq-pill exq-pill--${ex.scheduleType}`}
+        className={`exq-pill exq-pill--tier${tier}`}
         onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.name }, e)}
         title={ex.description || ex.name}
       >
         <span className="exq-pill-name">{ex.name}</span>
-        <span className="exq-pill-tag">{tag}</span>
-        {ex.scheduleType !== 'queue' && (
-          <button
-            className="exq-pill-edit"
-            title="Suggest a slot"
-            onPointerDown={e => e.stopPropagation()}
-            onClick={() => setSuggestFor(ex)}
-          >💡</button>
-        )}
+        <span className="exq-pill-tag">T{tier}</span>
+        <button
+          className="exq-pill-edit"
+          title="Suggest a slot"
+          onPointerDown={e => e.stopPropagation()}
+          onClick={() => setSuggestFor(ex)}
+        >💡</button>
         <button
           className="exq-pill-edit"
           title="Edit exercise"
@@ -167,12 +168,11 @@ export default function ScheduleCalendar({
       <aside className="exq-rail">
         <div className="exq-rail-title">Exercises</div>
         <div className="exq-rail-hint">Drag onto a day →</div>
-        {groups.queue.length === 0 && groups.recurring.length === 0 ? (
+        {total === 0 ? (
           <div className="exq-rail-empty">No exercises yet — add via the bot (/add).</div>
         ) : (
           <>
-            {renderGroup('queue', 'Queue', groups.queue)}
-            {renderGroup('recurring', 'Recurring', groups.recurring)}
+            {[1, 2, 3].map(t => renderGroup(`tier${t}`, TIER_LABELS[t], groups[t]))}
           </>
         )}
       </aside>

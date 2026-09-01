@@ -166,9 +166,12 @@
 .exq-day-row-actions .exq-btn { padding: 6px 12px; }
 .exq-btn--danger { border-color: var(--ready-red, #dc3c3c); color: var(--ready-red, #dc3c3c); }
 .exq-btn--danger:hover { background: var(--red-tint-10, rgba(220,60,60,.1)); border-color: var(--ready-red, #dc3c3c); }
-.exq-pill--queue { border-left: 3px solid var(--accent); }
-.exq-pill--acquisition { border-left: 3px solid #f59e0b; }
-.exq-pill--fixed { border-left: 3px solid #10b981; }
+/* Tier reads as weight: the more often something comes up, the heavier its
+   edge. Same hue throughout so the rail stays one family — this is a scale,
+   not three unrelated categories. */
+.exq-pill--tier1 { border-left: 4px solid var(--accent); }
+.exq-pill--tier2 { border-left: 3px solid var(--accent); opacity: .92; }
+.exq-pill--tier3 { border-left: 2px solid var(--accent); opacity: .82; }
 
 /* Toolbar */
 .exq-cal-main { min-width: 0; }

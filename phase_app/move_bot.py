@@ -2162,12 +2162,17 @@ def _cmd_move(cur, tg_id: int, chat_id: int, lang: str) -> None:
     # carries a new one, so a renamed button stays stale otherwise. /info can't
     # do it (it uses an inline keyboard), and the old label still routes here via
     # _LEGACY_BUTTONS — so tapping the stale button upgrades it.
-    _send(chat_id, _invite_line(cur, tg_id, lang, me["participant_name"] if me else None),
-          reply_markup=_main_kb(lang, tg_id, cur))
+    #
+    # Both messages are scaffolding, so both are recorded for the morning
+    # sweep. Deleting the first one doesn't take the keyboard with it — a reply
+    # keyboard lives in the client, not in the message that delivered it.
+    _send_t(cur, chat_id,
+            _invite_line(cur, tg_id, lang, me["participant_name"] if me else None),
+            reply_markup=_main_kb(lang, tg_id, cur))
     # The crew goes in its own message: one message can hold either the main
     # keyboard or an inline one, and the buttons need the inline slot.
     text, kb = _crew_pick_view(cur, tg_id, lang)
-    _send(chat_id, text, reply_markup=kb)
+    _send_t(cur, chat_id, text, reply_markup=kb)
 
 
 # Telegram takes far more, but a wall of buttons stops being a shortcut. Beyond
@@ -2353,7 +2358,7 @@ def _invite_kb(lang: str) -> dict:
 def _cmd_invite(cur, tg_id: int, chat_id: int, lang: str) -> None:
     me = _user(cur, tg_id)
     link = _invite_link(cur, tg_id, me["participant_name"] if me else None)
-    _send(chat_id, _t("invite_text", lang, link=link), reply_markup=_invite_kb(lang))
+    _send_t(cur, chat_id, _t("invite_text", lang, link=link), reply_markup=_invite_kb(lang))
 
 
 def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: int) -> None:
@@ -2951,6 +2956,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         return
     if word == "invite":
         _cmd_invite(cur, tg_id, chat_id, lang)
+        conn.commit()                      # the transient record of that menu
         return
     if word == "mod":
         _cmd_mod(cur, conn, tg_id, chat_id, lang, args)

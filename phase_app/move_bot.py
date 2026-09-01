@@ -1165,9 +1165,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "Das ist dein eigener Link 🙂 Teile ihn mit jemand anderem.",
     },
     "summary_hint": {
-        "en": "📅 /summary — all your months, any time.",
-        "uk": "📅 /summary — усі твої місяці, будь-коли.",
-        "de": "📅 /summary — alle deine Monate, jederzeit.",
+        "en": "📅 /summary — an overview of your earlier months.",
+        "uk": "📅 /summary — огляд попередніх місяців.",
+        "de": "📅 /summary — ein Überblick über deine früheren Monate.",
     },
     "summary_all_header": {"en": "📊 Your months", "uk": "📊 Твої місяці", "de": "📊 Deine Monate"},
     "summary_none": {"en": "No moves recorded yet.", "uk": "Ще немає записаних рухів.", "de": "Noch keine Bewegungen erfasst."},
@@ -3833,9 +3833,14 @@ def send_move_monthly_summaries(conn) -> None:
         ]
         if zaps:
             lines.append(_t("summary_zaps", lang, n=zaps))
-        # The only place /summary is named. It's not on the keyboard and not in
-        # the /move menu, and a monthly recap is exactly where "there's more of
-        # this" belongs.
-        lines += ["", _t("summary_hint", lang)]
+        # The only place /summary is named — it's on no keyboard and in no menu,
+        # and a monthly recap is where "there's more of this" belongs. Only for
+        # someone with a second month to look at, though: for anyone else
+        # /summary returns the very message they're reading.
+        cur.execute(
+            "SELECT COUNT(DISTINCT date_trunc('month', entry_date)) AS months "
+            "FROM move_entries WHERE telegram_user_id = %s", (tg_id,))
+        if ((cur.fetchone() or {}).get("months") or 0) > 1:
+            lines += ["", _t("summary_hint", lang)]
         _send(u["chat_id"] or tg_id, "\n".join(lines))
     conn.commit()

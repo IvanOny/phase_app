@@ -775,11 +775,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "Твій рух дня",
         "de": "Deine Bewegung des Tages",
     },
-    "kb_placeholder_done": {
-        "en": "Today's move is in ✓",
-        "uk": "Сьогодні рух записано ✓",
-        "de": "Heutige Bewegung ist erfasst ✓",
-    },
     "kb_placeholder": {
         "en": "Record your move of the day",
         "uk": "Запиши на відео свій рух дня",
@@ -1220,20 +1215,20 @@ def _main_kb(lang: str = "en", tg_id: int | None = None, cur=None) -> dict:
         # would keep asking for something already done. The confirmation itself
         # can't correct it — that message is carrying three inline buttons and
         # Telegram allows one markup — so every other send does.
-        done, moves = False, _PLACEHOLDER_LESSONS
+        moves = _PLACEHOLDER_LESSONS
         if cur is not None:
-            cur.execute(
-                "SELECT COUNT(*) AS n, "
-                "       COUNT(*) FILTER (WHERE entry_date = %s) AS today "
-                "FROM move_entries WHERE telegram_user_id = %s",
-                (date.today(), tg_id))
-            row = cur.fetchone() or {}
-            done, moves = bool(row.get("today")), row.get("n") or 0
-        # The instruction is for someone who hasn't done it yet. After a few
-        # moves it's a daily order to do something they already know how to do,
-        # so it stands down to a label.
-        key = ("kb_placeholder_done" if done else
-               "kb_placeholder" if moves < _PLACEHOLDER_LESSONS else "kb_placeholder_short")
+            cur.execute("SELECT COUNT(*) AS n FROM move_entries WHERE telegram_user_id = %s",
+                        (tg_id,))
+            moves = (cur.fetchone() or {}).get("n") or 0
+        # Nothing here may depend on today. The keyboard lives in the client
+        # until some message replaces it, so "Сьогодні рух записано ✓" survived
+        # midnight and told someone their move was in when it was yesterday's.
+        # Total moves can't go stale that way.
+        #
+        # The instruction is for someone who hasn't done it yet; after a few
+        # moves it's a daily order to do what they already know, so it stands
+        # down to a label.
+        key = "kb_placeholder" if moves < _PLACEHOLDER_LESSONS else "kb_placeholder_short"
         kb["input_field_placeholder"] = _t(key, lang)[:64]
     return kb
 

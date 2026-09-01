@@ -34,6 +34,7 @@ export default function ScheduleCalendar({
   const [dragging, setDragging] = useState(false);
   const [ghost, setGhost] = useState(null);        // { name, x, y }
   const [hoverDate, setHoverDate] = useState(null);
+  const [hoverTier, setHoverTier] = useState(null);
 
   useEffect(() => {
     if (!dragging) return;
@@ -52,12 +53,27 @@ export default function ScheduleCalendar({
       const hd = day ? day.getAttribute('data-date') : null;
       st.hoverDate = hd;
       setHoverDate(hd);
+      // A rail group is the other thing you can drop on: dragging a pill from
+      // one tier to another is how you change how often it comes up. Only a
+      // pill dragged out of the rail qualifies — an occurrence belongs to a day.
+      const grp = !hd && el && el.closest('[data-tier]');
+      const ht = grp && st.payload?.kind === 'exercise'
+        ? Number(grp.getAttribute('data-tier')) : null;
+      st.hoverTier = ht;
+      setHoverTier(ht);
       setGhost(g => (g ? { ...g, x, y } : g));
     }
     function up() {
-      const { payload, hoverDate: hd, moved } = dragState.current;
+      const { payload, hoverDate: hd, hoverTier: ht, moved } = dragState.current;
       if (moved) {
         if (payload && hd) onDropOnDay(payload, hd);
+        else if (payload?.exerciseId && ht && ht !== payload.tier) {
+          // onUpdateExercise rethrows so the editor can show the message; there
+          // is no editor here, and an uncaught rejection would just be a console
+          // error. The reload on success is what moves the pill, so a failure
+          // leaves it in its old group — which is the feedback.
+          Promise.resolve(onUpdateExercise(payload.exerciseId, { tier: ht })).catch(() => {});
+        }
       } else if (payload?.date) {
         // A tap on a chip — open that day's sheet, where actions are deliberate.
         setDetailDate(payload.date);
@@ -73,13 +89,14 @@ export default function ScheduleCalendar({
       window.removeEventListener('pointercancel', up);
       setGhost(null);
       setHoverDate(null);
-      dragState.current = { payload: null, hoverDate: null, startX: 0, startY: 0, moved: false };
+      setHoverTier(null);
+      dragState.current = { payload: null, hoverDate: null, hoverTier: null, startX: 0, startY: 0, moved: false };
     };
-  }, [dragging, onDropOnDay]);
+  }, [dragging, onDropOnDay, onUpdateExercise]);
 
   function startDrag(payload, e) {
     e.preventDefault();
-    dragState.current = { payload, hoverDate: null, startX: e.clientX, startY: e.clientY, moved: false };
+    dragState.current = { payload, hoverDate: null, hoverTier: null, startX: e.clientX, startY: e.clientY, moved: false };
     setDragging(true);
   }
 
@@ -123,7 +140,7 @@ export default function ScheduleCalendar({
       <div
         key={ex.id}
         className={`exq-pill exq-pill--tier${tier}`}
-        onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.name }, e)}
+        onPointerDown={e => startDrag({ kind: 'exercise', exerciseId: ex.id, name: ex.name, tier }, e)}
         title={ex.description || ex.name}
       >
         <span className="exq-pill-name">{ex.name}</span>
@@ -144,17 +161,23 @@ export default function ScheduleCalendar({
     );
   }
 
-  function renderGroup(key, title, items) {
-    if (items.length === 0) return null;
+  function renderGroup(key, title, items, tier) {
+    // Rendered even when empty: an empty tier still has to be droppable.
+    const empty = items.length === 0;
     const isCol = !!collapsed[key];
     return (
-      <div className="exq-rail-group" key={key}>
+      <div
+        className={`exq-rail-group${hoverTier === tier ? ' exq-rail-group--over' : ''}`}
+        data-tier={tier}
+        key={key}
+      >
         <button className="exq-rail-group-hd" onClick={() => toggleGroup(key)}>
           <span className="exq-caret">{isCol ? '▸' : '▾'}</span>
           <span>{title}</span>
           <span className="exq-rail-group-count">{items.length}</span>
         </button>
         {!isCol && items.map(renderPill)}
+        {!isCol && empty && <div className="exq-rail-group-empty">drop here</div>}
       </div>
     );
   }
@@ -172,7 +195,7 @@ export default function ScheduleCalendar({
           <div className="exq-rail-empty">No exercises yet — add via the bot (/add).</div>
         ) : (
           <>
-            {[1, 2, 3].map(t => renderGroup(`tier${t}`, TIER_LABELS[t], groups[t]))}
+            {[1, 2, 3].map(t => renderGroup(`tier${t}`, TIER_LABELS[t], groups[t], t))}
           </>
         )}
       </aside>

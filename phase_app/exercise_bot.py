@@ -35,7 +35,7 @@ _SCHEDULES = ("queue", "fixed", "acquisition")
 
 # Command words this feature owns (first token, leading slash stripped).
 _EX_COMMANDS = {
-    "add", "next", "done", "skip", "overview", "list", "edit",
+    "add", "next", "done", "skip", "overview", "list", "edit", "tier",
     "pause", "park", "activate", "remove", "stats", "history", "undo", "exhelp",
     "exapp",
 }
@@ -129,7 +129,20 @@ def _next_due_date(ex, tz, as_of=None):
     return first_due(interval_of(ex), last_date, anchor, ref)
 
 
-# ── Serve query (Tier 3) ─────────────────────────────────────────────────────
+# ── Serve query ──────────────────────────────────────────────────────────────
+
+# How much more often a tier should come up. Serving is weighted-fair rather
+# than random: an item accumulates "pressure" as it sits undone, at a rate set
+# by its tier, and the most pressured item is served next.
+#
+# Why not weighted random: random repeats itself and can starve an item for
+# weeks. This keeps the strict rotation the queue always had -- nothing is ever
+# skipped over forever -- while making the rotation uneven on purpose.
+#
+# The ratio falls out of the arithmetic. If tier 1 builds pressure 3x as fast,
+# it reaches the front 3x as often, so the weights *are* the frequency ratio.
+_TIER_WEIGHT = {1: 3, 2: 2, 3: 1}
+
 
 def _serve_next(cur, user_id: int, filters: dict):
     cur.execute(
@@ -139,7 +152,13 @@ def _serve_next(cur, user_id: int, filters: dict):
         "  AND (%s IS NULL OR focus_area ILIKE '%%' || %s || '%%') "
         "  AND (%s IS NULL OR location = %s OR location = 'random') "
         "  AND (%s IS NULL OR load_tag = %s) "
-        "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC "
+        # Never-done items are backdated a year so they still come up first,
+        # which is what NULLS FIRST used to do -- you added it because you
+        # wanted to do it, not to have it wait its turn.
+        "ORDER BY EXTRACT(EPOCH FROM (NOW() - COALESCE(last_done_at, "
+        "                                              created_at - INTERVAL '365 days'))) "
+        "         * CASE tier WHEN 1 THEN 3 WHEN 2 THEN 2 ELSE 1 END DESC, "
+        "         created_at ASC "
         "LIMIT 1",
         (
             user_id,
@@ -343,6 +362,8 @@ def maybe_handle_exercise(cur, conn, tg_id: int, chat_id: int, text: str) -> boo
         _cmd_list(cur, user_id, chat_id)
     elif word == "edit":
         _cmd_edit(cur, conn, user_id, chat_id, " ".join(args))
+    elif word == "tier":
+        _cmd_tier(cur, conn, user_id, chat_id, args)
     elif word in ("pause", "park", "activate"):
         _cmd_status(cur, conn, user_id, chat_id, word, " ".join(args))
     elif word == "remove":
@@ -446,6 +467,7 @@ def _cmd_help(chat_id: int) -> None:
         "overview — today's plan with ✓/⏭ buttons (same as the 19:00 report)\n"
         "list — all exercises\n"
         "edit <name> — change a field\n"
+        "tier <name> [1|2|3] — how often it comes up (1 = most often)\n"
         "pause/park/activate <name> — status\n"
         "remove <name> — delete\n"
         "stats <name> / history — logs\n"
@@ -836,6 +858,16 @@ def _cmd_add_start(cur, conn, user_id: int, chat_id: int) -> None:
     _send(chat_id, "New exercise — what's its name?")
 
 
+def _ask_tier(cur, conn, user_id: int, chat_id: int, data: dict) -> None:
+    """Last step of the add flow. Three questions total: name, description, tier."""
+    _set_state(cur, conn, user_id, "ex_add:tier", data)
+    _send(chat_id, "How often should it come up?", reply_markup={"inline_keyboard": [
+        [{"text": "Tier 1 — most often", "callback_data": "ex:add:tier:1"}],
+        [{"text": "Tier 2 — regular", "callback_data": "ex:add:tier:2"}],
+        [{"text": "Tier 3 — occasional", "callback_data": "ex:add:tier:3"}],
+    ]})
+
+
 def _handle_state_input(cur, conn, user_id: int, chat_id: int, state: str, data: dict, text: str) -> bool:
     if text.lower() in ("cancel", "/cancel"):
         _clear_state(cur, conn, user_id)
@@ -854,8 +886,7 @@ def _handle_state_input(cur, conn, user_id: int, chat_id: int, state: str, data:
 
     if state == "ex_add:description":
         data["description"] = text
-        _set_state(cur, conn, user_id, "ex_add:schedule", data)
-        _send(chat_id, "How is it scheduled?", reply_markup=_kb_schedule())
+        _ask_tier(cur, conn, user_id, chat_id, data)
         return True
 
     if state == "ex_add:interval":
@@ -970,8 +1001,7 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         if state == "ex_add:description":
             data["description"] = None
-            _set_state(cur, conn, user_id, "ex_add:schedule", data)
-            _send(chat_id, "How is it scheduled?", reply_markup=_kb_schedule())
+            _ask_tier(cur, conn, user_id, chat_id, data)
         elif state == "ex_add:focus":
             data["focus_area"] = None
             _set_state(cur, conn, user_id, "ex_add:location", data)
@@ -980,6 +1010,12 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
             data["equipment"] = None
             _set_state(cur, conn, user_id, "ex_add:load", data)
             _send(chat_id, "Load tag?", reply_markup=_kb_load())
+        return
+
+    if sub.startswith("tier:"):
+        data["tier"] = int(sub[len("tier:"):])
+        _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        _save_new_exercise(cur, conn, user_id, chat_id, data)
         return
 
     if sub.startswith("sched:"):
@@ -1028,24 +1064,17 @@ def _handle_add_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub
 
 
 def _save_new_exercise(cur, conn, user_id: int, chat_id: int, d: dict) -> None:
-    # Guard against a corrupted flow reaching Save without required fields
-    # (name is NOT NULL; schedule_type has a CHECK constraint).
-    if not d.get("name") or d.get("schedule_type") not in _SCHEDULES:
+    # Guard against a corrupted flow reaching Save without a name. There is no
+    # schedule to validate any more -- everything is a queue item.
+    if not d.get("name"):
         _clear_state(cur, conn, user_id)
         _send(chat_id, "Something went wrong with that entry — please /add it again.")
         return
     cur.execute(
-        "INSERT INTO exercise_items (user_id, name, description, schedule_type, repeat_interval_days, "
-        "  focus_area, location, equipment, load_tag, "
-        "  acq_target_sessions, acq_interval_days) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "INSERT INTO exercise_items (user_id, name, description, tier, schedule_type, location) "
+        "VALUES (%s, %s, %s, %s, 'queue', %s) "
         "ON CONFLICT (user_id, name) DO NOTHING RETURNING id",
-        (
-            user_id, d.get("name"), d.get("description"), d.get("schedule_type"),
-            d.get("repeat_interval_days"),
-            d.get("focus_area"), d.get("location", _LOCATION_ANY), d.get("equipment"),
-            d.get("load_tag"), d.get("acq_target_sessions"), d.get("acq_interval_days"),
-        ),
+        (user_id, d.get("name"), d.get("description"), int(d.get("tier") or 2), _LOCATION_ANY),
     )
     saved = cur.fetchone()
     _clear_state(cur, conn, user_id)
@@ -1053,9 +1082,8 @@ def _save_new_exercise(cur, conn, user_id: int, chat_id: int, d: dict) -> None:
         _send(chat_id, f'"{d.get("name")}" already exists.')
         return
     conn.commit()
-    tier = "Tier 3 (queue)" if d.get("schedule_type") == "queue" else "Tier 2 (fixed)"
-    _send(chat_id, f"✅ Saved {d.get('name')} — {tier}.")
-    _log(f"🏋️ Exercise added\n• {d.get('name')} ({d.get('schedule_type')})")
+    _send(chat_id, f"✅ Saved {d.get('name')} — tier {int(d.get('tier') or 2)}.")
+    _log(f"🏋️ Exercise added\n• {d.get('name')} (tier {int(d.get('tier') or 2)})")
 
 
 # ── Edit flow ────────────────────────────────────────────────────────────────
@@ -1072,16 +1100,46 @@ def _cmd_edit(cur, conn, user_id: int, chat_id: int, name: str) -> None:
         _send(chat_id, f'No exercise named "{name}".')
         return
     exid = ex["id"]
+    # Three fields, matching the web form. The old descriptive fields still hold
+    # data on existing items, but nothing offers them for editing any more.
     rows = [
         [{"text": "Name", "callback_data": f"ex:edit:field:name:{exid}"},
          {"text": "Description", "callback_data": f"ex:edit:field:description:{exid}"}],
-        [{"text": "Focus", "callback_data": f"ex:edit:field:focus_area:{exid}"},
-         {"text": "Equipment", "callback_data": f"ex:edit:field:equipment:{exid}"}],
-        [{"text": "Location", "callback_data": f"ex:edit:pick:location:{exid}"},
-         {"text": "Load", "callback_data": f"ex:edit:pick:load_tag:{exid}"}],
+        [{"text": f"Tier (now {ex['tier']})", "callback_data": f"ex:edit:pick:tier:{exid}"}],
         [{"text": "Cancel", "callback_data": "ex:edit:cancel"}],
     ]
     _send(chat_id, f"Editing {ex['name']} — which field?", reply_markup={"inline_keyboard": rows})
+
+
+def _cmd_tier(cur, conn, user_id: int, chat_id: int, args: list[str]) -> None:
+    """`tier <name> <1|2|3>` — set it outright; `tier <name>` — pick from buttons.
+
+    The tier is the one thing likely to be adjusted from the phone, mid-day,
+    while noticing something comes up too rarely. Walking the edit menu for that
+    is three taps too many.
+    """
+    if not args:
+        _send(chat_id, "Usage: tier <name> [1|2|3]")
+        return
+    level = None
+    if args[-1] in ("1", "2", "3"):
+        level, args = args[-1], args[:-1]
+    name = " ".join(args).strip()
+    ex = _get_ex_by_name(cur, user_id, name) if name else None
+    if not ex:
+        _send(chat_id, f'No exercise named "{name}".' if name else "Usage: tier <name> [1|2|3]")
+        return
+    if level is None:
+        _send(chat_id, f"{ex['name']} is tier {ex['tier']}. Set it to:",
+              reply_markup={"inline_keyboard": [
+                  [{"text": lbl, "callback_data": f"ex:edit:setval:tier:{ex['id']}:{n}"}]
+                  for n, lbl in (("1", "1 — most often"), ("2", "2 — regular"),
+                                 ("3", "3 — occasional"))]})
+        return
+    cur.execute("UPDATE exercise_items SET tier = %s WHERE id = %s AND user_id = %s",
+                (int(level), ex["id"], user_id))
+    conn.commit()
+    _send(chat_id, f"✓ {ex['name']} is now tier {level}.")
 
 
 def _handle_edit_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, sub: str) -> None:
@@ -1101,8 +1159,14 @@ def _handle_edit_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, su
     if sub.startswith("pick:"):
         _, field, ex_id = sub.split(":", 2)
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        opts = _LOCATIONS if field == "location" else _LOAD_TAGS
-        rows = [[{"text": o, "callback_data": f"ex:edit:setval:{field}:{ex_id}:{o}"}] for o in opts]
+        if field == "tier":
+            opts = ["1", "2", "3"]
+            labels = {"1": "1 — most often", "2": "2 — regular", "3": "3 — occasional"}
+        else:
+            opts = _LOCATIONS if field == "location" else _LOAD_TAGS
+            labels = {}
+        rows = [[{"text": labels.get(o, o),
+                  "callback_data": f"ex:edit:setval:{field}:{ex_id}:{o}"}] for o in opts]
         _send(chat_id, f"Pick {field}:", reply_markup={"inline_keyboard": rows})
         return
 

@@ -95,8 +95,8 @@ class ExerciseQueueApi:
         cur.execute(
             "SELECT id, name, description, schedule_type, repeat_interval_days, "
             "       acq_interval_days, acq_target_sessions, acq_sessions_done, "
-            "       focus_area, location, equipment, load_tag, status, last_done_at "
-            "FROM exercise_items WHERE user_id = %s ORDER BY schedule_type, name",
+            "       focus_area, location, equipment, load_tag, status, last_done_at, tier "
+            "FROM exercise_items WHERE user_id = %s ORDER BY tier, name",
             (uid,),
         )
         return ApiResponse(200, {"items": [self._exercise_row(r) for r in cur.fetchall()]})
@@ -117,6 +117,7 @@ class ExerciseQueueApi:
             "equipment": r["equipment"],
             "loadTag": r["load_tag"],
             "status": r["status"],
+            "tier": r["tier"] if "tier" in r else 2,
             "lastDoneAt": r["last_done_at"].isoformat() if r["last_done_at"] else None,
         }
 
@@ -129,11 +130,12 @@ class ExerciseQueueApi:
             "repeatIntervalDays": "repeat_interval_days", "acqIntervalDays": "acq_interval_days",
             "acqTargetSessions": "acq_target_sessions", "focusArea": "focus_area",
             "location": "location", "equipment": "equipment", "loadTag": "load_tag", "status": "status",
+            "tier": "tier",
         }
         raw = {col: body[key] for key, col in allowed.items() if key in (body or {})}
         if not raw:
             return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields"})
-        int_cols = {"repeat_interval_days", "acq_interval_days", "acq_target_sessions"}
+        int_cols = {"repeat_interval_days", "acq_interval_days", "acq_target_sessions", "tier"}
         enums = {"schedule_type": {"queue", "fixed", "acquisition"},
                  "status": {"active", "paused", "parked"}}
         updates: dict[str, Any] = {}
@@ -146,6 +148,9 @@ class ExerciseQueueApi:
                 updates[col] = val
             else:
                 updates[col] = val if val != "" else None
+        if updates.get("tier") not in (None, 1, 2, 3):
+            return ApiResponse(400, {"error": "validation_error",
+                                     "detail": "tier must be 1, 2 or 3"})
         # Keep cadence columns consistent with the chosen schedule type.
         st = updates.get("schedule_type")
         if st == "queue":

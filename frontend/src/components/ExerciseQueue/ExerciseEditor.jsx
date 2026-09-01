@@ -1,26 +1,20 @@
 import { useState } from 'react';
 
-const SCHEDULES = [
-  { v: 'queue', label: 'Queue (opportunistic)' },
-  { v: 'fixed', label: 'Fixed (every N days)' },
-  { v: 'acquisition', label: 'Acquisition (learn a move)' },
+// One queue, three tiers. Tier drives how often an item surfaces: an item
+// builds "pressure" while it sits undone, at a rate set by its tier, and the
+// most pressured one is served next — so these weights are the frequency ratio.
+const TIERS = [
+  { v: 1, label: 'Tier 1 — most often' },
+  { v: 2, label: 'Tier 2 — regular' },
+  { v: 3, label: 'Tier 3 — occasional' },
 ];
-const LOCATIONS = ['home', 'barrack', 'random'];
-const LOADS = ['', 'easy', 'upper', 'lower', 'systemic'];
 const STATUSES = ['active', 'paused', 'parked'];
 
 export default function ExerciseEditor({ exercise, onSave, onDelete, onClose }) {
   const [f, setF] = useState({
     name: exercise.name ?? '',
     description: exercise.description ?? '',
-    scheduleType: exercise.scheduleType ?? 'queue',
-    repeatIntervalDays: exercise.repeatIntervalDays ?? '',
-    acqIntervalDays: exercise.acqIntervalDays ?? '',
-    acqTargetSessions: exercise.acqTargetSessions ?? '',
-    focusArea: exercise.focusArea ?? '',
-    location: exercise.location ?? 'random',
-    equipment: exercise.equipment ?? '',
-    loadTag: exercise.loadTag ?? '',
+    tier: exercise.tier ?? 2,
     status: exercise.status ?? 'active',
   });
   const [saving, setSaving] = useState(false);
@@ -32,16 +26,11 @@ export default function ExerciseEditor({ exercise, onSave, onDelete, onClose }) 
     if (!f.name.trim()) { setErr('Name is required.'); return; }
     setSaving(true); setErr(null);
     const patch = {
-      name: f.name.trim(), description: f.description,
-      scheduleType: f.scheduleType, focusArea: f.focusArea, location: f.location,
-      equipment: f.equipment, loadTag: f.loadTag, status: f.status,
+      name: f.name.trim(),
+      description: f.description,
+      tier: Number(f.tier),
+      status: f.status,
     };
-    if (f.scheduleType === 'fixed') {
-      patch.repeatIntervalDays = f.repeatIntervalDays === '' ? null : Number(f.repeatIntervalDays);
-    } else if (f.scheduleType === 'acquisition') {
-      patch.acqIntervalDays = f.acqIntervalDays === '' ? null : Number(f.acqIntervalDays);
-      patch.acqTargetSessions = f.acqTargetSessions === '' ? null : Number(f.acqTargetSessions);
-    }
     try { await onSave(exercise.id, patch); onClose(); }
     catch (e) { setErr(e.message); setSaving(false); }
   }
@@ -61,46 +50,13 @@ export default function ExerciseEditor({ exercise, onSave, onDelete, onClose }) 
           <input value={f.description} onChange={e => set('description', e.target.value)} placeholder="fuller detail, shown on hover" />
         </label>
 
-        <label className="exq-field"><span>Schedule</span>
-          <select value={f.scheduleType} onChange={e => set('scheduleType', e.target.value)}>
-            {SCHEDULES.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+        <label className="exq-field"><span>Tier</span>
+          <select value={f.tier} onChange={e => set('tier', e.target.value)}>
+            {TIERS.map(t => <option key={t.v} value={t.v}>{t.label}</option>)}
           </select>
         </label>
-        {f.scheduleType === 'fixed' && (
-          <label className="exq-field"><span>Every N days</span>
-            <input type="number" min="1" value={f.repeatIntervalDays} onChange={e => set('repeatIntervalDays', e.target.value)} />
-          </label>
-        )}
-        {f.scheduleType === 'acquisition' && (
-          <>
-            <label className="exq-field"><span>Every N days</span>
-              <input type="number" min="1" value={f.acqIntervalDays} onChange={e => set('acqIntervalDays', e.target.value)} />
-            </label>
-            <label className="exq-field"><span>Target sessions</span>
-              <input type="number" min="1" value={f.acqTargetSessions} onChange={e => set('acqTargetSessions', e.target.value)} />
-            </label>
-            <div className="exq-field-note">Progress: {exercise.acqSessionsDone ?? 0}/{exercise.acqTargetSessions ?? '—'}</div>
-          </>
-        )}
+        <div className="exq-field-note">Tier 1 comes up about three times as often as tier 3.</div>
 
-        <label className="exq-field"><span>Focus</span>
-          <input value={f.focusArea} onChange={e => set('focusArea', e.target.value)} placeholder="e.g. knee shoulder" />
-        </label>
-        <div className="exq-field-row">
-          <label className="exq-field"><span>Location</span>
-            <select value={f.location} onChange={e => set('location', e.target.value)}>
-              {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
-          </label>
-          <label className="exq-field"><span>Load</span>
-            <select value={f.loadTag} onChange={e => set('loadTag', e.target.value)}>
-              {LOADS.map(l => <option key={l} value={l}>{l || '—'}</option>)}
-            </select>
-          </label>
-        </div>
-        <label className="exq-field"><span>Equipment</span>
-          <input value={f.equipment} onChange={e => set('equipment', e.target.value)} placeholder="e.g. band" />
-        </label>
         <label className="exq-field"><span>Status</span>
           <select value={f.status} onChange={e => set('status', e.target.value)}>
             {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}

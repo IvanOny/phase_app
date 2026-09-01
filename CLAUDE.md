@@ -29,6 +29,9 @@ api/index.py          — Vercel serverless entry point (Flask app, DB connectio
 phase_app/api.py      — Route dispatcher and handler methods (PhaseApi class)
 phase_app/metrics.py  — Read-only metric queries (e1RM, volume, phase summary)
 phase_app/db_pg.py    — get_connection() for Supabase
+phase_app/move_bot.py — Move: the whole Telegram bot (webhook, state machine, radar, crew)
+phase_app/bot.py      — Burpee bot
+phase_app/exercise_bot.py — Exercise bot
 frontend/src/
   App.jsx             — Top-level state, data fetching, page routing
   api/client.js       — All fetch calls to the backend
@@ -58,9 +61,8 @@ frontend/src/
 
 ## Worktrees
 
-Claude sessions work inside `.claude/worktrees/<name>/`. The active session for the current batch of chart + session fixes is `eager-booth-1e4578` on branch `fix/batch-session-metrics`. A second session runs in `happy-wilson-30212b`.
-
-To reference this session from another: point it at branch `fix/batch-session-metrics`, PR #38, or the worktree path above.
+Claude sessions work inside `.claude/worktrees/<name>/`. To hand work between two
+sessions, reference the branch — not the worktree path, which is per-session.
 
 ## Database schema (key tables)
 
@@ -70,6 +72,19 @@ sessions        — session_id, phase_id, session_date, session_type, elite_hrv_
 session_exercises — links sessions → exercises
 exercises       — exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight
 exercise_sets   — set_number, load_kg, reps, is_working_set, is_top_set
+```
+
+Move's own tables (all `move_*`):
+
+```
+move_users      — telegram_user_id, participant_name, lang, invite_code
+move_entries    — one row per move: media, entry_date, radar_ok
+move_forwards   — which copy of a move went to whom (message ids, for edits)
+move_crew       — mutual, both sides confirm      move_receive   — radar opt-in
+move_reactions  — ⚡                              move_reports   — → warnings → suspensions
+move_radar_block / move_radar_history            — never show / cooldown
+move_state      — per-user step, 10-minute timeout
+move_log_summary / move_transient                — the daily log line, the morning sweep
 ```
 
 ## Adding a new phase type
@@ -128,22 +143,30 @@ Backend dev server: `http://localhost:5001`
 
 `MOVE_BOT_TOKEN` — Move bot token
 `MOVE_LOG_CHAT_ID` / `LOG_CHAT_ID` — where Move's activity and ⚠️ reports are posted
+`MOVE_TRACE_CHAT_ID` — every incoming Move update, one line each. Unset falls back
+to the log chat (where it buries the ⚠️ reports); `off` disables tracing.
+`MOVE_BETA_IDS` — telegram ids that see changes before everyone else (comma-separated).
+Currently unused: everything it gated has shipped to all users.
 `POOL_COOLDOWN_DAYS` — days before radar may show you the same stranger again (default 7)
 `RADAR_FRESH_DAYS` — how far back radar looks for a move to show (default 33)
 
 ## Running a migration
 
 ```bash
-python scripts/run_migration.py 042
+"C:/Users/nebel/AppData/Local/Programs/Python/Python313/python.exe" scripts/run_migration.py 042
 ```
 
 Takes one or more files — a path, a filename, or just the number (`042`) — each in its
 own transaction. `--dry-run` prints the SQL instead of applying it. There is no
-migration ledger — migrations are written to be re-runnable.
-`MOVE_TRACE_CHAT_ID` — every incoming Move update, one line each. Unset falls back
-to the log chat (where it buries the ⚠️ reports); `off` disables tracing.
-`MOVE_BETA_IDS` — telegram ids that see changes before everyone else (comma-separated).
-Currently unused: everything it gated has shipped to all users.
+migration ledger — migrations are written to be re-runnable. Locally this needs the
+Session pooler `DATABASE_URL`, not the direct host — see "This machine" above.
+
+## Move
+
+Every daily job — nudges, the ⚡ report, radar, the sweep — hangs off a single cron
+trigger (`/api/cron/move`, 06:00 UTC = 08:00 Berlin), because Vercel Hobby caps the
+number of cron jobs. Each job carries its own `cron_log` guard, so re-running the
+trigger is harmless.
 
 Move's trace collapses into one message per person per day (`move_log_summary`),
 edited as the day goes on. ⚠️ reports, crashes and moderation still send their own

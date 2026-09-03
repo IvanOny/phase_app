@@ -1557,9 +1557,27 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     # "on your move" only for the person whose move it is; anyone else in the
     # thread is being replied to.
     key = "note_received" if owner["telegram_user_id"] == to_id else "note_reply_received"
+    # Quote the move this is about, the way a reply looks anywhere else in
+    # Telegram. The author's anchor is the video they sent — move_entries keeps
+    # its message_id — and everyone else's is the copy delivered to them. Comes
+    # out as a standalone message when there's nothing to point at: a text-only
+    # move, or a copy Telegram has since lost.
+    anchor = None
+    if owner["telegram_user_id"] == to_id:
+        cur.execute("SELECT chat_id, message_id FROM move_entries WHERE id = %s", (entry_id,))
+        src = cur.fetchone()
+        if src and src["message_id"] and src["chat_id"] == (them["chat_id"] or to_id):
+            anchor = src["message_id"]
+    if anchor is None:
+        cur.execute("SELECT message_id FROM move_forwards WHERE entry_id = %s "
+                    "AND recipient_tg_id = %s AND kind IN ('move', 'radar') "
+                    "ORDER BY id LIMIT 1", (entry_id, to_id))
+        row = cur.fetchone()
+        anchor = row["message_id"] if row else None
     res = _send(them["chat_id"] or to_id,
                 _t(key, tlang, name=me["participant_name"], body=body),
-                reply_markup=_note_kb(entry_id, tg_id, tlang, reply=True))
+                reply_markup=_note_kb(entry_id, tg_id, tlang, reply=True),
+                reply_to=anchor)
     if res and res.get("message_id"):
         # kind='note' so /undo takes the whole conversation with the move, and so
         # the ⚡ refresh and comment threading keep ignoring these.

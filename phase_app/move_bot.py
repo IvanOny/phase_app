@@ -727,6 +727,10 @@ _STRINGS: dict[str, dict[str, str]] = {
     # anonymous text from strangers under a video of someone's body is the one
     # thing this bot must not build.
     "btn_note": {"en": "💬 Comment", "uk": "💬 Прокоментувати", "de": "💬 Kommentieren"},
+    # On a crew copy the name is the only thing saying whose move this is: the
+    # copy carries no sender, and a round video can't take a caption.
+    "btn_note_to": {"en": "💬 Write to {name}", "uk": "💬 Написати {name}",
+                    "de": "💬 An {name} schreiben"},
     "btn_note_reply": {"en": "💬 Reply", "uk": "💬 Відповісти", "de": "💬 Antworten"},
     "note_ask": {
         "en": "💬 Write your comment for {name} — they'll get it under their move:",
@@ -1615,7 +1619,7 @@ def _drop_undo(cur, entry_id: int) -> None:
 
 
 def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = False,
-            note_to: int | None = None) -> dict:
+            note_to: int | None = None, note_name: str | None = None) -> dict:
     """No running total — a move isn't a popularity contest. You only see whether
     *you* cheered; the author gets the tally next morning.
 
@@ -1627,7 +1631,8 @@ def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = F
     if note_to:
         # Crew only, and it needs the author's id: the thread routes by id, and
         # radar copies deliberately have no route back to a name.
-        rows.append([{"text": _t("btn_note", lang),
+        rows.append([{"text": _t("btn_note_to", lang, name=note_name) if note_name
+                      else _t("btn_note", lang),
                       "callback_data": f"mv:note:{entry_id}:{note_to}"}])
     if radar:
         # Block is "stop showing me this"; report is "someone should look at this".
@@ -1790,19 +1795,21 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
         header = _tgen("crew_move", rlang, gender, name=sender)
         if media:
             from_chat, msg_id = media
+            # No header message. "X moved today" above every copy was a second
+            # message per move per recipient, and the name it carried now sits
+            # on the comment button — the copy has no sender of its own, and a
+            # round video can't take a caption, so the keyboard is the only
+            # place left to say whose move this is.
+            #
+            # What this gives up: the header was a free ride for the recipient's
+            # reply keyboard. Since the input placeholder no longer claims
+            # anything, the keyboard only needs re-sending when a button label
+            # changes, and _LEGACY_BUTTONS already routes taps on an old one.
             track(rid, chat_id,
                   _copy(from_chat, msg_id, chat_id,
-                        reply_markup=_zap_kb(entry_id, lang=rlang, note_to=author_id)),
+                        reply_markup=_zap_kb(entry_id, lang=rlang, note_to=author_id,
+                                             note_name=sender)),
                   "move")
-            # Carries the recipient's keyboard. It's a message the bot sends
-            # anyway, with no markup of its own, so refreshing here costs
-            # nothing — and a reply keyboard is client-side state with no
-            # expiry, only ever replaced by a message that brings a new one.
-            # Without a free ride like this it can only refresh when someone
-            # taps something, which is how a stale label survived overnight.
-            track(rid, chat_id,
-                  _send(chat_id, header, reply_markup=_main_kb(rlang, rid, cur)),
-                  "header")
         else:
             track(rid, chat_id,
                   _send(chat_id, f"{header}\n{text_body or ''}".strip(),
@@ -3843,8 +3850,23 @@ def purge_move_transient(conn) -> None:
         _api_call("deleteMessage", {"chat_id": r["chat_id"], "message_id": r["message_id"]})
     if rows:
         cur.execute("DELETE FROM move_transient WHERE id = ANY(%s)", ([r["id"] for r in rows],))
+
+    # Yesterday's crew copies keep the move and lose the buttons. A sent-⚡
+    # tick and a comment button are answers to a move that was happening
+    # then; a day later they're dead controls under a video you scroll past.
+    #
+    # Only yesterday's, so each copy is edited once and stays inside
+    # Telegram's 48-hour edit window. Radar copies are left alone: their
+    # buttons are block and report, which don't go stale the way cheering does.
+    cur.execute("SELECT chat_id, message_id FROM move_forwards "
+                "WHERE kind = 'move' AND created_at >= %s AND created_at < %s",
+                (today - timedelta(days=1), today))
+    stripped = cur.fetchall()
+    for r in stripped:
+        _api_call("editMessageReplyMarkup",
+                  {"chat_id": r["chat_id"], "message_id": r["message_id"]})
     conn.commit()
-    _log(f"🧹 Move: swept\n• deleted: {len(rows)} · too old to delete: {expired}")
+    _log(f"🧹 Move: swept\n• deleted: {len(rows)} · buttons off: {len(stripped)} · too old to delete: {expired}")
 
 
 def send_move_monthly_summaries(conn) -> None:

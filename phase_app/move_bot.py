@@ -19,6 +19,7 @@ Deliberate differences from phase_app.bot:
 """
 from __future__ import annotations
 
+import html
 import json
 import os
 import unicodedata
@@ -80,8 +81,15 @@ def _api_call(method: str, payload: dict) -> dict | None:
 
 
 def _send(chat_id: int, text: str, reply_markup: dict | None = None,
-          reply_to: int | None = None, protect: bool = False) -> dict | None:
+          reply_to: int | None = None, protect: bool = False,
+          parse_mode: str | None = None) -> dict | None:
     payload: dict = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        # Only ever "HTML", and only for text this file built itself. Anything a
+        # person typed must go through _esc first: one unescaped "<" and Telegram
+        # rejects the whole message, so the comment would vanish instead of the
+        # tag being shown.
+        payload["parse_mode"] = parse_mode
     if protect:
         payload["protect_content"] = True
     if reply_markup:
@@ -732,6 +740,10 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_note_to": {"en": "💬 Write to {name}", "uk": "💬 Написати {name}",
                     "de": "💬 An {name} schreiben"},
     "btn_note_reply": {"en": "💬 Reply", "uk": "💬 Відповісти", "de": "💬 Antworten"},
+    # Named, because a thread belongs to one person: with one message per
+    # counterpart, "Reply" alone would leave you working out which one.
+    "btn_note_reply_to": {"en": "💬 Reply to {name}", "uk": "💬 Відповісти {name}",
+                          "de": "💬 {name} antworten"},
     "note_ask": {
         "en": "💬 Write your comment for {name} — they'll get it under their move:",
         "uk": "💬 Напиши коментар для {name} — він прийде під цей рух:",
@@ -1493,14 +1505,16 @@ _BUBBLE_HINT_AT = (3, 10, 20)
 _PLACEHOLDER_LESSONS = 3              # moves before the input field stops instructing
 
 
-def _note_kb(entry_id: int, to_id: int, lang: str, reply: bool = False) -> dict:
+def _note_kb(entry_id: int, to_id: int, lang: str, reply: bool = False,
+             name: str | None = None) -> dict:
     """The button that starts (or continues) a comment thread.
 
     Both ends of the thread are in the callback data — the move it's about and
     who the text goes to — so a reply routes without storing message ids.
     """
     return {"inline_keyboard": [[
-        {"text": _t("btn_note_reply" if reply else "btn_note", lang),
+        {"text": _t("btn_note_reply_to", lang, name=name) if (reply and name)
+         else _t("btn_note_reply" if reply else "btn_note", lang),
          "callback_data": f"mv:note:{entry_id}:{to_id}"}
     ]]}
 
@@ -1521,7 +1535,7 @@ def _note_deliverable(cur, to_id: int, from_name: str) -> bool:
     return cur.fetchone() is None
 
 
-def _clear_prompts(cur, tg_id: int, entry_id: int) -> None:
+def _clear_prompts(cur, tg_id: int, entry_id: int) -> bool:
     """Delete the questions this answer just answered.
 
     A prompt that's been answered has no future use, and leaving it on screen
@@ -1537,11 +1551,116 @@ def _clear_prompts(cur, tg_id: int, entry_id: int) -> None:
     cur.execute("DELETE FROM move_forwards "
                 "WHERE entry_id = %s AND recipient_tg_id = %s AND kind = 'ask'",
                 (entry_id, tg_id))
+    return cur.rowcount > 0            # was a ForceReply answered, or a swipe-reply?
+
+
+def _esc(text: str) -> str:
+    """Everything a person typed passes through here before HTML parse mode."""
+    return html.escape(text or "", quote=False)
+
+
+def _talk_text(cur, entry_id: int, viewer_id: int, other_id: int, lang: str) -> str:
+    """One conversation between two people about one move, as they see it.
+
+    Their lines are blockquoted, yours are plain, and their name appears once —
+    on the first line that is theirs. Reading it is the whole point: a thread
+    should look like a thread, not like a name repeated down the page.
+    """
+    cur.execute(
+        "SELECT from_tg_id, body FROM move_comments "
+        "WHERE entry_id = %s AND ((from_tg_id = %s AND to_tg_id = %s) "
+        "                      OR (from_tg_id = %s AND to_tg_id = %s)) "
+        "ORDER BY id",
+        (entry_id, viewer_id, other_id, other_id, viewer_id),
+    )
+    rows = cur.fetchall()
+    other = _user(cur, other_id)
+    name = _esc((other or {}).get("participant_name") or "")
+    lines, named = [], False
+    for r in rows:
+        text = _esc(r["body"])
+        if r["from_tg_id"] == viewer_id:
+            lines.append(text)
+        else:
+            # The name goes on their first line only. After that the quote mark
+            # is enough to say whose words these are.
+            head = f"<b>{name}</b> · " if not named else ""
+            named = True
+            lines.append(f"<blockquote>{head}{text}</blockquote>")
+    return "\n".join(lines)
+
+
+def _talk_anchor(cur, entry_id: int, person_id: int):
+    """The move this thread hangs off, in that person's own chat."""
+    cur.execute("SELECT telegram_user_id, chat_id, message_id FROM move_entries "
+                "WHERE id = %s", (entry_id,))
+    e = cur.fetchone()
+    if not e:
+        return None
+    if e["telegram_user_id"] == person_id and e["message_id"]:
+        return e["message_id"]
+    cur.execute("SELECT message_id FROM move_forwards WHERE entry_id = %s "
+                "AND recipient_tg_id = %s AND kind IN ('move', 'radar') "
+                "ORDER BY id LIMIT 1", (entry_id, person_id))
+    row = cur.fetchone()
+    return row["message_id"] if row else None
+
+
+def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int) -> None:
+    """Put the current state of a thread in front of both people.
+
+    The old message is deleted and a longer one sent, rather than edited in
+    place: an edit leaves the message where it was, so the new line lands
+    somewhere already scrolled past. Deleting and re-sending brings the whole
+    conversation back to the bottom, which is where a new message belongs.
+
+    The cost is a new message_id each time, so the move_forwards row is
+    rewritten — swipe-reply routes through it, and a stale id would send a
+    reply into nothing.
+    """
+    for me_id, other_id in ((a_id, b_id), (b_id, a_id)):
+        me = _user(cur, me_id)
+        if not me:
+            continue
+        chat_id = me["chat_id"] or me_id
+        mlang = _norm_lang(me["language_code"])
+        text = _talk_text(cur, entry_id, me_id, other_id, mlang)
+        if not text:
+            continue
+        cur.execute("SELECT chat_id, message_id FROM move_forwards "
+                    "WHERE entry_id = %s AND recipient_tg_id = %s AND kind = 'talk' "
+                    "AND from_tg_id = %s", (entry_id, me_id, other_id))
+        old = cur.fetchone()
+        if old:
+            # Past 48 hours Telegram refuses the delete, and the thread would
+            # double instead of moving. Leave the old one standing and stop.
+            if not _api_call("deleteMessage", {"chat_id": old["chat_id"],
+                                               "message_id": old["message_id"]}):
+                continue
+            cur.execute("DELETE FROM move_forwards WHERE entry_id = %s "
+                        "AND recipient_tg_id = %s AND kind = 'talk' AND from_tg_id = %s",
+                        (entry_id, me_id, other_id))
+        other = _user(cur, other_id)
+        res = _send(chat_id, text, parse_mode="HTML",
+                    reply_to=_talk_anchor(cur, entry_id, me_id),
+                    reply_markup=_note_kb(entry_id, other_id, mlang, reply=True,
+                                          name=(other or {}).get("participant_name")))
+        if res and res.get("message_id"):
+            # from_tg_id is the person on the other end, so a swipe-reply to
+            # this message routes back to them the way it does for a move.
+            cur.execute(
+                "INSERT INTO move_forwards "
+                "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+                "SELECT %s, %s, %s, %s, 'talk', %s "
+                "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+                (entry_id, me_id, chat_id, res["message_id"], other_id, entry_id),
+            )
+    conn.commit()
 
 
 def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
                entry_id: int, to_id: int, body: str) -> None:
-    """Deliver one comment, with a Reply button pointing back at its sender."""
+    """Record one comment and re-show the thread it belongs to, to both people."""
     me, them = _user(cur, tg_id), _user(cur, to_id)
     if not me or not them:
         _send_t(cur, conn, chat_id, _t("note_gone", lang))
@@ -1556,45 +1675,25 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
         _send_t(cur, conn, chat_id, _t("note_undelivered", lang, name=tname))
         return
 
-    tlang = _norm_lang(them["language_code"])
-    # "on your move" only for the person whose move it is; anyone else in the
-    # thread is being replied to.
-    # Quote the move this is about, the way a reply looks anywhere else in
-    # Telegram. The author's anchor is the video they sent — move_entries keeps
-    # its message_id — and everyone else's is the copy delivered to them. Comes
-    # out as a standalone message when there's nothing to point at: a text-only
-    # move, or a copy Telegram has since lost.
-    anchor = None
-    if owner["telegram_user_id"] == to_id:
-        cur.execute("SELECT chat_id, message_id FROM move_entries WHERE id = %s", (entry_id,))
-        src = cur.fetchone()
-        if src and src["message_id"] and src["chat_id"] == (them["chat_id"] or to_id):
-            anchor = src["message_id"]
-    if anchor is None:
-        cur.execute("SELECT message_id FROM move_forwards WHERE entry_id = %s "
-                    "AND recipient_tg_id = %s AND kind IN ('move', 'radar') "
-                    "ORDER BY id LIMIT 1", (entry_id, to_id))
-        row = cur.fetchone()
-        anchor = row["message_id"] if row else None
-    res = _send(them["chat_id"] or to_id,
-                _t("note_from", tlang, name=me["participant_name"], body=body),
-                reply_markup=_note_kb(entry_id, tg_id, tlang, reply=True),
-                reply_to=anchor)
-    if res and res.get("message_id"):
-        # kind='note' so /undo takes the whole conversation with the move, and so
-        # the ⚡ refresh and comment threading keep ignoring these.
-        cur.execute(
-            "INSERT INTO move_forwards "
-            "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
-            "VALUES (%s, %s, %s, %s, 'note', %s)",
-            (entry_id, to_id, them["chat_id"] or to_id, res["message_id"], tg_id),
-        )
+    # The comment is recorded, then both people are shown the thread as it now
+    # stands. Nothing is delivered per-comment any more: a pair of people get one
+    # message per move, and it is rebuilt from move_comments every time.
+    cur.execute(
+        "INSERT INTO move_comments (entry_id, from_tg_id, to_tg_id, body) "
+        "SELECT %s, %s, %s, %s WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+        (entry_id, tg_id, to_id, body, entry_id),
+    )
     conn.commit()
+    _talk_deliver(cur, conn, entry_id, tg_id, to_id)
     # Carries the keyboard: a ForceReply prompt hides it, and it only comes back
     # when a message brings one. Ending the flow is exactly that moment.
-    _clear_prompts(cur, tg_id, entry_id)
-    _send_t(cur, conn, chat_id, _t("note_sent", lang, name=tname),
-            reply_markup=_main_kb(lang, tg_id, cur))
+    # Only after a ForceReply, and only for the keyboard. The thread message
+    # this comment just went into is already in front of the sender with their
+    # own line at the bottom, so "sent to X" says nothing it doesn't — but a
+    # ForceReply hides the keyboard, and something has to bring it back.
+    if _clear_prompts(cur, tg_id, entry_id):
+        _send_t(cur, conn, chat_id, _t("note_sent", lang, name=tname),
+                reply_markup=_main_kb(lang, tg_id, cur))
 
 
 def _drop_undo(cur, entry_id: int) -> None:
@@ -2024,7 +2123,9 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
         kb = _logged_kb(cur, e["id"], lang, tg_id)
         kb["inline_keyboard"].append([undo_btn])
         _redraw_markup(own["chat_id"], own["message_id"], kb)
-        _send_t(cur, conn, chat_id, _t(key, lang), reply_markup=_main_kb(lang, tg_id, cur))
+        # No confirmation message. The ⚙️ line under the move already says the
+        # caption is there and now carries Undo, so a second message saying so
+        # was one more thing between you and the next move.
     else:
         _send_t(cur, conn, chat_id, _t(key, lang),
               reply_markup={"inline_keyboard": [[undo_btn]]} if undo_btn else None)
@@ -3859,7 +3960,8 @@ def purge_move_transient(conn) -> None:
     # Comments delivered under a move ('note') lose their Reply button the same
     # morning: the comment window has closed, so the button only leads to a no.
     cur.execute("SELECT chat_id, message_id FROM move_forwards "
-                "WHERE kind IN ('move', 'note') AND created_at >= %s AND created_at < %s",
+                "WHERE kind IN ('move', 'note', 'talk') "
+                "AND created_at >= %s AND created_at < %s",
                 (today - timedelta(days=1), today))
     stripped = cur.fetchall()
     for r in stripped:

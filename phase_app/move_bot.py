@@ -742,15 +742,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "💬 Напиши відповідь для {name}:",
         "de": "💬 Schreib deine Antwort an {name}:",
     },
-    "note_received": {
-        "en": "💬 {name} on your move:\n\n{body}",
-        "uk": "💬 {name} про твій рух:\n\n{body}",
-        "de": "💬 {name} zu deiner Bewegung:\n\n{body}",
-    },
-    "note_reply_received": {
-        "en": "💬 {name} replied:\n\n{body}",
-        "uk": "💬 {name} відповідає:\n\n{body}",
-        "de": "💬 {name} antwortet:\n\n{body}",
+    # One line for both cases. "on your move" and "replied" existed because
+    # nothing else said which move this was about; the message is now sent as
+    # a reply to that move, and the quote says it better than a prefix can --
+    # including which of the two it is, by what gets quoted.
+    "note_from": {
+        "en": "💬 {name}:\n\n{body}",
+        "uk": "💬 {name}:\n\n{body}",
+        "de": "💬 {name}:\n\n{body}",
     },
     "btn_radar_join": {
         "en": "📡 Send it to strangers on radar too",
@@ -1560,7 +1559,6 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     tlang = _norm_lang(them["language_code"])
     # "on your move" only for the person whose move it is; anyone else in the
     # thread is being replied to.
-    key = "note_received" if owner["telegram_user_id"] == to_id else "note_reply_received"
     # Quote the move this is about, the way a reply looks anywhere else in
     # Telegram. The author's anchor is the video they sent — move_entries keeps
     # its message_id — and everyone else's is the copy delivered to them. Comes
@@ -1579,7 +1577,7 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
         row = cur.fetchone()
         anchor = row["message_id"] if row else None
     res = _send(them["chat_id"] or to_id,
-                _t(key, tlang, name=me["participant_name"], body=body),
+                _t("note_from", tlang, name=me["participant_name"], body=body),
                 reply_markup=_note_kb(entry_id, tg_id, tlang, reply=True),
                 reply_to=anchor)
     if res and res.get("message_id"):
@@ -3858,8 +3856,10 @@ def purge_move_transient(conn) -> None:
     # Only yesterday's, so each copy is edited once and stays inside
     # Telegram's 48-hour edit window. Radar copies are left alone: their
     # buttons are block and report, which don't go stale the way cheering does.
+    # Comments delivered under a move ('note') lose their Reply button the same
+    # morning: the comment window has closed, so the button only leads to a no.
     cur.execute("SELECT chat_id, message_id FROM move_forwards "
-                "WHERE kind = 'move' AND created_at >= %s AND created_at < %s",
+                "WHERE kind IN ('move', 'note') AND created_at >= %s AND created_at < %s",
                 (today - timedelta(days=1), today))
     stripped = cur.fetchall()
     for r in stripped:

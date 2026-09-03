@@ -2933,7 +2933,14 @@ def handle_move_webhook(body: dict, conn) -> None:
     text = (msg.get("text") or "").strip()
     if not text:
         return
-    text = _BUTTON_TO_CMD.get(text, text)   # localized keyboard buttons route as commands
+    tapped = _BUTTON_TO_CMD.get(text)
+    text = tapped or text                   # localized keyboard buttons route as commands
+    # A button tap and a slash command are the person's half of the scaffolding:
+    # a stray "Rukh razom" sitting in the chat tomorrow is as much clutter as the
+    # menu it opened. Moves, comments and names are never marked -- only the two
+    # kinds of message whose whole content is "show me a menu".
+    if tapped or text.startswith("/"):
+        _mark_transient(cur, chat_id, msg["message_id"])
 
     # 2) conversation state (name entry)
     state = _get_state(cur, tg_id)
@@ -3945,8 +3952,14 @@ def purge_move_transient(conn) -> None:
     cur.execute("SELECT id, chat_id, message_id FROM move_transient "
                 "WHERE created_at < %s", (today,))
     rows = cur.fetchall()
+    # Counted, because these now include messages the person sent, and whether
+    # Telegram lets a bot delete those in a private chat is the one thing this
+    # rests on. If it refuses, tomorrow's log says so instead of going quiet.
+    refused = 0
     for r in rows:
-        _api_call("deleteMessage", {"chat_id": r["chat_id"], "message_id": r["message_id"]})
+        if not _api_call("deleteMessage",
+                         {"chat_id": r["chat_id"], "message_id": r["message_id"]}):
+            refused += 1
     if rows:
         cur.execute("DELETE FROM move_transient WHERE id = ANY(%s)", ([r["id"] for r in rows],))
 
@@ -3968,7 +3981,7 @@ def purge_move_transient(conn) -> None:
         _api_call("editMessageReplyMarkup",
                   {"chat_id": r["chat_id"], "message_id": r["message_id"]})
     conn.commit()
-    _log(f"🧹 Move: swept\n• deleted: {len(rows)} · buttons off: {len(stripped)} · too old to delete: {expired}")
+    _log(f"🧹 Move: swept\n• deleted: {len(rows) - refused} · refused: {refused} · buttons off: {len(stripped)} · too old to delete: {expired}")
 
 
 def send_move_monthly_summaries(conn) -> None:

@@ -156,10 +156,17 @@ Currently unused: everything it gated has shipped to all users.
 "C:/Users/nebel/AppData/Local/Programs/Python/Python313/python.exe" scripts/run_migration.py 042
 ```
 
-Takes one or more files — a path, a filename, or just the number (`042`) — each in its
-own transaction. `--dry-run` prints the SQL instead of applying it. There is no
-migration ledger — migrations are written to be re-runnable. Locally this needs the
-Session pooler `DATABASE_URL`, not the direct host — see "This machine" above.
+Takes one or more files — a path, a filename, or just the number (`042`). Each file
+applies in one transaction together with its ledger row, so the two can't drift.
+
+`schema_migrations` (migration 055) records what has run. An already-applied file is
+skipped; `--force` re-runs it. `--status` lists applied and pending (and flags a file
+edited since it ran), `--pending` prints just the unapplied names, `--dry-run` prints
+the SQL without a database, and `--baseline` records every file as applied without
+running it — for adopting the ledger on a database that is already up to date.
+
+Locally this needs the Session pooler `DATABASE_URL`, not the direct host — see
+"This machine" above.
 
 ## Move
 

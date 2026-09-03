@@ -112,15 +112,16 @@ export default function ScheduleCalendar({
   // recurring, but every item is a queue item now, so that put everything in
   // one bucket. Tier is the distinction that's left, and it's the one that
   // decides how often something comes up.
-  const TIER_LABELS = { 1: 'Tier 1 — most often', 2: 'Tier 2 — regular', 3: 'Tier 3 — occasional' };
+  const TIER_LABELS = { 1: 'Tier 1 — most often', 2: 'Tier 2 — regular',
+                       3: 'Tier 3 — occasional', 4: 'Tier 4 — rare' };
   const groups = useMemo(() => {
     const active = exercises.filter(e => e.status === 'active');
-    const byTier = { 1: [], 2: [], 3: [] };
+    const byTier = { 1: [], 2: [], 3: [], 4: [] };
     for (const e of active) (byTier[e.tier] ?? byTier[2]).push(e);
-    for (const t of [1, 2, 3]) byTier[t].sort((a, b) => a.name.localeCompare(b.name));
+    for (const t of [1, 2, 3, 4]) byTier[t].sort((a, b) => a.name.localeCompare(b.name));
     return byTier;
   }, [exercises]);
-  const total = groups[1].length + groups[2].length + groups[3].length;
+  const total = [1, 2, 3, 4].reduce((n, t) => n + groups[t].length, 0);
 
   const [collapsed, setCollapsed] = useState(() => {
     try { return JSON.parse(localStorage.getItem('exq-rail-collapsed') || '{}'); }
@@ -195,7 +196,7 @@ export default function ScheduleCalendar({
           <div className="exq-rail-empty">No exercises yet — add via the bot (/add).</div>
         ) : (
           <>
-            {[1, 2, 3].map(t => renderGroup(`tier${t}`, TIER_LABELS[t], groups[t], t))}
+            {[1, 2, 3, 4].map(t => renderGroup(`tier${t}`, TIER_LABELS[t], groups[t], t))}
           </>
         )}
       </aside>

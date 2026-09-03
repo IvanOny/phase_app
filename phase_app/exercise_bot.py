@@ -137,7 +137,12 @@ def _next_due_date(ex, tz, as_of=None):
 #
 # The ratio falls out of the arithmetic. If tier 1 builds pressure 3x as fast,
 # it reaches the front 3x as often, so the weights *are* the frequency ratio.
-_TIER_WEIGHT = {1: 3, 2: 2, 3: 1}
+#
+# Doubled from 3/2/1 when tier 4 arrived: 6:4:2 is the same ratio, and it leaves
+# room underneath for a tier that comes up half as often as the old bottom one
+# without any of these becoming fractions. The serve query multiplies seconds by
+# this, so integers are the point.
+_TIER_WEIGHT = {1: 6, 2: 4, 3: 2, 4: 1}
 
 
 def _serve_next(cur, user_id: int, filters: dict):
@@ -153,7 +158,7 @@ def _serve_next(cur, user_id: int, filters: dict):
         # wanted to do it, not to have it wait its turn.
         "ORDER BY EXTRACT(EPOCH FROM (NOW() - COALESCE(last_done_at, "
         "                                              created_at - INTERVAL '365 days'))) "
-        "         * CASE tier WHEN 1 THEN 3 WHEN 2 THEN 2 ELSE 1 END DESC, "
+        "         * CASE tier WHEN 1 THEN 6 WHEN 2 THEN 4 WHEN 3 THEN 2 ELSE 1 END DESC, "
         "         created_at ASC "
         "LIMIT 1",
         (
@@ -463,7 +468,7 @@ def _cmd_help(chat_id: int) -> None:
         "overview — today's plan with ✓/⏭ buttons (same as the 19:00 report)\n"
         "list — all exercises\n"
         "edit <name> — change a field\n"
-        "tier <name> [1|2|3] — how often it comes up (1 = most often)\n"
+        "tier <name> [1|2|3|4] — how often it comes up (1 = most often)\n"
         "pause/park/activate <name> — status\n"
         "remove <name> — delete\n"
         "stats <name> / history — logs\n"
@@ -726,7 +731,8 @@ def _cmd_list(cur, user_id: int, chat_id: int) -> None:
     # Grouped by tier: the tier is the only thing that varies between items now,
     # so a flat list would repeat it on every line to say the same thing.
     lines = ["🗂 All exercises:"]
-    for tier, label in ((1, "most often"), (2, "regular"), (3, "occasional")):
+    for tier, label in ((1, "most often"), (2, "regular"), (3, "occasional"),
+                        (4, "rare")):
         group = [r for r in rows if r["tier"] == tier]
         if not group:
             continue
@@ -861,6 +867,7 @@ def _ask_tier(cur, conn, user_id: int, chat_id: int, data: dict) -> None:
         [{"text": "Tier 1 — most often", "callback_data": "ex:add:tier:1"}],
         [{"text": "Tier 2 — regular", "callback_data": "ex:add:tier:2"}],
         [{"text": "Tier 3 — occasional", "callback_data": "ex:add:tier:3"}],
+        [{"text": "Tier 4 — rare", "callback_data": "ex:add:tier:4"}],
     ]})
 
 
@@ -1108,29 +1115,29 @@ def _cmd_edit(cur, conn, user_id: int, chat_id: int, name: str) -> None:
 
 
 def _cmd_tier(cur, conn, user_id: int, chat_id: int, args: list[str]) -> None:
-    """`tier <name> <1|2|3>` — set it outright; `tier <name>` — pick from buttons.
+    """`tier <name> <1|2|3|4>` — set it outright; `tier <name>` — pick from buttons.
 
     The tier is the one thing likely to be adjusted from the phone, mid-day,
     while noticing something comes up too rarely. Walking the edit menu for that
     is three taps too many.
     """
     if not args:
-        _send(chat_id, "Usage: tier <name> [1|2|3]")
+        _send(chat_id, "Usage: tier <name> [1|2|3|4]")
         return
     level = None
-    if args[-1] in ("1", "2", "3"):
+    if args[-1] in ("1", "2", "3", "4"):
         level, args = args[-1], args[:-1]
     name = " ".join(args).strip()
     ex = _get_ex_by_name(cur, user_id, name) if name else None
     if not ex:
-        _send(chat_id, f'No exercise named "{name}".' if name else "Usage: tier <name> [1|2|3]")
+        _send(chat_id, f'No exercise named "{name}".' if name else "Usage: tier <name> [1|2|3|4]")
         return
     if level is None:
         _send(chat_id, f"{ex['name']} is tier {ex['tier']}. Set it to:",
               reply_markup={"inline_keyboard": [
                   [{"text": lbl, "callback_data": f"ex:edit:setval:tier:{ex['id']}:{n}"}]
                   for n, lbl in (("1", "1 — most often"), ("2", "2 — regular"),
-                                 ("3", "3 — occasional"))]})
+                                 ("3", "3 — occasional"), ("4", "4 — rare"))]})
         return
     cur.execute("UPDATE exercise_items SET tier = %s WHERE id = %s AND user_id = %s",
                 (int(level), ex["id"], user_id))

@@ -120,6 +120,10 @@ There is no `~/.gitconfig` and no system-level identity. If a commit ever fails 
 "Author identity unknown", the fix is to restore that local config — never to invent a
 name, and never to set a global one.
 
+**Node is not installed.** No `npm`, no `node`, on `PATH` or anywhere else, so the
+frontend cannot be built or dev-served from here. Frontend changes are verified by
+reading them and by Vercel's own build on push.
+
 **Supabase's direct host** (`db.<ref>.supabase.co`) is IPv6-only, and this network has
 no IPv6, so it fails with "could not translate host name". Use the Session pooler
 string for anything run locally. `scripts/run_migration.py` prints this hint on failure.

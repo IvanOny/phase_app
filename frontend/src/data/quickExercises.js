@@ -6,7 +6,7 @@
 //   2. matchFlag     (barbell lifts / run: isBarbellBenchPress / isSquat / isDeadlift / isRun)
 //   3. exact name    (case-insensitive)
 //   4. normalized    (ignores case, punctuation, spacing and a trailing plural:
-//                     "Weighted Pull-ups" → "Weighted Pull-up")
+//                     "Pull-ups" → "Pull-up")
 //   5. unique prefix (only when exactly ONE catalog entry matches:
 //                     "Pull" → "Pull-up". Ambiguous prefixes resolve to nothing.)
 //
@@ -19,13 +19,15 @@ export const DEFAULT_QUICK_EXERCISES = [
   { label: 'Barbell Bench Press', sessionType: 'heavy_bench', flags: { isBarbellBenchPress: true }, matchFlag: 'isBarbellBenchPress', type: 'strength' },
   { label: 'Barbell Squat',       sessionType: 'squat',       flags: { isSquat: true },             matchFlag: 'isSquat',             type: 'strength' },
   { label: 'Barbell Deadlift',    sessionType: 'deadlift',    flags: { isDeadlift: true },          matchFlag: 'isDeadlift',          type: 'strength' },
+  // One pull-up entry. Weighted Pull-up was a second row for the same movement,
+  // and the two were merged in migration 061 — a bodyweight exercise now takes
+  // an added weight on the set, 0 meaning bodyweight alone.
   { label: 'Pull-up',             sessionType: 'pull',        flags: { isBodyweight: true },                                          type: 'bodyweight' },
-  { label: 'Weighted Pull-up',    sessionType: 'pull',        flags: {},                                                              type: 'strength' },
   { label: 'Run',                 sessionType: 'run',         flags: { isRun: true },               matchFlag: 'isRun',               type: 'run' },
 ];
 
 // Lowercase, drop everything but letters/digits, then strip a trailing plural.
-// "Weighted Pull-ups" and "weighted pull up" both → "weightedpullup".
+// "Pull-ups" and "pull up" both → "pullup".
 function normalizeName(name) {
   const flat = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   return flat.endsWith('s') && flat.length > 3 ? flat.slice(0, -1) : flat;

@@ -87,12 +87,15 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
       await createExerciseSet(se.sessionExerciseId, {
         setNumber: existingSets.length + 1,
         reps: Number(reps),
-        loadKg: selected.type === 'strength' ? Number(weight) : 0,
+        // Bodyweight: whatever is hanging off you, 0 if nothing. Run: no load.
+        loadKg: selected.type === 'run' ? 0 : Number(weight) || 0,
         isTopSet: existingSets.length === 0,
         isWorkingSet: true,
       });
 
-      setStatus({ type: 'ok', message: `Logged ${selected.label}: ${selected.type === 'strength' ? `${weight} kg × ` : ''}${reps} reps` });
+      const shown = selected.type === 'strength' ? `${weight} kg × `
+        : (selected.type === 'bodyweight' && Number(weight) ? `+${weight} kg × ` : '');
+      setStatus({ type: 'ok', message: `Logged ${selected.label}: ${shown}${reps} reps` });
       setReps('');
       setWeight('');
       onSessionCreated?.();
@@ -284,6 +287,16 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
                   <div className="form-group" style={{ margin: 0 }}>
                     <label>Weight (kg)</label>
                     <input type="number" min="0" step="0.5" value={weight} onChange={e => setWeight(e.target.value)} style={{ width: 80 }} autoFocus />
+                  </div>
+                )}
+                {selected.type === 'bodyweight' && (
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label>Added (kg)</label>
+                    <input
+                      type="number" min="0" step="0.5" placeholder="0"
+                      value={weight} onChange={e => setWeight(e.target.value)}
+                      style={{ width: 80 }}
+                    />
                   </div>
                 )}
                 <div className="form-group" style={{ margin: 0 }}>

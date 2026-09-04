@@ -3144,22 +3144,6 @@ def handle_move_webhook(body: dict, conn) -> None:
     if word == "invite":
         _cmd_invite(cur, conn, tg_id, chat_id, lang)
         return
-    if word == "deltest":
-        # Diagnostic, not a feature. Comments are delivered by deleting the
-        # sender's own message and putting their words in the thread instead,
-        # and whether Telegram lets a bot delete an incoming message in a
-        # private chat is the one thing that rests on. This asks it directly:
-        # the same operation, with no comment sent and nobody else involved.
-        #
-        # Delete this branch once the answer is known.
-        ok = _api_call("deleteMessage",
-                       {"chat_id": chat_id, "message_id": msg["message_id"]})
-        _send_t(cur, conn, chat_id,
-                "deltest: accepted — /deltest above should be gone." if ok else
-                "deltest: REFUSED — /deltest above is still there.")
-        conn.commit()
-        return
-
     if word == "mod":
         _cmd_mod(cur, conn, tg_id, chat_id, lang, args)
         return

@@ -2319,7 +2319,11 @@ def _cmd_info(cur, conn, tg_id: int, chat_id: int, lang: str, name: str | None =
               miles="/".join(str(m) for m in _MILESTONES))
     # No language button: Settings owns language, and two doors to one setting
     # is worse than one.
-    _send_t(cur, conn, chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}")
+    # Carries the keyboard. A ForceReply prompt replaces it, and dismissing the
+    # prompt without answering leaves nothing to restore it -- so the command
+    # someone types when their buttons have vanished has to be one that does.
+    _send_t(cur, conn, chat_id, f"{body}\n\n{_invite_line(cur, tg_id, lang, name)}",
+            reply_markup=_main_kb(lang, tg_id, cur))
 
 
 def _cmd_move(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
@@ -2658,7 +2662,8 @@ def _cmd_summary(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
         if st["zaps"]:
             lines.append(_t("summary_zaps", lang, n=st["zaps"]))
         lines.append("")
-    _send_t(cur, conn, chat_id, "\n".join(lines).strip())
+    _send_t(cur, conn, chat_id, "\n".join(lines).strip(),
+            reply_markup=_main_kb(lang, tg_id, cur))
 
 
 _RADAR_FREQS = ("daily", "weekly", "monthly", "never")

@@ -495,6 +495,7 @@ class PhaseApi:
         rows = self._exec(
             "SELECT exercise_id, exercise_name, is_barbell_bench_press, is_bodyweight, rep_min, rep_max, "
             "COALESCE(is_squat, 0) AS is_squat, COALESCE(is_deadlift, 0) AS is_deadlift, "
+            "COALESCE(is_pullup, 0) AS is_pullup, "
             "COALESCE(is_timed, FALSE) AS is_timed, COALESCE(is_run, FALSE) AS is_run "
             "FROM exercises ORDER BY exercise_name"
         ).fetchall()
@@ -505,6 +506,7 @@ class PhaseApi:
             "isBodyweight":        bool(r["is_bodyweight"]),
             "isSquat":             bool(r["is_squat"]),
             "isDeadlift":          bool(r["is_deadlift"]),
+            "isPullup":            bool(r["is_pullup"]),
             "repMin":              r["rep_min"],
             "repMax":              r["rep_max"],
             "isTimed":             bool(r["is_timed"]),

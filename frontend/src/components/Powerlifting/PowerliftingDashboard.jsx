@@ -121,7 +121,8 @@ export default function PowerliftingDashboard({
             loading={classLoading}
           />
           <LiftTrendChart sessions={sessions} plMetrics={plMetrics} showTotal={false} />
-          <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises} hideBenchFilter />
+          <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises}
+                       hideBenchFilter plMetrics={plMetrics} />
         </>
       )}
 

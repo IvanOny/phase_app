@@ -36,7 +36,8 @@ function formatVolume(v) {
   return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v);
 }
 
-export default function VolumeChart({ sessions, exerciseVolumes, exercises, hideBenchFilter = false }) {
+export default function VolumeChart({ sessions, exerciseVolumes, exercises, hideBenchFilter = false,
+                                      plMetrics = null }) {
   const colors = useChartColors();
   const isTouch = useIsTouchDevice();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
@@ -92,6 +93,14 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
 
   const isBodyweight = (selectedExercise?.isBodyweight ?? exerciseCatalog?.isBodyweight) === true;
   const isTimed      = (selectedExercise?.isTimed      ?? exerciseCatalog?.isTimed)      === true;
+  const isPullup     = (selectedExercise?.isPullup     ?? exerciseCatalog?.isPullup)     === true;
+
+  // Pull-ups measured as reps rank a bodyweight set of 16 above +20 kg for 7,
+  // which is backwards. The trend chart already has the number that ranks them
+  // correctly — (bodyweight + added) × (1 + reps/30) — so when it has been
+  // fetched, the bars use it and the two cards say the same thing. Without it
+  // (the main dashboard doesn't fetch plMetrics) reps remain the fallback.
+  const pullupE1rm = isPullup ? plMetrics?.e1rm?.pullup ?? null : null;
 
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
@@ -102,6 +111,9 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
       if (isTimed) {
         volume   = s.totalTimeMinutes ?? sets.reduce((sum, set) => sum + (set.timeMinutes ?? 0), 0);
         topValue = sets.length ? Math.max(...sets.map(set => set.timeMinutes ?? 0)) : null;
+      } else if (pullupE1rm) {
+        volume   = sets.reduce((sum, set) => sum + (set.reps ?? 0), 0);
+        topValue = pullupE1rm[String(s.sessionId)]?.topSetE1rmKg ?? null;
       } else if (isBodyweight) {
         const totalReps = sets.reduce((sum, set) => sum + (set.reps ?? 0), 0);
         const topSetReps = sets.length ? Math.max(...sets.map(set => set.reps ?? 0)) : null;
@@ -119,8 +131,10 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
     });
 
   const hasData = data.length > 0;
-  const unit     = isTimed ? 'min' : isBodyweight ? 'reps' : 'kg·reps';
-  const topLabel = isTimed ? 'longest set (min)' : isBodyweight ? 'top set (reps)' : 'top load (kg)';
+  const unit     = isTimed ? 'min' : (isBodyweight && !pullupE1rm) ? 'reps' : 'kg·reps';
+  const topLabel = isTimed ? 'longest set (min)'
+    : pullupE1rm ? 'top set e1RM (kg, bodyweight included)'
+    : isBodyweight ? 'top set (reps)' : 'top load (kg)';
 
   const volumes   = data.map(d => d.volume).filter(v => v != null);
   const loads     = data.map(d => d.topValue).filter(v => v != null);
@@ -324,7 +338,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
               {tooltip.type === 'load' ? (
                 <>
                   <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{topLabel}</div>
-                  <strong>{tooltip.data.topValue}{isTimed ? ' min' : isBodyweight ? ' reps' : ' kg'}</strong>
+                  <strong>{tooltip.data.topValue}{isTimed ? ' min' : (isBodyweight && !pullupE1rm) ? ' reps' : ' kg'}</strong>
                 </>
               ) : (
                 <>

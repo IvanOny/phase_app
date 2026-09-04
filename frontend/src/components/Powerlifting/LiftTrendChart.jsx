@@ -15,6 +15,10 @@ const LIFT_CONFIG = {
   squat:    { label: 'Squat',    color: '#6366f1' },
   bench:    { label: 'Bench',    color: '#0891b2' },
   deadlift: { label: 'Deadlift', color: '#10b981' },
+  // Pull-up e1RM is (bodyweight + added) × (1 + reps/30) — the bar load alone is
+  // 0 on an unweighted set, so it lands on the same axis as the barbell lifts
+  // rather than on the floor. It is not part of Total: that stays S+B+D.
+  pullup:   { label: 'Pull-up',  color: '#ec4899' },
   total:    { label: 'Total',    color: '#f59e0b' },
 };
 
@@ -51,18 +55,24 @@ function buildChartData(sessions, plMetrics) {
     const squatEntry    = e1rm.squat?.[sid]    ?? null;
     const benchEntry    = e1rm.bench?.[sid]    ?? null;
     const deadliftEntry = e1rm.deadlift?.[sid] ?? null;
+    const pullupEntry   = e1rm.pullup?.[sid]   ?? null;
 
     const sessionSquat    = squatEntry?.topSetE1rmKg    ?? null;
     const sessionBench    = benchEntry?.topSetE1rmKg    ?? null;
     const sessionDeadlift = deadliftEntry?.topSetE1rmKg ?? null;
+    const sessionPullup   = pullupEntry?.topSetE1rmKg   ?? null;
+    // Two different questions. anyLiftDone drives Total, which is S+B+D and must
+    // not appear on a day of pull-ups alone; anyEntry decides whether the
+    // session is worth a point at all.
     const anyLiftDone     = sessionSquat != null || sessionBench != null || sessionDeadlift != null;
+    const anyEntry        = anyLiftDone || sessionPullup != null;
 
     // Update running bests for Total
     if (sessionSquat    != null) runningBest.squat    = Math.max(runningBest.squat,    sessionSquat);
     if (sessionBench    != null) runningBest.bench    = Math.max(runningBest.bench,    sessionBench);
     if (sessionDeadlift != null) runningBest.deadlift = Math.max(runningBest.deadlift, sessionDeadlift);
 
-    if (anyLiftDone) anySeen = true;
+    if (anyEntry) anySeen = true;
 
     // Only emit points once we have at least one lift recorded
     if (!anySeen) continue;
@@ -75,16 +85,20 @@ function buildChartData(sessions, plMetrics) {
       squat:    sessionSquat,
       bench:    sessionBench,
       deadlift: sessionDeadlift,
+      pullup:   sessionPullup,
       // Total: running cumulative S+B+D, only shown on lift days
       total:    anyLiftDone ? (runningTotal || null) : null,
       // kept as aliases for tooltip compatibility
       _squat:    sessionSquat,
       _bench:    sessionBench,
       _deadlift: sessionDeadlift,
+      _pullup:   sessionPullup,
       // top set details per lift for tooltip
       _squatSet:    squatEntry    ? { load: squatEntry.topSetLoadKg,    reps: squatEntry.topSetReps    } : null,
       _benchSet:    benchEntry    ? { load: benchEntry.topSetLoadKg,    reps: benchEntry.topSetReps    } : null,
       _deadliftSet: deadliftEntry ? { load: deadliftEntry.topSetLoadKg, reps: deadliftEntry.topSetReps } : null,
+      _pullupSet:   pullupEntry   ? { load: pullupEntry.topSetLoadKg,   reps: pullupEntry.topSetReps,
+                                      bodyweight: pullupEntry.bodyweightKg } : null,
     });
   }
 
@@ -110,7 +124,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
 
   // Last index in data where each lift has a non-null value (for inline label placement)
   const lastIndexByLift = {};
-  const liftsToShow = ['squat', 'bench', 'deadlift', ...(showTotal ? ['total'] : [])];
+  const liftsToShow = ['squat', 'bench', 'deadlift', 'pullup', ...(showTotal ? ['total'] : [])];
   liftsToShow.forEach(lift => {
     for (let i = data.length - 1; i >= 0; i--) {
       if (data[i][lift] != null) { lastIndexByLift[lift] = i; break; }
@@ -209,7 +223,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                 <YAxis domain={['dataMin - 10', 'dataMax + 10']}
                   tick={{ fill: colors.textMuted, fontSize: 12 }}
                   axisLine={false} tickLine={false} width={44} />
-                {['squat', 'bench', 'deadlift', ...(showTotal ? ['total'] : [])].map(lift => (
+                {liftsToShow.map(lift => (
                   <Line
                     key={lift}
                     type="monotone"
@@ -264,7 +278,11 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                         {topSet && (
                           <div className="tooltip-row" style={{ opacity: 0.75 }}>
                             <span>top set</span>
-                            <span>{topSet.load}×{topSet.reps}</span>
+                            <span>
+                              {topSet.bodyweight != null
+                                ? `${topSet.bodyweight}${topSet.load ? ` + ${topSet.load}` : ''} × ${topSet.reps}`
+                                : `${topSet.load}×${topSet.reps}`}
+                            </span>
                           </div>
                         )}
                         <div className="tooltip-row" style={{ opacity: 0.6 }}>
@@ -280,7 +298,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
           </div>
         </>
       ) : (
-        <div className="chart-empty">No lift data yet — log squat, bench, or deadlift sets with top-set marked</div>
+        <div className="chart-empty">No lift data yet — log squat, bench, deadlift or pull-up sets with top-set marked</div>
       )}
     </div>
   );

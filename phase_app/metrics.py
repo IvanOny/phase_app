@@ -374,6 +374,47 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
             else:
                 deadlift_rows = cur.fetchall()
 
+        # Pull-ups, separately: the bar load is 0 for an unweighted set, so the
+        # barbell formula gives 0 and the line would sit on the floor. What is
+        # actually lifted is bodyweight plus whatever is hanging off it, so the
+        # weight moved is (bodyweight + load) and the e1RM follows from that.
+        #
+        # Bodyweight comes from the most recent log entry on or before the
+        # session; before the first entry, the first entry is used, because the
+        # alternative is dropping the earliest sessions from the line. A phase
+        # with no bodyweight logged at all yields no rows, and the series simply
+        # doesn't appear.
+        cur.execute(
+            """
+            SELECT DISTINCT ON (s.session_id)
+                s.session_id,
+                s.session_date,
+                es.load_kg,
+                es.reps,
+                bw.weight_kg AS bodyweight_kg,
+                ROUND(((bw.weight_kg + es.load_kg) * (1 + es.reps / 30.0))::numeric, 2) AS e1rm_kg
+            FROM sessions s
+            JOIN session_exercises se ON se.session_id = s.session_id
+            JOIN exercises e ON e.exercise_id = se.exercise_id
+            JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
+            CROSS JOIN LATERAL (
+                SELECT weight_kg FROM bodyweight_log b
+                WHERE b.phase_id = s.phase_id
+                -- session_date is stored as text, hence the cast.
+                ORDER BY (b.logged_date > s.session_date::date),
+                         ABS(b.logged_date - s.session_date::date)
+                LIMIT 1
+            ) bw
+            WHERE s.phase_id = %s
+              AND e.is_pullup = 1
+              AND es.is_top_set = 1
+            ORDER BY s.session_id, (bw.weight_kg + es.load_kg) DESC, es.reps DESC,
+                     es.exercise_set_id DESC
+            """,
+            (phase_id,),
+        )
+        pullup_rows = cur.fetchall()
+
         # Confirmed 1RMs for this phase
         cur.execute(
             "SELECT lift_type, weight_kg, logged_date, session_id "
@@ -393,12 +434,17 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
     def _map_e1rm(rows: list) -> dict[str, dict]:
         result: dict[str, dict] = {}
         for r in rows:
-            result[str(r["session_id"])] = {
+            entry = {
                 "sessionDate":   str(r["session_date"]),
                 "topSetLoadKg":  float(r["load_kg"]),
                 "topSetReps":    int(r["reps"]),
                 "topSetE1rmKg":  float(r["e1rm_kg"]),
             }
+            if r.get("bodyweight_kg") is not None:
+                # Carried through so a pull-up tooltip can say where the number
+                # came from: 74 + 20 reads very differently from a bare 94.
+                entry["bodyweightKg"] = float(r["bodyweight_kg"])
+            result[str(r["session_id"])] = entry
         return result
 
     # Confirmed 1RM grouped by lift type
@@ -416,6 +462,7 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
             "squat":    _map_e1rm(squat_rows),
             "bench":    _map_e1rm(bench_rows),
             "deadlift": _map_e1rm(deadlift_rows),
+            "pullup":   _map_e1rm(pullup_rows),
         },
         "confirmedMax": {
             lift: max((e["weightKg"] for e in entries), default=None)

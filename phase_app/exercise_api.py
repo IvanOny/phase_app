@@ -148,9 +148,9 @@ class ExerciseQueueApi:
                 updates[col] = val
             else:
                 updates[col] = val if val != "" else None
-        if updates.get("tier") not in (None, 1, 2, 3, 4):
+        if updates.get("tier") not in (None, 1, 2, 3, 4, 5):
             return ApiResponse(400, {"error": "validation_error",
-                                     "detail": "tier must be 1, 2, 3 or 4"})
+                                     "detail": "tier must be 1 to 5"})
         # Keep cadence columns consistent with the chosen schedule type.
         st = updates.get("schedule_type")
         if st == "queue":

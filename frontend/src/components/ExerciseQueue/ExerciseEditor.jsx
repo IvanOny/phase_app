@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-// One queue, four tiers. Tier drives how often an item surfaces: an item
+// One queue, five tiers. Tier drives how often an item surfaces: an item
 // builds "pressure" while it sits undone, at a rate set by its tier, and the
 // most pressured one is served next — so these weights are the frequency ratio.
 const TIERS = [
@@ -8,6 +8,7 @@ const TIERS = [
   { v: 2, label: 'Tier 2 — regular' },
   { v: 3, label: 'Tier 3 — occasional' },
   { v: 4, label: 'Tier 4 — rare' },
+  { v: 5, label: 'Tier 5 — hardly ever' },
 ];
 const STATUSES = ['active', 'paused', 'parked'];
 
@@ -56,7 +57,7 @@ export default function ExerciseEditor({ exercise, onSave, onDelete, onClose }) 
             {TIERS.map(t => <option key={t.v} value={t.v}>{t.label}</option>)}
           </select>
         </label>
-        <div className="exq-field-note">Tier 1 comes up about three times as often as tier 3, and six times as often as tier 4.</div>
+        <div className="exq-field-note">Tier 1 comes up about three times as often as tier 3, and twelve times as often as tier 5.</div>
 
         <label className="exq-field"><span>Status</span>
           <select value={f.status} onChange={e => set('status', e.target.value)}>

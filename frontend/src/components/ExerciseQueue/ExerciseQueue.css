@@ -192,6 +192,7 @@
 .exq-pill--tier2 { border-left: 3px solid var(--accent); opacity: .92; }
 .exq-pill--tier3 { border-left: 2px solid var(--accent); opacity: .82; }
 .exq-pill--tier4 { border-left: 1px solid var(--accent); opacity: .72; }
+.exq-pill--tier5 { border-left: 1px dashed var(--accent); opacity: .64; }
 
 /* Toolbar */
 .exq-cal-main { min-width: 0; }

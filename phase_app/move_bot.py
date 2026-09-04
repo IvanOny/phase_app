@@ -765,16 +765,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     # counterpart, "Reply" alone would leave you working out which one.
     "btn_note_reply_to": {"en": "💬 Reply to {name}", "uk": "💬 Відповісти {name}",
                           "de": "💬 {name} antworten"},
-    "note_ask": {
-        "en": "💬 Write your comment for {name} — they'll get it under their move:",
-        "uk": "💬 Напиши коментар для {name} — він прийде під цей рух:",
-        "de": "💬 Schreib deinen Kommentar für {name} — er kommt unter die Bewegung:",
-    },
-    "note_ask_reply": {
-        "en": "💬 Write your reply to {name}:",
-        "uk": "💬 Напиши відповідь для {name}:",
-        "de": "💬 Schreib deine Antwort an {name}:",
-    },
+    # A ForceReply needs a message to hang off, but it also focuses the input and
+    # shows its placeholder — which already says "your comment for {name}". The
+    # sentence that used to be here said the same thing a second time, one line
+    # higher. What's left is the marker the ForceReply is attached to.
+    "note_ask": {"en": "💬", "uk": "💬", "de": "💬"},
     # One line for both cases. "on your move" and "replied" existed because
     # nothing else said which move this was about; the message is now sent as
     # a reply to that move, and the quote says it better than a prefix can --
@@ -3444,14 +3439,16 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _set_state(cur, tg_id, f"await_note:{entry_id}:{to_id}")
         conn.commit()
         _answer(cq["id"])
-        key = "note_ask" if owner["telegram_user_id"] == to_id else "note_ask_reply"
-        # Beta: ForceReply opens the keyboard on the question and labels the input
+        # ForceReply opens the keyboard on the question and labels the input
         # field, and — the part that matters — ties the answer to this exact
         # prompt instead of to a ten-minute window that catches anything typed.
         kb = {"force_reply": True,
               "input_field_placeholder":
                   _t("note_placeholder", lang, name=them["participant_name"])[:64]}
-        res = _send(chat_id, _t(key, lang, name=them["participant_name"]), reply_markup=kb)
+        # Tapping 💬 twice used to leave two identical prompts stacked up, both
+        # armed. The old one goes first, so there is only ever one.
+        _clear_prompts(cur, tg_id, entry_id)
+        res = _send(chat_id, _t("note_ask", lang), reply_markup=kb)
         # Track the question itself, so an answer to it routes even when the
         # ten-minute state is long gone. Replying an hour later is a normal thing
         # to do, and until now it landed in the fallback: "you've already moved

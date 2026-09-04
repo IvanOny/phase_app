@@ -745,8 +745,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     # copy carries no sender, and a round video can't take a caption.
     "btn_note_to": {"en": "💬 Write to {name}", "uk": "💬 Написати {name}",
                     "de": "💬 An {name} schreiben"},
-    "btn_undo_note": {"en": "↩️ Take back ({secs}s)", "uk": "↩️ Скасувати ({secs} с)",
-                      "de": "↩️ Zurücknehmen ({secs}s)"},
+    # No countdown in the label. It can't tick, and a number that stands still
+    # while the minute runs out is a promise the button doesn't keep -- the same
+    # mistake as the placeholder that claimed today's move was in.
+    "btn_undo_note": {"en": "↩️ Take back", "uk": "↩️ Скасувати",
+                      "de": "↩️ Zurücknehmen"},
     "note_undone": {
         "en": "Taken back — they won't see it.",
         "uk": "Забрали — вони цього не побачать.",
@@ -1668,7 +1671,7 @@ def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int,
         if undo_for == me_id and undo_id:
             # Only on the sender's own copy, and only for what they just wrote.
             kb["inline_keyboard"].append(
-                [{"text": _t("btn_undo_note", mlang, secs=_NOTE_UNDO_SECONDS),
+                [{"text": _t("btn_undo_note", mlang),
                   "callback_data": f"mv:nundo:{undo_id}"}])
         res = _send(chat_id, text, parse_mode="HTML",
                     reply_to=_talk_anchor(cur, entry_id, me_id),

@@ -145,7 +145,10 @@ def _run_daily_jobs(conn) -> dict:
 
     jobs = [
         ("burpee_radar", process_radar_candidates),
-        ("burpee_report", send_daily_report),
+        # The daily streak report is off. It went to LOG_CHAT_ID -- the same
+        # channel Move traces to -- so it landed in the log chat every evening
+        # among the things that are actually read. send_daily_report still
+        # exists; putting the line back turns it on again.
         ("burpee_milestones", check_milestones),
         ("burpee_monthly", send_monthly_summaries),
         ("snacks_overview", send_exercise_overview),

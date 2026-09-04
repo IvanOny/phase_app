@@ -1690,7 +1690,7 @@ def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int,
 
 
 def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
-               entry_id: int, to_id: int, body: str) -> None:
+               entry_id: int, to_id: int, body: str, src_msg_id: int | None = None) -> None:
     """Record one comment and re-show the thread it belongs to, to both people."""
     me, them = _user(cur, tg_id), _user(cur, to_id)
     if not me or not them:
@@ -1717,6 +1717,16 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     )
     row = cur.fetchone()
     conn.commit()
+    # Your own typed message goes: the thread now holds those words, and leaving
+    # the raw one behind is what produced the "Deleted message" quotes. It had
+    # swipe-replied to a thread message, and the next comment replaced that
+    # message — so the quote pointed at something that no longer existed, and
+    # would again on every later line.
+    #
+    # Refused deletes leave it in place, which is the old behaviour rather than
+    # a new failure.
+    if src_msg_id:
+        _api_call("deleteMessage", {"chat_id": chat_id, "message_id": src_msg_id})
     _talk_deliver(cur, conn, entry_id, tg_id, to_id,
                   undo_for=tg_id, undo_id=(row or {}).get("id"))
     # Carries the keyboard: a ForceReply prompt hides it, and it only comes back
@@ -3028,7 +3038,8 @@ def handle_move_webhook(body: dict, conn) -> None:
                 # own move, whatever the ten-minute window thinks.
                 _attach_comment(cur, conn, tg_id, chat_id, text, forced=True)
             else:
-                _send_note(cur, conn, tg_id, chat_id, lang, entry_id, author, text)
+                _send_note(cur, conn, tg_id, chat_id, lang, entry_id, author, text,
+                           src_msg_id=msg.get("message_id"))
             conn.commit()
             return
         if (msg.get("reply_to_message") or {}).get("from", {}).get("is_bot"):
@@ -3059,7 +3070,8 @@ def handle_move_webhook(body: dict, conn) -> None:
                 conn.commit()
                 _send_t(cur, conn, chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
                 return
-            _send_note(cur, conn, tg_id, chat_id, lang, entry_id, to_id, text)
+            _send_note(cur, conn, tg_id, chat_id, lang, entry_id, to_id, text,
+                       src_msg_id=msg.get("message_id"))
             return
 
     # 2b) a question or suggestion typed after /feedback
@@ -3193,7 +3205,8 @@ def handle_move_webhook(body: dict, conn) -> None:
         )
         fresh = cur.fetchone()
         if fresh and fresh["author"] != tg_id:
-            _send_note(cur, conn, tg_id, chat_id, lang, fresh["entry_id"], fresh["author"], text)
+            _send_note(cur, conn, tg_id, chat_id, lang, fresh["entry_id"], fresh["author"],
+                       text, src_msg_id=msg.get("message_id"))
             conn.commit()
             return
 

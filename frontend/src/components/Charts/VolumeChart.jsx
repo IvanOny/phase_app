@@ -179,19 +179,26 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
     <div className="chart-wrapper">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, minWidth: 0 }}>
         <div className="card-title" style={{ marginBottom: 0, flexShrink: 0 }}>{title}</div>
-        {exerciseVolumes.length > 0 && (
-          <select
-            value={selectedExerciseId ?? ''}
-            onChange={e => setSelectedExerciseId(Number(e.target.value))}
-            className="inline-input"
-            style={{ fontSize: 12, padding: '2px 6px', flex: 1, minWidth: 0 }}
-          >
-            {exerciseVolumes.map(ex => (
-              <option key={ex.exerciseId} value={ex.exerciseId}>{ex.exerciseName.length > 32 ? ex.exerciseName.slice(0, 32) + '…' : ex.exerciseName}</option>
-            ))}
-          </select>
-        )}
       </div>
+      {exerciseVolumes.length > 0 && (
+        // Pills rather than a select: which exercises a phase contains is worth
+        // seeing at a glance, and switching between two of them shouldn't cost
+        // opening a menu. They wrap, so a phase with twenty of them is a few
+        // rows rather than a scroll.
+        <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+          {exerciseVolumes.map(ex => (
+            <button
+              key={ex.exerciseId}
+              className={`filter-chip${selectedExerciseId === ex.exerciseId ? ' active' : ''}`}
+              onClick={() => setSelectedExerciseId(ex.exerciseId)}
+              title={ex.exerciseName}
+              style={{ fontSize: 11, padding: '1px 8px' }}
+            >
+              {ex.exerciseName.length > 22 ? ex.exerciseName.slice(0, 22) + '…' : ex.exerciseName}
+            </button>
+          ))}
+        </div>
+      )}
       {isBenchPress && !hideBenchFilter && (
         <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
           {BENCH_TYPES.map(type => (

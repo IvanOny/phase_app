@@ -3150,13 +3150,17 @@ def handle_move_webhook(body: dict, conn) -> None:
     # good reason. This is not that window: it only ever looks at crew moves
     # delivered to this person in the last _CREW_COMMENT_MINUTES, and someone
     # typing a sentence minutes after a move arrived is answering the move.
-    # Opanas typed "Це біля дому?" straight after Iv's, got told he'd already
-    # moved today, and the question reached nobody.
+    # Opanas typed "Це біля дому?" straight after Iv's, was told to send a round
+    # video, and the question reached nobody.
     #
     # Newest wins when several are in the window: you are replying to the one
     # you just looked at, and the most recent is the best guess at which that is.
     # Radar copies are excluded — they have no route back to a name.
-    if len(text) <= _NOTE_MAX:
+    #
+    # Not commands. An unknown word falls past the whole command section to get
+    # here, so without this a mistyped "/setttings" would be delivered to
+    # whoever moved last, with no way to take it back.
+    if len(text) <= _NOTE_MAX and not text.startswith("/"):
         cur.execute(
             "SELECT f.entry_id, e.telegram_user_id AS author FROM move_forwards f "
             "JOIN move_entries e ON e.id = f.entry_id "

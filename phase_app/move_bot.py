@@ -2191,6 +2191,28 @@ def _check_milestone(cur, conn, user, streak: int) -> None:
 
 # ── commands ─────────────────────────────────────────────────────────────────
 
+def _ask_first_question(cur, conn, tg_id: int, chat_id: int, code: str,
+                        pending: str | None = None) -> None:
+    """Start (or resume) registration at the first question that still matters.
+
+    Ukrainian inflects past-tense verbs, so it needs to know before it can say
+    "X рухався" — that question earns its place. English and German don't, so
+    they go straight to the name.
+    """
+    if code == "uk":
+        _set_state(cur, tg_id, f"await_gender:{pending}" if pending else "await_gender")
+        conn.commit()
+        _send(chat_id, _t("ask_gender", code), reply_markup={"inline_keyboard": [[
+            {"text": _t("gender_m", code), "callback_data": "mv:gender:m"},
+            {"text": _t("gender_f", code), "callback_data": "mv:gender:f"},
+        ]]})
+        return
+    _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
+    conn.commit()
+    _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)),
+          reply_markup=_force_reply(tg_id, code, "name_placeholder"))
+
+
 def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = "") -> None:
     """`/start`, optionally with an `invitation_of_<name>_<code>` deep-link payload.
 
@@ -2224,24 +2246,24 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
     pending = state.split(":", 1)[1] if ":" in state else None
     if inviter_id is not None:
         pending = str(inviter_id)
-    if step not in ("await_lang", "await_gender", "await_name"):
-        step = "await_lang"                       # nothing in progress, or it expired
-    _set_state(cur, tg_id, f"{step}:{pending}" if pending else step)
-    conn.commit()
+    code = _norm_lang((_user(cur, tg_id) or {}).get("language_code")) or lang
 
-    # Re-ask the question they're actually on, not the first one.
+    # Re-ask the question they're actually on. /start arrives again mid-flow all
+    # the time — Telegram's own START button, or the invite link tapped twice.
     if step == "await_name":
-        code = _norm_lang((_user(cur, tg_id) or {}).get("language_code")) or lang
+        _set_state(cur, tg_id, f"{step}:{pending}" if pending else step)
+        conn.commit()
         _send(chat_id, _t("ask_name", code),
               reply_markup=_force_reply(tg_id, code, "name_placeholder"))
-    elif step == "await_gender":
-        code = _norm_lang((_user(cur, tg_id) or {}).get("language_code")) or lang
-        _send(chat_id, _t("ask_gender", code), reply_markup={"inline_keyboard": [[
-            {"text": _t("gender_m", code), "callback_data": "mv:gender:m"},
-            {"text": _t("gender_f", code), "callback_data": "mv:gender:f"},
-        ]]})
-    else:
-        _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
+        return
+
+    # Nobody is asked to choose a language any more. Telegram sends one with
+    # every update and it was already the default here, so the first thing a new
+    # person saw was a question about the bot instead of anything about Move —
+    # and two of the first ten stopped there and were never heard from again,
+    # because every nudge needs a name and they never got as far as giving one.
+    # It stays changeable in Settings, where someone who wants it will look.
+    _ask_first_question(cur, conn, tg_id, chat_id, code, pending)
 
 
 def _invite_code(cur, tg_id: int) -> str:
@@ -3517,17 +3539,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         conn.commit()
         _api_call("editMessageReplyMarkup",
                   {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        # Ukrainian inflects the verb, so we need to know; EN/DE don't.
-        if code == "uk":
-            _set_state(cur, tg_id, f"await_gender:{pending}" if pending else "await_gender")
-            conn.commit()
-            _send(chat_id, _t("ask_gender", code), reply_markup={"inline_keyboard": [[
-                {"text": _t("gender_m", code), "callback_data": "mv:gender:m"},
-                {"text": _t("gender_f", code), "callback_data": "mv:gender:f"},
-            ]]})
-            return
-        _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)),
-              reply_markup=_force_reply(tg_id, code, "name_placeholder"))
+        _ask_first_question(cur, conn, tg_id, chat_id, code, pending)
         return
 
     if body.startswith("gender:"):
@@ -3961,6 +3973,32 @@ def send_move_nudges(conn) -> None:
     today = date.today()
     if not _claim_job(cur, conn, "move_nudges", today):
         return
+
+    # 0) Started and stopped before giving a name. Every other nudge here needs
+    #    participant_name, so until now these people were unreachable forever:
+    #    two of the first ten opened the invite link, met the language question,
+    #    and were never spoken to again. The question is gone, but someone can
+    #    still stall on the gender or name step, so this asks once more.
+    #
+    #    Once, ever, on the same nudged_at as the others — a second prod at
+    #    someone who decided not to join is noise.
+    cur.execute(
+        "SELECT telegram_user_id, chat_id, language_code FROM move_users u "
+        "WHERE u.participant_name IS NULL AND u.nudged_at IS NULL "
+        "  AND u.created_at < NOW() - INTERVAL '20 hours'",
+    )
+    unfinished = cur.fetchall()
+    for u in unfinished:
+        uid = u["telegram_user_id"]
+        lang = _norm_lang(u["language_code"])
+        # Whatever they were part-way through; the state has usually expired, so
+        # the language on the row is what decides.
+        _ask_first_question(cur, conn, uid, u["chat_id"] or uid, lang,
+                            (_get_state(cur, uid) or "").split(":", 1)[1]
+                            if ":" in (_get_state(cur, uid) or "") else None)
+        cur.execute("UPDATE move_users SET nudged_at = %s WHERE telegram_user_id = %s",
+                    (today, uid))
+    conn.commit()
 
     # 1) Registered, never posted, and not nudged before. Once, ever — a second
     #    "still here?" to someone who decided not to start is just noise.

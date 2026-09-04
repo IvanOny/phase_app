@@ -769,7 +769,13 @@ _STRINGS: dict[str, dict[str, str]] = {
     # shows its placeholder — which already says "your comment for {name}". The
     # sentence that used to be here said the same thing a second time, one line
     # higher. What's left is the marker the ForceReply is attached to.
-    "note_ask": {"en": "💬", "uk": "💬", "de": "💬"},
+    # A toast, not a message: it is the whole instruction, and it leaves nothing
+    # in the chat and nothing covering the keyboard.
+    "note_armed": {
+        "en": "💬 Write your comment for {name} — your next message goes to them",
+        "uk": "💬 Напиши коментар для {name} — наступне повідомлення піде йому",
+        "de": "💬 Schreib deinen Kommentar für {name} — deine nächste Nachricht geht an sie",
+    },
     # One line for both cases. "on your move" and "replied" existed because
     # nothing else said which move this was about; the message is now sent as
     # a reply to that move, and the quote says it better than a prefix can --
@@ -831,8 +837,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "your name in Move", "uk": "Напиши своє ім'я у Move",
         "de": "dein Name in Move",
     },
-    "note_sent": {"en": "💬 Sent to {name}.", "uk": "💬 Надіслано: {name}.",
-                  "de": "💬 An {name} geschickt."},
     "note_too_long": {
         "en": "Too long — {max} characters at most. It's a comment, not a letter.",
         "uk": "Задовге — щонайбільше {max} символів. Це коментар, а не лист.",
@@ -1623,7 +1627,8 @@ def _talk_anchor(cur, entry_id: int, person_id: int):
 
 
 def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int,
-                  undo_for: int | None = None, undo_id: int | None = None) -> None:
+                  undo_for: int | None = None, undo_id: int | None = None,
+                  to_only: int | None = None) -> None:
     """Put the current state of a thread in front of both people.
 
     The old message is deleted and a longer one sent, rather than edited in
@@ -1636,6 +1641,8 @@ def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int,
     reply into nothing.
     """
     for me_id, other_id in ((a_id, b_id), (b_id, a_id)):
+        if to_only is not None and me_id != to_only:
+            continue
         me = _user(cur, me_id)
         if not me:
             continue
@@ -1681,6 +1688,9 @@ def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int,
                 "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
                 (entry_id, me_id, chat_id, res["message_id"], other_id, entry_id),
             )
+            # The move copy above no longer needs its own 💬: this thread has a
+            # Reply of its own, pointed at the same person.
+            _refresh_move_kb(cur, entry_id, me_id, mlang)
     conn.commit()
 
 
@@ -1726,13 +1736,10 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
                   undo_for=tg_id, undo_id=(row or {}).get("id"))
     # Carries the keyboard: a ForceReply prompt hides it, and it only comes back
     # when a message brings one. Ending the flow is exactly that moment.
-    # Only after a ForceReply, and only for the keyboard. The thread message
-    # this comment just went into is already in front of the sender with their
-    # own line at the bottom, so "sent to X" says nothing it doesn't — but a
-    # ForceReply hides the keyboard, and something has to bring it back.
-    if _clear_prompts(cur, tg_id, entry_id):
-        _send_t(cur, conn, chat_id, _t("note_sent", lang, name=tname),
-                reply_markup=_main_kb(lang, tg_id, cur))
+    # No confirmation. The thread is in front of the sender with their own line
+    # at the bottom, which says more than "sent to X" did — and nothing hides
+    # the keyboard now that 💬 sends no ForceReply.
+    _clear_prompts(cur, tg_id, entry_id)
 
 
 def _drop_undo(cur, entry_id: int) -> None:
@@ -1752,6 +1759,45 @@ def _drop_undo(cur, entry_id: int) -> None:
                              if not any((b.get("callback_data") or "").startswith("mv:undo:")
                                         for b in r)]
     _redraw_markup(row["chat_id"], row["message_id"], kb)
+
+
+def _refresh_move_kb(cur, entry_id: int, person_id: int, lang: str) -> None:
+    """Redraw someone's copy of a move with only the buttons that still apply.
+
+    ⚡ goes once they have used it — a permanent "надіслано ✓" is a control that
+    can never do anything again, sitting under a video for the rest of the day.
+    💬 goes once a thread with the author exists, because the thread carries its
+    own Reply and two ways in is one too many. When neither is left the keyboard
+    goes with them.
+    """
+    cur.execute("SELECT chat_id, message_id FROM move_forwards WHERE entry_id = %s "
+                "AND recipient_tg_id = %s AND kind = 'move'", (entry_id, person_id))
+    copy = cur.fetchone()
+    if not copy:
+        return
+    cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
+    owner = cur.fetchone()
+    if not owner:
+        return
+    author = owner["telegram_user_id"]
+    cur.execute("SELECT 1 FROM move_reactions WHERE entry_id = %s AND reactor_tg_id = %s",
+                (entry_id, person_id))
+    zapped = cur.fetchone() is not None
+    cur.execute("SELECT 1 FROM move_forwards WHERE entry_id = %s AND recipient_tg_id = %s "
+                "AND kind = 'talk'", (entry_id, person_id))
+    talking = cur.fetchone() is not None
+    rows = []
+    if not zapped:
+        rows.append([{"text": _t("zap_btn", lang), "callback_data": f"mv:zap:{entry_id}"}])
+    if not talking and author != person_id:
+        them = _user(cur, author)
+        rows.append([{"text": _t("btn_note_to", lang,
+                                 name=(them or {}).get("participant_name") or ""),
+                      "callback_data": f"mv:note:{entry_id}:{author}"}])
+    _api_call("editMessageReplyMarkup", {
+        "chat_id": copy["chat_id"], "message_id": copy["message_id"],
+        **({"reply_markup": {"inline_keyboard": rows}} if rows else {}),
+    })
 
 
 def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = False,
@@ -2125,17 +2171,25 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
         )
         targets = cur.fetchall()
 
+    # The caption goes into the same thread everything else goes into, as the
+    # author's first line. It used to be its own message under each copy, so a
+    # move with a caption and a reply showed two bubbles saying different halves
+    # of one conversation.
+    #
+    # Delivered to the recipient only. The author already knows what they wrote,
+    # and creating their side of every thread would put one message per crew
+    # member in their chat for a caption nobody has answered yet.
     delivered = 0
     for f in targets:
-        res = _send(f["chat_id"], f"💬 {text}", reply_to=f["message_id"])
-        # Track the reply too, so undo takes the comment with it.
-        if res and res.get("message_id"):
+        rid = f["recipient_tg_id"]
+        cur.execute(
+            "INSERT INTO move_comments (entry_id, from_tg_id, to_tg_id, body) "
+            "SELECT %s, %s, %s, %s WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+            (e["id"], tg_id, rid, text, e["id"]),
+        )
+        if cur.rowcount:
             delivered += 1
-            cur.execute(
-                "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id, kind) "
-                "VALUES (%s, %s, %s, %s, 'comment')",
-                (e["id"], f["recipient_tg_id"], f["chat_id"], res["message_id"]),
-            )
+            _talk_deliver(cur, conn, e["id"], tg_id, rid, to_only=rid)
     conn.commit()
     # Say where it went — "added" alone invites the question "added where?"
     lang = _lang(cur, tg_id)
@@ -3288,32 +3342,23 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         conn.commit()
         _answer(cq["id"], _t("zap_sent" if fresh else "zap_already", lang))
 
-        # Tick the message that was actually pressed. We already know which one
-        # it is, so this needs no lookup and works even when move_forwards has no
-        # row for it. Done on every press, not just the first: if an earlier
-        # attempt failed to redraw, a second tap should still fix the button.
+        # The ⚡ is taken away rather than ticked. "надіслано ✓" was a button
+        # that could never do anything again, left under the video until the
+        # morning sweep; the toast above has already said it landed.
         #
-        # Keep every other row exactly as it is and swap only the ⚡. Rebuilding
-        # the whole keyboard means deciding what kind of copy this is, and the
-        # last version guessed from the row count — true when crew had one row
-        # and radar two, then wrong the moment 💬 was added to crew copies, which
-        # turned a crew copy into block-and-report on the first ⚡.
-        rows = [list(r) for r in
-                ((cq["message"].get("reply_markup") or {}).get("inline_keyboard") or [])]
-        ticked = {"text": _t("zap_btn_sent", lang), "callback_data": f"mv:zap:{entry_id}"}
-        replaced = False
-        for row in rows:
-            for i, btn in enumerate(row):
-                if (btn.get("callback_data") or "").startswith("mv:zap:"):
-                    row[i], replaced = ticked, True
-                    break
-            if replaced:
-                break
-        _api_call("editMessageReplyMarkup", {
-            "chat_id": chat_id, "message_id": msg_id,
-            "reply_markup": {"inline_keyboard": rows} if replaced
-            else _zap_kb(entry_id, sent=True, lang=lang),
-        })
+        # Rebuilt rather than edited in place: whether 💬 belongs there too
+        # depends on the thread, and _refresh_move_kb is the one place that
+        # knows the whole rule. Radar copies keep their own keyboard, which is
+        # block and report and has nothing to do with cheering.
+        cur.execute("SELECT 1 FROM move_forwards WHERE entry_id = %s "
+                    "AND recipient_tg_id = %s AND kind = 'move'", (entry_id, tg_id))
+        if cur.fetchone():
+            _refresh_move_kb(cur, entry_id, tg_id, lang)
+        else:
+            _api_call("editMessageReplyMarkup", {
+                "chat_id": chat_id, "message_id": msg_id,
+                "reply_markup": _zap_kb(entry_id, sent=True, lang=lang),
+            })
         if fresh:
             # The move has a viewer now, so it can no longer be taken back.
             _drop_undo(cur, entry_id)
@@ -3465,103 +3510,13 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # Armed, not sent: the next text goes to this person and nobody else.
         _set_state(cur, tg_id, f"await_note:{entry_id}:{to_id}")
         conn.commit()
-        _answer(cq["id"])
-        # ForceReply opens the keyboard on the question and labels the input
-        # field, and — the part that matters — ties the answer to this exact
-        # prompt instead of to a ten-minute window that catches anything typed.
-        kb = {"force_reply": True,
-              "input_field_placeholder":
-                  _t("note_placeholder", lang, name=them["participant_name"])[:64]}
-        # Tapping 💬 twice used to leave two identical prompts stacked up, both
-        # armed. The old one goes first, so there is only ever one.
+        # No prompt message. A ForceReply has to be a message, that message
+        # takes the reply keyboard away until something brings it back, and the
+        # confirmation that brought it back said what the thread already showed.
+        # The toast carries the whole instruction instead.
         _clear_prompts(cur, tg_id, entry_id)
-        # Hung off the move itself, so the 💬 appears quoted under the bubble it
-        # belongs to rather than floating at the bottom of the chat. The input's
-        # own "Reply to" still points at this message — a ForceReply is always
-        # its own message, and there is no way to aim the input at the video.
-        res = _send(chat_id, _t("note_ask", lang), reply_markup=kb,
-                    reply_to=_talk_anchor(cur, entry_id, tg_id))
-        # Track the question itself, so an answer to it routes even when the
-        # ten-minute state is long gone. Replying an hour later is a normal thing
-        # to do, and until now it landed in the fallback: "you've already moved
-        # today". from_tg_id is who the answer goes to, which is what a reply to
-        # this message means.
-        if res and res.get("message_id"):
-            cur.execute(
-                "INSERT INTO move_forwards "
-                "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
-                "SELECT %s, %s, %s, %s, 'ask', %s "
-                "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
-                (entry_id, tg_id, chat_id, res["message_id"], to_id, entry_id),
-            )
-            conn.commit()
-        return
-
-    if body.startswith("undo"):
-        # Strip the button either way — once it's been pressed it's spent, and a
-        # lingering Undo that no longer works is worse than none.
-        _api_call("editMessageReplyMarkup",
-                  {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        eid = None
-        if ":" in body:
-            try:
-                eid = int(body.split(":", 1)[1])
-            except ValueError:
-                eid = None
-        _revoke(cur, conn, tg_id, chat_id, lang, entry_id=eid)
-        return
-
-    if body == "langmenu":
-        _send(chat_id, _LANG_PROMPT, reply_markup=_kb_lang())
-        return
-
-    if body.startswith("lang:"):
-        code = body[len("lang:"):]
-        if code not in _SUPPORTED_LANGS:
-            return
-        u = _user(cur, tg_id)
-        if u and u["participant_name"]:
-            # Already registered — just switch. Resend the main keyboard so its
-            # localized button labels update too.
-            cur.execute("UPDATE move_users SET language_code = %s WHERE telegram_user_id = %s",
-                        (code, tg_id))
-            conn.commit()
-            _api_call("editMessageReplyMarkup",
-                      {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-            _send_t(cur, conn, chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id, cur))
-            return
-        # Registration flow — keep any pending inviter from the /start payload.
-        state = _get_state(cur, tg_id) or ""
-        pending = state.split(":", 1)[1] if ":" in state else None
-        cur.execute("UPDATE move_users SET language_code = %s WHERE telegram_user_id = %s",
-                    (code, tg_id))
-        _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
         conn.commit()
-        _api_call("editMessageReplyMarkup",
-                  {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        _ask_first_question(cur, conn, tg_id, chat_id, code, pending)
-        return
-
-    if body.startswith("gender:"):
-        g = body[len("gender:"):]
-        if g not in ("m", "f"):
-            return
-        state = _get_state(cur, tg_id) or ""
-        pending = state.split(":", 1)[1] if ":" in state else None
-        cur.execute("UPDATE move_users SET gender = %s WHERE telegram_user_id = %s", (g, tg_id))
-        u = _user(cur, tg_id)
-        code = _norm_lang(u["language_code"]) if u else "uk"
-        _api_call("editMessageReplyMarkup",
-                  {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        if u and u["participant_name"]:          # changing it later, not onboarding
-            _clear_state(cur, tg_id)
-            conn.commit()
-            _send_t(cur, conn, chat_id, _t("lang_changed", code), reply_markup=_main_kb(code, tg_id, cur))
-            return
-        _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
-        conn.commit()
-        _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)),
-              reply_markup=_force_reply(tg_id, code, "name_placeholder"))
+        _answer(cq["id"], _t("note_armed", lang, name=them["participant_name"]))
         return
 
     if body.startswith("crew:"):

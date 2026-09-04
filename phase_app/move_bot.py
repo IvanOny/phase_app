@@ -40,16 +40,12 @@ _TRACE_CHAT_ID = os.environ.get("MOVE_TRACE_CHAT_ID", "")
 
 _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
-# How long after someone else's move arrives that a plain text counts as a
-# comment on it. Far longer than the author's own window, because a viewer sees
-# the move whenever they next open Telegram, not when it was sent: the message
-# that prompted this arrived 145 minutes after the move it was about.
-#
-# Six hours is the trade. There is no undo on a comment to someone else, so a
-# stray thought typed into the bot half a day later must not be sent to them --
-# but by six hours the move has been seen or missed, and anything typed is
-# almost certainly about it.
-_CREW_COMMENT_MINUTES = 360
+# How long a comment can be taken back after it is sent. This is what replaces
+# the window on plain text: rather than guess whether a message was meant for
+# the last move, send it and let the sender undo. Long enough to notice the
+# thread appear and read what you wrote; short enough that the other person has
+# probably not replied yet.
+_NOTE_UNDO_SECONDS = 60
 _COMMENT_UNDO_SECONDS = 60            # a caption's own recall window
 _DELETE_LIMIT_HOURS = 48              # Telegram's limit on a bot deleting its own messages
 # Same stranger can't reappear within a week. Env-tunable: while the pool is
@@ -749,6 +745,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     # copy carries no sender, and a round video can't take a caption.
     "btn_note_to": {"en": "💬 Write to {name}", "uk": "💬 Написати {name}",
                     "de": "💬 An {name} schreiben"},
+    "btn_undo_note": {"en": "↩️ Take back ({secs}s)", "uk": "↩️ Забрати ({secs}с)",
+                      "de": "↩️ Zurücknehmen ({secs}s)"},
+    "note_undone": {
+        "en": "Taken back — they won't see it.",
+        "uk": "Забрали — вони цього не побачать.",
+        "de": "Zurückgenommen — sie sehen es nicht.",
+    },
+    "note_undo_late": {
+        "en": "Too late to take that back.",
+        "uk": "Вже пізно забрати.",
+        "de": "Zu spät, um das zurückzunehmen.",
+    },
     "btn_note_reply": {"en": "💬 Reply", "uk": "💬 Відповісти", "de": "💬 Antworten"},
     # Named, because a thread belongs to one person: with one message per
     # counterpart, "Reply" alone would leave you working out which one.
@@ -1616,7 +1624,8 @@ def _talk_anchor(cur, entry_id: int, person_id: int):
     return row["message_id"] if row else None
 
 
-def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int) -> None:
+def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int,
+                  undo_for: int | None = None, undo_id: int | None = None) -> None:
     """Put the current state of a thread in front of both people.
 
     The old message is deleted and a longer one sent, rather than edited in
@@ -1635,8 +1644,6 @@ def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int) -> None:
         chat_id = me["chat_id"] or me_id
         mlang = _norm_lang(me["language_code"])
         text = _talk_text(cur, entry_id, me_id, other_id, mlang)
-        if not text:
-            continue
         cur.execute("SELECT chat_id, message_id FROM move_forwards "
                     "WHERE entry_id = %s AND recipient_tg_id = %s AND kind = 'talk' "
                     "AND from_tg_id = %s", (entry_id, me_id, other_id))
@@ -1650,11 +1657,22 @@ def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int) -> None:
             cur.execute("DELETE FROM move_forwards WHERE entry_id = %s "
                         "AND recipient_tg_id = %s AND kind = 'talk' AND from_tg_id = %s",
                         (entry_id, me_id, other_id))
+        if not text:
+            # The last line was taken back. The old message is already gone;
+            # sending an empty one in its place would be a Telegram error and a
+            # blank bubble if it weren't.
+            continue
         other = _user(cur, other_id)
+        kb = _note_kb(entry_id, other_id, mlang, reply=True,
+                      name=(other or {}).get("participant_name"))
+        if undo_for == me_id and undo_id:
+            # Only on the sender's own copy, and only for what they just wrote.
+            kb["inline_keyboard"].append(
+                [{"text": _t("btn_undo_note", mlang, secs=_NOTE_UNDO_SECONDS),
+                  "callback_data": f"mv:nundo:{undo_id}"}])
         res = _send(chat_id, text, parse_mode="HTML",
                     reply_to=_talk_anchor(cur, entry_id, me_id),
-                    reply_markup=_note_kb(entry_id, other_id, mlang, reply=True,
-                                          name=(other or {}).get("participant_name")))
+                    reply_markup=kb)
         if res and res.get("message_id"):
             # from_tg_id is the person on the other end, so a swipe-reply to
             # this message routes back to them the way it does for a move.
@@ -1690,11 +1708,14 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     # message per move, and it is rebuilt from move_comments every time.
     cur.execute(
         "INSERT INTO move_comments (entry_id, from_tg_id, to_tg_id, body) "
-        "SELECT %s, %s, %s, %s WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+        "SELECT %s, %s, %s, %s WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s) "
+        "RETURNING id",
         (entry_id, tg_id, to_id, body, entry_id),
     )
+    row = cur.fetchone()
     conn.commit()
-    _talk_deliver(cur, conn, entry_id, tg_id, to_id)
+    _talk_deliver(cur, conn, entry_id, tg_id, to_id,
+                  undo_for=tg_id, undo_id=(row or {}).get("id"))
     # Carries the keyboard: a ForceReply prompt hides it, and it only comes back
     # when a message brings one. Ending the flow is exactly that moment.
     # Only after a ForceReply, and only for the keyboard. The thread message
@@ -3147,15 +3168,14 @@ def handle_move_webhook(body: dict, conn) -> None:
     # 6) a plain text soon after someone else's move is a comment on it.
     #
     # The ten-minute window used to catch anything typed and was removed for
-    # good reason. This is not that window: it only ever looks at crew moves
-    # delivered to this person in the last _CREW_COMMENT_MINUTES, and someone
-    # typing a sentence minutes after a move arrived is answering the move.
-    # Opanas typed "Це біля дому?" straight after Iv's, was told to send a round
-    # video, and the question reached nobody.
+    # good reason. What makes this different is not a shorter clock — there is
+    # no clock — but that a comment can now be taken back for a minute after it
+    # lands. Opanas typed "Це біля дому?" after Iv's move, was told to send a
+    # round video, and the question reached nobody.
     #
-    # Newest wins when several are in the window: you are replying to the one
-    # you just looked at, and the most recent is the best guess at which that is.
-    # Radar copies are excluded — they have no route back to a name.
+    # The newest crew move delivered to this person, whenever it arrived: if you
+    # are typing into Move at all, you are almost always talking about the last
+    # move you were shown. Radar copies are excluded — no route back to a name.
     #
     # Not commands. An unknown word falls past the whole command section to get
     # here, so without this a mistyped "/setttings" would be delivered to
@@ -3165,9 +3185,8 @@ def handle_move_webhook(body: dict, conn) -> None:
             "SELECT f.entry_id, e.telegram_user_id AS author FROM move_forwards f "
             "JOIN move_entries e ON e.id = f.entry_id "
             "WHERE f.recipient_tg_id = %s AND f.kind = 'move' "
-            "  AND f.created_at > NOW() - make_interval(mins => %s) "
             "ORDER BY f.created_at DESC, f.id DESC LIMIT 1",
-            (tg_id, _CREW_COMMENT_MINUTES),
+            (tg_id,),
         )
         fresh = cur.fetchone()
         if fresh and fresh["author"] != tg_id:
@@ -3260,6 +3279,30 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if fresh:
             # The move has a viewer now, so it can no longer be taken back.
             _drop_undo(cur, entry_id)
+        return
+
+    if body.startswith("nundo:"):
+        note_id = int(body[len("nundo:"):])
+        cur.execute(
+            "SELECT entry_id, from_tg_id, to_tg_id, "
+            "       EXTRACT(EPOCH FROM (NOW() - created_at)) AS age "
+            "FROM move_comments WHERE id = %s", (note_id,))
+        note = cur.fetchone()
+        # Age is checked here rather than trusted from the button: the button
+        # cannot remove itself after a minute — nothing calls the bot when a
+        # minute passes — so a stale one is refused instead.
+        if not note or note["from_tg_id"] != tg_id:
+            _answer(cq["id"], _t("note_gone", lang))
+            return
+        if note["age"] > _NOTE_UNDO_SECONDS:
+            _answer(cq["id"], _t("note_undo_late", lang))
+            _api_call("editMessageReplyMarkup",
+                      {"chat_id": chat_id, "message_id": msg_id})
+            return
+        cur.execute("DELETE FROM move_comments WHERE id = %s", (note_id,))
+        conn.commit()
+        _answer(cq["id"], _t("note_undone", lang))
+        _talk_deliver(cur, conn, note["entry_id"], note["from_tg_id"], note["to_tg_id"])
         return
 
     if body.startswith("cmt:"):

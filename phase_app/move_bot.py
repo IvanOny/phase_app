@@ -745,7 +745,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     # copy carries no sender, and a round video can't take a caption.
     "btn_note_to": {"en": "💬 Write to {name}", "uk": "💬 Написати {name}",
                     "de": "💬 An {name} schreiben"},
-    "btn_undo_note": {"en": "↩️ Take back ({secs}s)", "uk": "↩️ Забрати ({secs}с)",
+    "btn_undo_note": {"en": "↩️ Take back ({secs}s)", "uk": "↩️ Скасувати ({secs} с)",
                       "de": "↩️ Zurücknehmen ({secs}s)"},
     "note_undone": {
         "en": "Taken back — they won't see it.",

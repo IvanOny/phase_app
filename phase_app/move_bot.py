@@ -3448,7 +3448,12 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # Tapping 💬 twice used to leave two identical prompts stacked up, both
         # armed. The old one goes first, so there is only ever one.
         _clear_prompts(cur, tg_id, entry_id)
-        res = _send(chat_id, _t("note_ask", lang), reply_markup=kb)
+        # Hung off the move itself, so the 💬 appears quoted under the bubble it
+        # belongs to rather than floating at the bottom of the chat. The input's
+        # own "Reply to" still points at this message — a ForceReply is always
+        # its own message, and there is no way to aim the input at the video.
+        res = _send(chat_id, _t("note_ask", lang), reply_markup=kb,
+                    reply_to=_talk_anchor(cur, entry_id, tg_id))
         # Track the question itself, so an answer to it routes even when the
         # ten-minute state is long gone. Replying an hour later is a normal thing
         # to do, and until now it landed in the fallback: "you've already moved

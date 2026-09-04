@@ -40,6 +40,16 @@ _TRACE_CHAT_ID = os.environ.get("MOVE_TRACE_CHAT_ID", "")
 
 _STATE_TIMEOUT_MINUTES = 10
 _COMMENT_WINDOW_MINUTES = 10          # a text this soon after a move is its comment
+# How long after someone else's move arrives that a plain text counts as a
+# comment on it. Far longer than the author's own window, because a viewer sees
+# the move whenever they next open Telegram, not when it was sent: the message
+# that prompted this arrived 145 minutes after the move it was about.
+#
+# Six hours is the trade. There is no undo on a comment to someone else, so a
+# stray thought typed into the bot half a day later must not be sent to them --
+# but by six hours the move has been seen or missed, and anything typed is
+# almost certainly about it.
+_CREW_COMMENT_MINUTES = 360
 _COMMENT_UNDO_SECONDS = 60            # a caption's own recall window
 _DELETE_LIMIT_HOURS = 48              # Telegram's limit on a bot deleting its own messages
 # Same stranger can't reappear within a week. Env-tunable: while the pool is
@@ -3133,6 +3143,33 @@ def handle_move_webhook(body: dict, conn) -> None:
     # 5) a plain text soon after a move is its comment
     if _attach_comment(cur, conn, tg_id, chat_id, text):
         return
+
+    # 6) a plain text soon after someone else's move is a comment on it.
+    #
+    # The ten-minute window used to catch anything typed and was removed for
+    # good reason. This is not that window: it only ever looks at crew moves
+    # delivered to this person in the last _CREW_COMMENT_MINUTES, and someone
+    # typing a sentence minutes after a move arrived is answering the move.
+    # Opanas typed "Це біля дому?" straight after Iv's, got told he'd already
+    # moved today, and the question reached nobody.
+    #
+    # Newest wins when several are in the window: you are replying to the one
+    # you just looked at, and the most recent is the best guess at which that is.
+    # Radar copies are excluded — they have no route back to a name.
+    if len(text) <= _NOTE_MAX:
+        cur.execute(
+            "SELECT f.entry_id, e.telegram_user_id AS author FROM move_forwards f "
+            "JOIN move_entries e ON e.id = f.entry_id "
+            "WHERE f.recipient_tg_id = %s AND f.kind = 'move' "
+            "  AND f.created_at > NOW() - make_interval(mins => %s) "
+            "ORDER BY f.created_at DESC, f.id DESC LIMIT 1",
+            (tg_id, _CREW_COMMENT_MINUTES),
+        )
+        fresh = cur.fetchone()
+        if fresh and fresh["author"] != tg_id:
+            _send_note(cur, conn, tg_id, chat_id, lang, fresh["entry_id"], fresh["author"], text)
+            conn.commit()
+            return
 
     cur.execute(
         "SELECT 1 FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",

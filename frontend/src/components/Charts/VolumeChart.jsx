@@ -41,12 +41,14 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
   const isTouch = useIsTouchDevice();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
   const [benchFilters, setBenchFilters] = useState(['volume']);
-  const [series, setSeries] = useState('volume');
+  // One series. The three pills - volume, top load, both - were a choice
+  // between a number nobody read (kg x reps) and the one everybody did.
+  const series = 'load';
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-volume');
   const [hoveredDate, setHoveredDate] = useState(null);
 
-  const showVolume = series === 'volume' || series === 'both';
-  const showLoad   = series === 'load'   || series === 'both';
+  const showVolume = false;
+  const showLoad   = true;
 
   // Global tap-outside dismiss
   useEffect(() => {
@@ -68,7 +70,6 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
 
   useEffect(() => {
     setBenchFilters(['volume']);
-    setSeries('volume');
     openTooltip(null);
   }, [selectedExerciseId]);
 
@@ -139,7 +140,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
 
   const volDomain  = axisDomain(vMin, vMax, vRange, 0.25, 50);
   const loadDomain = axisDomain(lMin, lMax, lRange, 0.20, 2);
-  const title = 'Volume';
+  const title = 'Top set';
 
   function getTooltipPos(event) {
     if (!chartRef.current || !event) return null;
@@ -219,25 +220,7 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
               </linearGradient>
             </defs>
           </svg>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-            {[
-              { key: 'volume', color: colors.accent,     label: `volume (${unit})` },
-              ...(!isTimed ? [
-                { key: 'load', color: colors.readyGreen, label: topLabel },
-                { key: 'both', color: null,              label: 'both' },
-              ] : []),
-            ].map(({ key, color, label }) => (
-              <button
-                key={key}
-                className={`filter-chip${series === key ? ' active' : ''}`}
-                onClick={() => setSeries(key)}
-                style={{ fontSize: 11, padding: '1px 8px', display: 'flex', alignItems: 'center', gap: 5 }}
-              >
-                {color && <span style={{ width: 8, height: 8, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />}
-                {label}
-              </button>
-            ))}
-          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{topLabel}</div>
           <ResponsiveContainer width="100%" height={210}>
             <BarChart
               data={data}

@@ -4063,6 +4063,24 @@ def purge_move_transient(conn) -> None:
     if rows:
         cur.execute("DELETE FROM move_transient WHERE id = ANY(%s)", ([r["id"] for r in rows],))
 
+    # A prompt nobody answered. _clear_prompts only fires on an answer, so an
+    # abandoned one was never touched by anything — four of them were sitting in
+    # one chat, the oldest from that morning. They are questions, and a question
+    # from yesterday has stopped being one.
+    #
+    # Past the delete limit Telegram refuses, so those rows are dropped without
+    # an attempt rather than retried every morning forever.
+    cur.execute("DELETE FROM move_forwards WHERE kind = 'ask' "
+                "AND created_at < NOW() - make_interval(hours => %s)", (_DELETE_LIMIT_HOURS,))
+    cur.execute("SELECT id, chat_id, message_id FROM move_forwards "
+                "WHERE kind = 'ask' AND created_at < %s", (today,))
+    prompts = cur.fetchall()
+    for r in prompts:
+        _api_call("deleteMessage", {"chat_id": r["chat_id"], "message_id": r["message_id"]})
+    if prompts:
+        cur.execute("DELETE FROM move_forwards WHERE id = ANY(%s)",
+                    ([r["id"] for r in prompts],))
+
     # Yesterday's crew copies keep the move and lose the buttons. A sent-⚡
     # tick and a comment button are answers to a move that was happening
     # then; a day later they're dead controls under a video you scroll past.
@@ -4081,7 +4099,7 @@ def purge_move_transient(conn) -> None:
         _api_call("editMessageReplyMarkup",
                   {"chat_id": r["chat_id"], "message_id": r["message_id"]})
     conn.commit()
-    _log(f"🧹 Move: swept\n• deleted: {len(rows) - refused} · refused: {refused} · buttons off: {len(stripped)} · too old to delete: {expired}")
+    _log(f"🧹 Move: swept\n• deleted: {len(rows) - refused} · refused: {refused} · prompts dropped: {len(prompts)} · buttons off: {len(stripped)} · too old to delete: {expired}")
 
 
 def send_move_monthly_summaries(conn) -> None:

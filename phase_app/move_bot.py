@@ -3415,6 +3415,47 @@ def handle_move_webhook(body: dict, conn) -> None:
                 pass
         return
 
+    # Naming a circle sits up here with the other name entry, and above the
+    # swipe-reply rule below. Answering a ForceReply *is* a reply, and the
+    # circle prompt is not a move, so "Залізо" was matching nothing and coming
+    # back as "this question is no longer active" — the one message guaranteed
+    # to be wrong when the question was asked eight seconds earlier.
+    if base_state == "await_circle_name":
+        _clear_state(cur, tg_id)
+        conn.commit()
+        if not text.startswith("/"):
+            name = text.strip()
+            if len(name) > _CIRCLE_NAME_MAX:
+                _send_t(cur, conn, chat_id,
+                        _t("circle_name_too_long", lang, max=_CIRCLE_NAME_MAX))
+                return
+            cid = None
+            if state and ":" in state:
+                cid = int(state.split(":", 1)[1])
+            # A savepoint, not the whole transaction: the only thing that can
+            # fail here is the unique index on (owner, lower(name)), and a name
+            # someone already used shouldn't undo everything else this update
+            # has done on the way here.
+            cur.execute("SAVEPOINT circle_name")
+            try:
+                if cid and _circle(cur, tg_id, cid):
+                    cur.execute("UPDATE move_circles SET name = %s WHERE id = %s "
+                                "AND owner_tg_id = %s", (name, cid, tg_id))
+                else:
+                    cur.execute("INSERT INTO move_circles (owner_tg_id, name) "
+                                "VALUES (%s, %s) RETURNING id", (tg_id, name))
+                    cid = cur.fetchone()["id"]
+                cur.execute("RELEASE SAVEPOINT circle_name")
+                conn.commit()
+            except Exception:
+                cur.execute("ROLLBACK TO SAVEPOINT circle_name")
+                _send_t(cur, conn, chat_id, _t("circle_name_taken", lang, name=name))
+                return
+            _clear_prompts(cur, tg_id, 0)
+            text_, kb = _circle_view(cur, tg_id, cid, lang)
+            _send_t(cur, conn, chat_id, text_, reply_markup=kb)
+            return
+
     # 2·0) a swipe-reply to someone's move is a comment on it, no button needed.
     #      Checked before every state below: replying to a specific message is as
     #      explicit as tapping 💬, and more explicit than whatever prompt happens
@@ -3567,38 +3608,6 @@ def handle_move_webhook(body: dict, conn) -> None:
     # bot came back as «Нікого з ім'ям "я думаю, Нео сподобається. Можна
     # переслати йому?"». Names are letters only (_valid_name is what registration
     # enforces), so punctuation means this was never a name.
-    if base_state == "await_circle_name":
-        _clear_state(cur, tg_id)
-        conn.commit()
-        if not text.startswith("/"):
-            name = text.strip()
-            if len(name) > _CIRCLE_NAME_MAX:
-                _send_t(cur, conn, chat_id,
-                        _t("circle_name_too_long", lang, max=_CIRCLE_NAME_MAX))
-                return
-            cid = None
-            if state and ":" in state:
-                cid = int(state.split(":", 1)[1])
-            try:
-                if cid and _circle(cur, tg_id, cid):
-                    cur.execute("UPDATE move_circles SET name = %s WHERE id = %s "
-                                "AND owner_tg_id = %s", (name, cid, tg_id))
-                else:
-                    cur.execute("INSERT INTO move_circles (owner_tg_id, name) "
-                                "VALUES (%s, %s) RETURNING id", (tg_id, name))
-                    cid = cur.fetchone()["id"]
-                conn.commit()
-            except Exception:
-                # The unique index on (owner, lower(name)) is the only thing that
-                # can fail here, and it means exactly one thing.
-                conn.rollback()
-                _send_t(cur, conn, chat_id, _t("circle_name_taken", lang, name=name))
-                return
-            _clear_prompts(cur, tg_id, 0)
-            text_, kb = _circle_view(cur, tg_id, cid, lang)
-            _send_t(cur, conn, chat_id, text_, reply_markup=kb)
-            return
-
     if state == "await_crew" and _valid_name(text):
         _handle_crew_name(cur, conn, tg_id, chat_id, lang, text)
         conn.commit()

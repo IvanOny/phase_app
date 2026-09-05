@@ -1339,8 +1339,8 @@ def _main_kb(lang: str = "en", tg_id: int | None = None, cur=None) -> dict:
         # Telegram allows one markup — so every other send does.
         moves = _PLACEHOLDER_LESSONS
         if cur is not None:
-            cur.execute("SELECT COUNT(*) AS n FROM move_entries WHERE telegram_user_id = %s",
-                        (tg_id,))
+            cur.execute("SELECT COUNT(DISTINCT entry_date) AS n FROM move_entries "
+                        "WHERE telegram_user_id = %s", (tg_id,))
             moves = (cur.fetchone() or {}).get("n") or 0
         # Nothing here may depend on today. The keyboard lives in the client
         # until some message replaces it, so "Сьогодні рух записано ✓" survived
@@ -1481,8 +1481,12 @@ def _valid_name(text: str) -> bool:
 def _streak(cur, tg_id: int, as_of: date | None = None) -> int:
     """Consecutive days ending today (or yesterday — a day isn't over yet)."""
     today = as_of or date.today()
+    # DISTINCT because a day is a day however many moves it holds. Today one
+    # row per day is guaranteed by a unique constraint; circles are the reason
+    # that may stop being true, and a duplicated date would read as a gap and
+    # cut the streak in half.
     cur.execute(
-        "SELECT entry_date FROM move_entries WHERE telegram_user_id = %s "
+        "SELECT DISTINCT entry_date FROM move_entries WHERE telegram_user_id = %s "
         "ORDER BY entry_date DESC LIMIT 400",
         (tg_id,),
     )
@@ -3011,7 +3015,7 @@ def _period_stats(days: list, zaps: dict, start: date, end: date,
 def _cmd_summary(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     """Every month on record, newest first — computed from entries, so it works
     retroactively rather than only for months a report was sent for."""
-    cur.execute("SELECT entry_date FROM move_entries WHERE telegram_user_id = %s "
+    cur.execute("SELECT DISTINCT entry_date FROM move_entries WHERE telegram_user_id = %s "
                 "ORDER BY entry_date", (tg_id,))
 
     def as_date(v):
@@ -4583,7 +4587,7 @@ def send_move_monthly_summaries(conn) -> None:
     for u in cur.fetchall():
         tg_id = u["telegram_user_id"]
         cur.execute(
-            "SELECT entry_date FROM move_entries WHERE telegram_user_id = %s "
+            "SELECT DISTINCT entry_date FROM move_entries WHERE telegram_user_id = %s "
             "AND entry_date >= %s AND entry_date <= %s ORDER BY entry_date",
             (tg_id, prev_start, prev_end),
         )

@@ -1191,11 +1191,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "🌍 Мову змінено на українську.",
         "de": "🌍 Sprache auf Deutsch gestellt.",
     },
+    # Not "future members". There is no group to be a member of: a crew is one
+    # person's own list of pairs, and people were reading this line as an
+    # invitation into a community that everyone already in it belongs to.
+    # Addressed to one person, which is what the link actually does.
     "invite_line": {
-        "en": "Send 🔗 your invite link to future members:\n{link}",
-        "uk": "Надішли 🔗 своє посилання-запрошення майбутнім учасникам:\n"
+        "en": "Send 🔗 your link to someone you want to move with:\n{link}",
+        "uk": "Надішли 🔗 своє посилання тому, з ким хочеш рухатись разом:\n"
               "{link}",
-        "de": "Schick 🔗 deinen Einladungslink an künftige Mitglieder:\n{link}",
+        "de": "Schick 🔗 deinen Link an jemanden, mit dem du dich bewegen willst:\n{link}",
     },
     "invite_connected": {
         "en": "🤝 You and {name} are now moving together!",

@@ -889,6 +889,72 @@ _STRINGS: dict[str, dict[str, str]] = {
     # "Коло твоїх людей", not "друзів": people arrive here by invite link too, and
     # calling a colleague a friend makes "remove from your friends" read harsher
     # than the action is.
+    # ── circles ──
+    "circles_offer": {
+        "en": "👥 You can group your people into circles — gym, family, whoever — and send each move only to the ones you choose.\n\nNobody sees your circles but you.",
+        "uk": "👥 Можеш згрупувати своїх людей у кола — зал, родина, будь-хто — і надсилати кожен рух лише тим, кому захочеш.\n\nКола бачиш тільки ти.",
+        "de": "👥 Du kannst deine Leute in Kreise gruppieren — Gym, Familie, wen auch immer — und jede Bewegung nur an die schicken, die du wählst.\n\nDeine Kreise sieht nur du.",
+    },
+    "circles_title": {
+        "en": "👥 Your circles. Each move can go to the ones you choose.",
+        "uk": "👥 Твої кола. Кожен рух може йти тим, кого обереш.",
+        "de": "👥 Deine Kreise. Jede Bewegung kann an die gehen, die du wählst.",
+    },
+    "btn_circles": {"en": "👥 Circles · {n}", "uk": "👥 Кола · {n}",
+                    "de": "👥 Kreise · {n}"},
+    "btn_circles_offer": {
+        "en": "👥 Send different moves to different people?",
+        "uk": "👥 Різні рухи різним людям?",
+        "de": "👥 Verschiedene Bewegungen an verschiedene Leute?",
+    },
+    "btn_circle_new": {"en": "➕ New circle", "uk": "➕ Нове коло", "de": "➕ Neuer Kreis"},
+    "btn_circle_rename": {"en": "✏️ Rename", "uk": "✏️ Перейменувати", "de": "✏️ Umbenennen"},
+    "btn_circle_delete": {"en": "🗑 Delete circle", "uk": "🗑 Видалити коло", "de": "🗑 Kreis löschen"},
+    "btn_back": {"en": "‹ Back", "uk": "‹ Назад", "de": "‹ Zurück"},
+    "circle_ask_name": {
+        "en": "What should this circle be called?",
+        "uk": "Як назвемо це коло?",
+        "de": "Wie soll dieser Kreis heißen?",
+    },
+    "circle_name_placeholder": {"en": "gym, family…", "uk": "зал, родина…", "de": "Gym, Familie…"},
+    "circle_name_taken": {
+        "en": "You already have a circle called {name}.",
+        "uk": "У тебе вже є коло «{name}».",
+        "de": "Du hast schon einen Kreis namens {name}.",
+    },
+    "circle_name_too_long": {
+        "en": "Too long — {max} characters at most.",
+        "uk": "Задовга назва — щонайбільше {max} символів.",
+        "de": "Zu lang — höchstens {max} Zeichen.",
+    },
+    "circle_view": {
+        "en": "👥 {name} — tap a name to add or remove them.",
+        "uk": "👥 {name} — торкнись імені, щоб додати або прибрати.",
+        "de": "👥 {name} — tippe einen Namen an, um ihn hinzuzufügen oder zu entfernen.",
+    },
+    "circle_deleted": {
+        "en": "🗑 Circle {name} deleted. The people are still in your crew.",
+        "uk": "🗑 Коло «{name}» видалено. Люди лишаються серед твоїх.",
+        "de": "🗑 Kreis {name} gelöscht. Die Leute bleiben in deiner Crew.",
+    },
+    # ── addressing a held move ──
+    "pick_prompt": {
+        "en": "📹 Move recorded. Who should see it?",
+        "uk": "📹 Рух записано. Хто його побачить?",
+        "de": "📹 Bewegung aufgenommen. Wer soll sie sehen?",
+    },
+    "btn_pick_all": {"en": "Everyone", "uk": "Усі твої люди", "de": "Alle"},
+    "btn_pick_send": {"en": "→ Send", "uk": "→ Надіслати", "de": "→ Senden"},
+    "pick_none": {
+        "en": "Choose at least one circle first.",
+        "uk": "Спершу обери хоча б одне коло.",
+        "de": "Wähl zuerst mindestens einen Kreis.",
+    },
+    "pick_expired": {
+        "en": "📹 Nothing was chosen, so your move went to everyone in your crew.",
+        "uk": "📹 Вибору не було, тому рух пішов усім твоїм людям.",
+        "de": "📹 Nichts gewählt, also ging deine Bewegung an deine ganze Crew.",
+    },
     "crew_prompt": {
         "en": "🤝 Your circle of people. You can set it so you don't get someone's "
               "moves for a while, or remove a person from the circle",
@@ -1439,6 +1505,68 @@ def _crew_names(cur, tg_id: int) -> list[str]:
     return [r["crew_name"] for r in cur.fetchall()]
 
 
+# ── circles ──────────────────────────────────────────────────────────────────
+#
+# A circle is a named subset of your own crew. Nobody else can see one, and two
+# people's circles never meet — the same thing that is true of the crew itself,
+# one level down.
+#
+# They are opt-in and invisible until they could be useful: a crew of one has
+# nothing to divide, so nothing about circles is shown until there are two.
+
+_CIRCLES_MIN_CREW = 2                 # below this, circles are not offered at all
+_CIRCLE_NAME_MAX = 24
+_PICK_WINDOW_MINUTES = 30             # after this an unaddressed move goes to everyone
+
+
+def _circles_enabled(cur, tg_id: int) -> bool:
+    """Beta only, and only once there is more than one person to divide."""
+    if tg_id not in _beta_ids():
+        return False
+    cur.execute("SELECT COUNT(*) AS n FROM move_crew WHERE telegram_user_id = %s", (tg_id,))
+    return ((cur.fetchone() or {}).get("n") or 0) >= _CIRCLES_MIN_CREW
+
+
+def _circles(cur, tg_id: int) -> list:
+    cur.execute(
+        "SELECT c.id, c.name, COUNT(m.member_tg_id) AS members "
+        "FROM move_circles c LEFT JOIN move_circle_members m ON m.circle_id = c.id "
+        "WHERE c.owner_tg_id = %s GROUP BY c.id, c.name ORDER BY LOWER(c.name)",
+        (tg_id,),
+    )
+    return cur.fetchall()
+
+
+def _circle(cur, tg_id: int, circle_id: int):
+    """Always scoped by owner: a circle id in a callback is user input."""
+    cur.execute("SELECT id, name FROM move_circles WHERE id = %s AND owner_tg_id = %s",
+                (circle_id, tg_id))
+    return cur.fetchone()
+
+
+def _circle_member_ids(cur, circle_id: int) -> set[int]:
+    cur.execute("SELECT member_tg_id FROM move_circle_members WHERE circle_id = %s", (circle_id,))
+    return {r["member_tg_id"] for r in cur.fetchall()}
+
+
+def _crew_members(cur, tg_id: int) -> list:
+    """The crew as (telegram_user_id, participant_name), for building a circle.
+
+    move_crew keys on the name, so this resolves them; anyone whose name no
+    longer matches a registered user is skipped rather than offered as a member
+    who could never receive anything.
+    """
+    names = _crew_names(cur, tg_id)
+    if not names or "__all__" in names:
+        cur.execute("SELECT telegram_user_id, participant_name FROM move_users "
+                    "WHERE telegram_user_id <> %s AND participant_name IS NOT NULL "
+                    "ORDER BY participant_name", (tg_id,))
+        return cur.fetchall()
+    cur.execute("SELECT telegram_user_id, participant_name FROM move_users "
+                "WHERE participant_name = ANY(%s) ORDER BY participant_name", (names,))
+    return cur.fetchall()
+
+
 def _recipients(cur, tg_id: int, sender_name: str) -> list[tuple[int, int, str]]:
     """(tg_id, chat_id, name) for everyone who should see this move: in my crew,
     not paused, hasn't muted me, and accepts moves from me."""
@@ -1966,7 +2094,8 @@ def _warn(cur, conn, author, entry_id: int) -> None:
 
 # ── logging a move ───────────────────────────────────────────────────────────
 
-def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str | None) -> list[str]:
+def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str | None,
+             only: set | None = None) -> list[str]:
     """Copy the move to each crew member, remembering where it landed so a late
     comment can be threaded under it. Returns the names it reached."""
     sender = user["participant_name"]
@@ -1990,6 +2119,8 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
             )
 
     for rid, chat_id, rname in _recipients(cur, user["telegram_user_id"], sender):
+        if only is not None and rid not in only:
+            continue
         rlang = _lang(cur, rid)
         header = _tgen("crew_move", rlang, gender, name=sender)
         if media:
@@ -2017,6 +2148,120 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
         names.append(rname)
     conn.commit()
     return names
+
+
+def _circles_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
+    """The circle list, or the offer to make one if there are none yet."""
+    circles = _circles(cur, tg_id)
+    rows = [[{"text": f"{c['name']} · {c['members']}",
+              "callback_data": f"mv:cr:open:{c['id']}"}] for c in circles]
+    rows.append([{"text": _t("btn_circle_new", lang), "callback_data": "mv:cr:new"}])
+    return (_t("circles_offer", lang) if not circles
+            else _t("circles_title", lang)), {"inline_keyboard": rows}
+
+
+def _circle_view(cur, tg_id: int, circle_id: int, lang: str) -> tuple[str, dict]:
+    """One circle: every crew member, ticked if they are in it."""
+    c = _circle(cur, tg_id, circle_id)
+    members = _circle_member_ids(cur, circle_id)
+    rows = []
+    for p in _crew_members(cur, tg_id):
+        on = p["telegram_user_id"] in members
+        rows.append([{"text": f"{'✅' if on else '⬜'} {p['participant_name']}",
+                      "callback_data": f"mv:cr:tog:{circle_id}:{p['telegram_user_id']}"}])
+    rows.append([{"text": _t("btn_circle_rename", lang),
+                  "callback_data": f"mv:cr:ren:{circle_id}"},
+                 {"text": _t("btn_circle_delete", lang),
+                  "callback_data": f"mv:cr:del:{circle_id}"}])
+    rows.append([{"text": _t("btn_back", lang), "callback_data": "mv:cr:list:0"}])
+    return _t("circle_view", lang, name=(c or {}).get("name", "")), {"inline_keyboard": rows}
+
+
+def _picked_circles(cur, entry_id: int) -> set[int]:
+    cur.execute("SELECT circle_id FROM move_entry_circles WHERE entry_id = %s", (entry_id,))
+    return {r["circle_id"] for r in cur.fetchall()}
+
+
+def _pick_audience(cur, tg_id: int, entry_id: int) -> set | None:
+    """Telegram ids this move was addressed to, or None for the whole crew.
+
+    No circle chosen means everyone — the same thing the picker shows as
+    selected when nothing else is, and the same thing an unanswered picker
+    falls back to. One rule, three places.
+    """
+    picked = _picked_circles(cur, entry_id)
+    if not picked:
+        return None
+    cur.execute("SELECT DISTINCT member_tg_id FROM move_circle_members "
+                "WHERE circle_id = ANY(%s)", (list(picked),))
+    return {r["member_tg_id"] for r in cur.fetchall()}
+
+
+def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
+    picked = _picked_circles(cur, entry_id)
+    cur.execute("SELECT radar_ok FROM move_entries WHERE id = %s", (entry_id,))
+    row = cur.fetchone()
+    radar = bool(row and row["radar_ok"])
+    rows = []
+    for c in _circles(cur, tg_id):
+        on = c["id"] in picked
+        rows.append([{"text": f"{'✅' if on else '⬜'} {c['name']} · {c['members']}",
+                      "callback_data": f"mv:pk:c:{entry_id}:{c['id']}"}])
+    rows.append([{"text": f"{'⬜' if picked else '✅'} {_t('btn_pick_all', lang)}",
+                  "callback_data": f"mv:pk:all:{entry_id}"}])
+    rows.append([{"text": f"{'✅' if radar else '⬜'} 📡 "
+                          + _t("btn_radar", lang).split(" ", 1)[-1],
+                  "callback_data": f"mv:pk:r:{entry_id}"}])
+    rows.append([{"text": _t("btn_pick_send", lang), "callback_data": f"mv:pk:go:{entry_id}"}])
+    return _t("pick_prompt", lang), {"inline_keyboard": rows}
+
+
+def _show_picker(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str) -> None:
+    text, kb = _pick_view(cur, tg_id, entry_id, lang)
+    res = _send(chat_id, text, reply_markup=kb, reply_to=_talk_anchor(cur, entry_id, tg_id))
+    if res and res.get("message_id"):
+        # kind='pick' so the sender can be found again when the move is sent or
+        # when the window runs out and it has to be taken down.
+        cur.execute(
+            "INSERT INTO move_forwards "
+            "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+            "SELECT %s, %s, %s, %s, 'pick', %s "
+            "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+            (entry_id, tg_id, chat_id, res["message_id"], tg_id, entry_id),
+        )
+    conn.commit()
+
+
+def _drop_picker(cur, entry_id: int) -> None:
+    cur.execute("SELECT chat_id, message_id FROM move_forwards "
+                "WHERE entry_id = %s AND kind = 'pick'", (entry_id,))
+    for r in cur.fetchall():
+        _api_call("deleteMessage", {"chat_id": r["chat_id"], "message_id": r["message_id"]})
+    cur.execute("DELETE FROM move_forwards WHERE entry_id = %s AND kind = 'pick'", (entry_id,))
+
+
+def flush_pending_moves(conn) -> None:
+    """Send anything that was recorded and never addressed.
+
+    A move that reached nobody because its author was interrupted is the worst
+    outcome available here — it counts for the streak, it is in the database,
+    and the crew never saw it. After the window it goes where it would have gone
+    before circles existed: everyone.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT id, telegram_user_id, chat_id FROM move_entries "
+                "WHERE pending_since IS NOT NULL "
+                "  AND pending_since < NOW() - make_interval(mins => %s)",
+                (_PICK_WINDOW_MINUTES,))
+    for e in cur.fetchall():
+        tg_id = e["telegram_user_id"]
+        u = _user(cur, tg_id)
+        lang = _norm_lang((u or {}).get("language_code"))
+        chat_id = (u or {}).get("chat_id") or e["chat_id"] or tg_id
+        _drop_picker(cur, e["id"])
+        _finish_move(cur, conn, tg_id, chat_id, e["id"], lang,
+                     only=_pick_audience(cur, tg_id, e["id"]))
+        _send_t(cur, conn, chat_id, _t("pick_expired", lang))
 
 
 def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_body: str | None) -> None:
@@ -2047,8 +2292,41 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     entry_id = cur.fetchone()["id"]
     conn.commit()
 
+    # Circles: the move waits to be addressed instead of going out at once.
+    # Everything below happens on send, unchanged, so a held move and an
+    # immediate one take exactly the same path once the audience is known.
+    if _circles_enabled(cur, tg_id) and _circles(cur, tg_id):
+        cur.execute("UPDATE move_entries SET pending_since = NOW() WHERE id = %s", (entry_id,))
+        conn.commit()
+        _show_picker(cur, conn, tg_id, chat_id, entry_id, lang)
+        return
+
+    _finish_move(cur, conn, tg_id, chat_id, entry_id, lang)
+
+
+def _finish_move(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str,
+                 only: set | None = None) -> None:
+    """Deliver a move and everything that follows: confirmation, ⚙️, streak.
+
+    `only` limits the crew to a set of telegram ids — the union of the circles
+    it was addressed to. None means everyone, which is what a move without
+    circles has always done and what an unaddressed one falls back to.
+    """
+    user = _user(cur, tg_id)
+    today = date.today()
+    cur.execute("SELECT media_type, chat_id AS src_chat, message_id AS src_msg, text_body "
+                "FROM move_entries WHERE id = %s", (entry_id,))
+    e = cur.fetchone()
+    if not e:
+        return                                    # undone while it waited
+    media_type, src_chat, src_msg = e["media_type"], e["src_chat"], e["src_msg"]
+    text_body = e["text_body"]
+    media = src_msg is not None
+    cur.execute("UPDATE move_entries SET pending_since = NULL WHERE id = %s", (entry_id,))
+    conn.commit()
+
     names = _deliver(cur, conn, user, entry_id,
-                     (src_chat, src_msg) if media else None, text_body)
+                     (src_chat, src_msg) if media else None, text_body, only=only)
 
     streak = _streak(cur, tg_id, today)
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
@@ -2482,6 +2760,13 @@ def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     lines += [_t("crew_hidden_line", lang, name=r["participant_name"],
                  until=_short_date(hidden[(r["participant_name"] or "").lower()]))
               for r in rows if (r["participant_name"] or "").lower() in hidden]
+    # Circles hang off this menu, and only once there is more than one person to
+    # divide. With a crew of one the whole idea is noise, so it isn't mentioned.
+    if _circles_enabled(cur, tg_id):
+        made = _circles(cur, tg_id)
+        kb.append([{"text": _t("btn_circles", lang, n=len(made)) if made
+                    else _t("btn_circles_offer", lang),
+                    "callback_data": "mv:cr:list:0"}])
     return "\n".join(lines), {"inline_keyboard": kb}
 
 
@@ -3049,6 +3334,20 @@ def handle_move_webhook(body: dict, conn) -> None:
     if u and u["language_code"]:
         lang = _norm_lang(u["language_code"])
 
+    # A move recorded and never addressed goes out on its own. Checked here as
+    # well as in the daily job, because the daily job is once a day and someone
+    # who came back an hour later would otherwise find their move still waiting.
+    cur.execute("SELECT id FROM move_entries WHERE telegram_user_id = %s "
+                "AND pending_since IS NOT NULL "
+                "AND pending_since < NOW() - make_interval(mins => %s)",
+                (tg_id, _PICK_WINDOW_MINUTES))
+    stale = cur.fetchone()
+    if stale:
+        _drop_picker(cur, stale["id"])
+        _finish_move(cur, conn, tg_id, chat_id, stale["id"], lang,
+                     only=_pick_audience(cur, tg_id, stale["id"]))
+        _send_t(cur, conn, chat_id, _t("pick_expired", lang))
+
     # 1) media = the move of the day
     media = None
     for key in _MEDIA_KEYS:
@@ -3264,6 +3563,38 @@ def handle_move_webhook(body: dict, conn) -> None:
     # bot came back as «Нікого з ім'ям "я думаю, Нео сподобається. Можна
     # переслати йому?"». Names are letters only (_valid_name is what registration
     # enforces), so punctuation means this was never a name.
+    if base_state == "await_circle_name":
+        _clear_state(cur, tg_id)
+        conn.commit()
+        if not text.startswith("/"):
+            name = text.strip()
+            if len(name) > _CIRCLE_NAME_MAX:
+                _send_t(cur, conn, chat_id,
+                        _t("circle_name_too_long", lang, max=_CIRCLE_NAME_MAX))
+                return
+            cid = None
+            if state and ":" in state:
+                cid = int(state.split(":", 1)[1])
+            try:
+                if cid and _circle(cur, tg_id, cid):
+                    cur.execute("UPDATE move_circles SET name = %s WHERE id = %s "
+                                "AND owner_tg_id = %s", (name, cid, tg_id))
+                else:
+                    cur.execute("INSERT INTO move_circles (owner_tg_id, name) "
+                                "VALUES (%s, %s) RETURNING id", (tg_id, name))
+                    cid = cur.fetchone()["id"]
+                conn.commit()
+            except Exception:
+                # The unique index on (owner, lower(name)) is the only thing that
+                # can fail here, and it means exactly one thing.
+                conn.rollback()
+                _send_t(cur, conn, chat_id, _t("circle_name_taken", lang, name=name))
+                return
+            _clear_prompts(cur, tg_id, 0)
+            text_, kb = _circle_view(cur, tg_id, cid, lang)
+            _send_t(cur, conn, chat_id, text_, reply_markup=kb)
+            return
+
     if state == "await_crew" and _valid_name(text):
         _handle_crew_name(cur, conn, tg_id, chat_id, lang, text)
         conn.commit()
@@ -3379,6 +3710,109 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if fresh:
             # The move has a viewer now, so it can no longer be taken back.
             _drop_undo(cur, entry_id)
+        return
+
+    if body.startswith("pk:"):
+        parts = body.split(":")
+        act, entry_id = parts[1], int(parts[2])
+        cur.execute("SELECT telegram_user_id, pending_since FROM move_entries WHERE id = %s",
+                    (entry_id,))
+        e = cur.fetchone()
+        if not e or e["telegram_user_id"] != tg_id or e["pending_since"] is None:
+            _answer(cq["id"], _t("note_gone", lang))    # sent already, or undone
+            _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id})
+            return
+        if act == "c":
+            cid = int(parts[3])
+            if not _circle(cur, tg_id, cid):
+                _answer(cq["id"])
+                return
+            if cid in _picked_circles(cur, entry_id):
+                cur.execute("DELETE FROM move_entry_circles WHERE entry_id = %s "
+                            "AND circle_id = %s", (entry_id, cid))
+            else:
+                cur.execute("INSERT INTO move_entry_circles (entry_id, circle_id) "
+                            "VALUES (%s, %s) ON CONFLICT DO NOTHING", (entry_id, cid))
+        elif act == "all":
+            cur.execute("DELETE FROM move_entry_circles WHERE entry_id = %s", (entry_id,))
+        elif act == "r":
+            cur.execute("UPDATE move_entries SET radar_ok = NOT COALESCE(radar_ok, FALSE) "
+                        "WHERE id = %s", (entry_id,))
+        elif act == "go":
+            audience = _pick_audience(cur, tg_id, entry_id)
+            conn.commit()
+            _answer(cq["id"])
+            _drop_picker(cur, entry_id)
+            _finish_move(cur, conn, tg_id, chat_id, entry_id, lang, only=audience)
+            return
+        conn.commit()
+        _answer(cq["id"])
+        _redraw(chat_id, msg_id, *_pick_view(cur, tg_id, entry_id, lang))
+        return
+
+    if body.startswith("cr:"):
+        parts = body.split(":")
+        act = parts[1]
+        if not _circles_enabled(cur, tg_id):
+            _answer(cq["id"])
+            return
+        if act == "new":
+            _set_state(cur, tg_id, "await_circle_name")
+            conn.commit()
+            _answer(cq["id"])
+            res = _send(chat_id, _t("circle_ask_name", lang),
+                        reply_markup=_force_reply(tg_id, lang, "circle_name_placeholder"))
+            if res and res.get("message_id"):
+                _mark_transient(cur, chat_id, res["message_id"])
+            conn.commit()
+            return
+        cid = int(parts[2])
+        c = _circle(cur, tg_id, cid)
+        if not c:
+            _answer(cq["id"], _t("note_gone", lang))
+            return
+        if act == "open":
+            _answer(cq["id"])
+            _redraw(chat_id, msg_id, *_circle_view(cur, tg_id, cid, lang))
+            return
+        if act == "tog":
+            member = int(parts[3])
+            if member in _circle_member_ids(cur, cid):
+                cur.execute("DELETE FROM move_circle_members WHERE circle_id = %s "
+                            "AND member_tg_id = %s", (cid, member))
+            else:
+                cur.execute("INSERT INTO move_circle_members (circle_id, member_tg_id) "
+                            "VALUES (%s, %s) ON CONFLICT DO NOTHING", (cid, member))
+            conn.commit()
+            _answer(cq["id"])
+            _redraw(chat_id, msg_id, *_circle_view(cur, tg_id, cid, lang))
+            return
+        if act == "ren":
+            _set_state(cur, tg_id, f"await_circle_name:{cid}")
+            conn.commit()
+            _answer(cq["id"])
+            res = _send(chat_id, _t("circle_ask_name", lang),
+                        reply_markup=_force_reply(tg_id, lang, "circle_name_placeholder"))
+            if res and res.get("message_id"):
+                _mark_transient(cur, chat_id, res["message_id"])
+            conn.commit()
+            return
+        if act == "del":
+            # The circle goes; the people in it stay in the crew. Said out loud,
+            # because deleting something called "your circle of people" sounds
+            # like it removes the people.
+            cur.execute("DELETE FROM move_circles WHERE id = %s AND owner_tg_id = %s",
+                        (cid, tg_id))
+            conn.commit()
+            _answer(cq["id"])
+            _redraw(chat_id, msg_id, *_circles_view(cur, tg_id, lang))
+            _send_t(cur, conn, chat_id, _t("circle_deleted", lang, name=c["name"]))
+            return
+        if act == "list":
+            _answer(cq["id"])
+            _redraw(chat_id, msg_id, *_circles_view(cur, tg_id, lang))
+            return
+        _answer(cq["id"])
         return
 
     if body.startswith("nundo:"):
@@ -4108,7 +4542,7 @@ def purge_move_transient(conn) -> None:
     # Comments delivered under a move ('note') lose their Reply button the same
     # morning: the comment window has closed, so the button only leads to a no.
     cur.execute("SELECT chat_id, message_id FROM move_forwards "
-                "WHERE kind IN ('move', 'note', 'talk') "
+                "WHERE kind IN ('move', 'note', 'talk', 'pick') "
                 "AND created_at >= %s AND created_at < %s",
                 (today - timedelta(days=1), today))
     stripped = cur.fetchall()

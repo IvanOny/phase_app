@@ -933,9 +933,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "👥 {name} — tippe einen Namen an, um ihn hinzuzufügen oder zu entfernen.",
     },
     "circle_deleted": {
-        "en": "🗑 Circle {name} deleted. The people are still in your crew.",
-        "uk": "🗑 Коло «{name}» видалено. Люди лишаються серед твоїх.",
-        "de": "🗑 Kreis {name} gelöscht. Die Leute bleiben in deiner Crew.",
+        "en": "🗑 Circle {name} deleted.",
+        "uk": "🗑 Коло «{name}» видалено.",
+        "de": "🗑 Kreis {name} gelöscht.",
     },
     # ── addressing a held move ──
     "pick_prompt": {
@@ -3815,9 +3815,9 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             conn.commit()
             return
         if act == "del":
-            # The circle goes; the people in it stay in the crew. Said out loud,
-            # because deleting something called "your circle of people" sounds
-            # like it removes the people.
+            # The circle goes; the people in it stay in the crew. Not said out
+            # loud any more — the list they came back to still has everyone on
+            # it, which answers the question better than a sentence.
             cur.execute("DELETE FROM move_circles WHERE id = %s AND owner_tg_id = %s",
                         (cid, tg_id))
             conn.commit()

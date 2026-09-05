@@ -640,6 +640,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "Сьогодні рух уже записано ✓ — один рух на день.",
         "de": "Du hast dich heute schon bewegt ✓ — pro Tag lässt sich nur eine Bewegung erfassen.",
     },
+    # The same refusal, for someone whose day holds more than one move: "one a
+    # day" stops being true once each circle has a day of its own.
+    "already_logged_circles": {
+        "en": "✓ Every circle has had a move today.",
+        "uk": "✓ Сьогодні кожне коло вже отримало рух.",
+        "de": "✓ Jeder Kreis hat heute schon eine Bewegung bekommen.",
+    },
     "comment_added": {
         "en": "💬 Added under your move — your crew can see it.",
         "uk": "💬 Додано під твій рух — твоє коло це бачить.",
@@ -2193,6 +2200,30 @@ def _circle_view(cur, tg_id: int, circle_id: int, lang: str) -> tuple[str, dict]
     return _t("circle_view", lang, name=(c or {}).get("name", "")), {"inline_keyboard": rows}
 
 
+def _used_today(cur, tg_id: int) -> tuple[bool, set]:
+    """What today has already been spent on: the crew, and which circles.
+
+    Delivered moves and one still waiting both count — a move being addressed
+    right now has not used anything yet, so it is excluded by id at the call
+    site rather than here.
+    """
+    cur.execute("SELECT COALESCE(BOOL_OR(is_crew_wide), FALSE) AS w FROM move_entries "
+                "WHERE telegram_user_id = %s AND entry_date = CURRENT_DATE "
+                "  AND pending_since IS NULL", (tg_id,))
+    crew_used = bool((cur.fetchone() or {}).get("w"))
+    cur.execute("SELECT circle_id FROM move_entry_circles "
+                "WHERE owner_tg_id = %s AND entry_date = CURRENT_DATE", (tg_id,))
+    return crew_used, {r["circle_id"] for r in cur.fetchall()}
+
+
+def _has_room_today(cur, tg_id: int) -> bool:
+    """Is there any audience left that hasn't had a move from you today?"""
+    if not _circles(cur, tg_id):
+        return False
+    crew_used, used = _used_today(cur, tg_id)
+    return (not crew_used) or any(c["id"] not in used for c in _circles(cur, tg_id))
+
+
 def _picked_circles(cur, entry_id: int) -> set[int]:
     cur.execute("SELECT circle_id FROM move_entry_circles WHERE entry_id = %s", (entry_id,))
     return {r["circle_id"] for r in cur.fetchall()}
@@ -2218,16 +2249,27 @@ def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
     cur.execute("SELECT radar_ok FROM move_entries WHERE id = %s", (entry_id,))
     row = cur.fetchone()
     radar = bool(row and row["radar_ok"])
+    # Only audiences today still has room for. One crew-wide move a day and one
+    # per circle, so an option already spent isn't shown as a choice that would
+    # be refused — it simply isn't there.
+    crew_used, used = _used_today(cur, tg_id)
     rows = []
     for c in _circles(cur, tg_id):
+        if c["id"] in used:
+            continue
         on = c["id"] in picked
         rows.append([{"text": f"{'✅' if on else '⬜'} {c['name']} · {c['members']}",
                       "callback_data": f"mv:pk:c:{entry_id}:{c['id']}"}])
-    rows.append([{"text": f"{'⬜' if picked else '✅'} {_t('btn_pick_all', lang)}",
-                  "callback_data": f"mv:pk:all:{entry_id}"}])
-    rows.append([{"text": f"{'✅' if radar else '⬜'} 📡 "
-                          + _t("btn_radar", lang).split(" ", 1)[-1],
-                  "callback_data": f"mv:pk:r:{entry_id}"}])
+    if not crew_used:
+        rows.append([{"text": f"{'⬜' if picked else '✅'} {_t('btn_pick_all', lang)}",
+                      "callback_data": f"mv:pk:all:{entry_id}"}])
+    # Radar only alongside the crew-wide move. A move sent to one circle is a
+    # narrower audience on purpose, and "fewer of my own people, plus every
+    # stranger" is not a thing anyone means.
+    if not picked and not crew_used:
+        rows.append([{"text": f"{'✅' if radar else '⬜'} 📡 "
+                              + _t("btn_radar", lang).split(" ", 1)[-1],
+                      "callback_data": f"mv:pk:r:{entry_id}"}])
     rows.append([{"text": _t("btn_pick_send", lang), "callback_data": f"mv:pk:go:{entry_id}"}])
     return _t("pick_prompt", lang), {"inline_keyboard": rows}
 
@@ -2269,6 +2311,8 @@ def flush_pending_moves(conn) -> None:
                 "WHERE pending_since IS NOT NULL "
                 "  AND pending_since < NOW() - make_interval(mins => %s)",
                 (_PICK_WINDOW_MINUTES,))
+    # Falls back to the crew, which is only available if the crew hasn't had one
+    # today; _finish_move sets is_crew_wide from the audience it is given.
     for e in cur.fetchall():
         tg_id = e["telegram_user_id"]
         u = _user(cur, tg_id)
@@ -2289,11 +2333,17 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         "SELECT id FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",
         (tg_id, today),
     )
-    if cur.fetchone():
+    if cur.fetchone() and not _has_room_today(cur, tg_id):
         # Deliberately no comment invitation here: the move it would attach to
         # is hours old, so the note goes nowhere useful and the crew shouldn't
         # be re-pinged. Comments belong to a move you *just* logged.
-        _send_t(cur, conn, chat_id, _t("already_logged", lang))
+        #
+        # With circles a day is not spent by one move: it holds one for the crew
+        # and one for each circle. _has_room_today is what decides, and when
+        # every audience has had something the answer is the same as it always
+        # was.
+        _send_t(cur, conn, chat_id,
+                _t("already_logged_circles" if _circles(cur, tg_id) else "already_logged", lang))
         return
 
     media_type = None
@@ -2312,6 +2362,8 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     # Everything below happens on send, unchanged, so a held move and an
     # immediate one take exactly the same path once the audience is known.
     if _circles_enabled(cur, tg_id) and _circles(cur, tg_id):
+        # Held whether it is the first of the day or the second: the audience is
+        # the whole point, and the second one has fewer left to choose from.
         cur.execute("UPDATE move_entries SET pending_since = NOW() WHERE id = %s", (entry_id,))
         conn.commit()
         _show_picker(cur, conn, tg_id, chat_id, entry_id, lang)
@@ -2338,7 +2390,8 @@ def _finish_move(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str,
     media_type, src_chat, src_msg = e["media_type"], e["src_chat"], e["src_msg"]
     text_body = e["text_body"]
     media = src_msg is not None
-    cur.execute("UPDATE move_entries SET pending_since = NULL WHERE id = %s", (entry_id,))
+    cur.execute("UPDATE move_entries SET pending_since = NULL, is_crew_wide = %s "
+                "WHERE id = %s", (only is None, entry_id))
     conn.commit()
 
     names = _deliver(cur, conn, user, entry_id,
@@ -3765,6 +3818,14 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                         "WHERE id = %s", (entry_id,))
         elif act == "go":
             audience = _pick_audience(cur, tg_id, entry_id)
+            # Written now rather than at insert: until Send, the move has no
+            # audience and has spent nothing. These two columns are what the
+            # one-a-day indexes are built on.
+            cur.execute("UPDATE move_entries SET is_crew_wide = %s WHERE id = %s",
+                        (audience is None, entry_id))
+            cur.execute("UPDATE move_entry_circles SET owner_tg_id = %s, "
+                        "entry_date = (SELECT entry_date FROM move_entries WHERE id = %s) "
+                        "WHERE entry_id = %s", (tg_id, entry_id, entry_id))
             conn.commit()
             _answer(cq["id"])
             _drop_picker(cur, entry_id)

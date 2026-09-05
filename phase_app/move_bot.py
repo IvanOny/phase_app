@@ -943,7 +943,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "📹 Рух записано. Хто його побачить?",
         "de": "📹 Bewegung aufgenommen. Wer soll sie sehen?",
     },
-    "btn_pick_all": {"en": "Everyone", "uk": "Усі твої люди", "de": "Alle"},
+    "btn_pick_all": {"en": "All your people", "uk": "Коло всіх твоїх людей",
+                     "de": "All deine Leute"},
     "btn_pick_send": {"en": "→ Send", "uk": "→ Надіслати", "de": "→ Senden"},
     "pick_none": {
         "en": "Choose at least one circle first.",
@@ -952,15 +953,18 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "pick_expired": {
         "en": "📹 Nothing was chosen, so your move went to everyone in your crew.",
-        "uk": "📹 Вибору не було, тому рух пішов усім твоїм людям.",
+        "uk": "📹 Вибору не було, тому рух пішов колу всіх твоїх людей.",
         "de": "📹 Nichts gewählt, also ging deine Bewegung an deine ganze Crew.",
     },
+    # "All" is doing real work here. Once a crew can be divided into named
+    # circles, "коло твоїх людей" and "коло" mean two different things one line
+    # apart; "коло всіх твоїх людей" is the whole of it, and a circle is a part.
     "crew_prompt": {
-        "en": "🤝 Your circle of people. You can set it so you don't get someone's "
-              "moves for a while, or remove a person from the circle",
-        "uk": "🤝 Коло твоїх людей. Ти можеш налаштувати, щоб певний час не "
+        "en": "🤝 The circle of all your people. You can set it so you don't get "
+              "someone's moves for a while, or remove a person from the circle",
+        "uk": "🤝 Коло всіх твоїх людей. Ти можеш налаштувати, щоб певний час не "
               "отримувати від когось рухи, або ж видалити людину з кола",
-        "de": "🤝 Der Kreis deiner Leute. Du kannst einstellen, eine Weile keine "
+        "de": "🤝 Der Kreis all deiner Leute. Du kannst einstellen, eine Weile keine "
               "Bewegungen von jemandem zu bekommen, oder die Person entfernen",
     },
     # Impersonal in Ukrainian and German: "прихований" and "ausgeblendet" would

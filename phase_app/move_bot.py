@@ -2495,22 +2495,44 @@ def _reply_target(cur, chat_id: int, replied_message_id: int):
 
 
 def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
-                    forced: bool = False) -> bool:
-    """Attach a text to today's move and deliver it as a reply under each
-    forwarded copy, so it reads as one post. True if it was used.
+                    forced: bool = False, entry_id: int | None = None) -> bool:
+    """Attach a text to a move and deliver it as a reply under each forwarded
+    copy, so it reads as one post. True if it was used.
 
     Accepted either shortly after the move, or whenever the bot has just invited
     a comment (`await_comment`) — otherwise the invitation would be a lie.
+
+    Which move: the one named by the caller, because the ⚙️ button knows. The
+    date lookup below is the fallback for a swipe-reply, and it takes the newest
+    of the day — a day can hold a move for the crew and one per circle, and
+    without an order Postgres was free to hand back either. It handed back the
+    second, which was right by luck rather than by rule.
     """
-    cur.execute(
-        "SELECT id, created_at, comment FROM move_entries "
-        "WHERE telegram_user_id = %s AND entry_date = %s",
-        (tg_id, date.today()),
-    )
-    e = cur.fetchone()
+    state = _get_state(cur, tg_id) or ""
+    if entry_id is None and state.startswith("await_comment:"):
+        try:
+            entry_id = int(state.split(":", 1)[1])
+        except ValueError:
+            entry_id = None
+    e = None
+    if entry_id is not None:
+        cur.execute("SELECT id, created_at, comment FROM move_entries "
+                    "WHERE id = %s AND telegram_user_id = %s", (entry_id, tg_id))
+        e = cur.fetchone()
+    if e is None:
+        # Either nothing was named, or what was named is gone — an armed caption
+        # prompt outlives the move when it is taken back. Falling through to
+        # today's newest keeps the words rather than dropping them on the floor.
+        cur.execute(
+            "SELECT id, created_at, comment FROM move_entries "
+            "WHERE telegram_user_id = %s AND entry_date = %s "
+            "ORDER BY created_at DESC, id DESC LIMIT 1",
+            (tg_id, date.today()),
+        )
+        e = cur.fetchone()
     if not e:
         return False
-    invited = forced or _get_state(cur, tg_id) == "await_comment"
+    invited = forced or state.split(":")[0] == "await_comment"
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds() / 60
     # The invitation is the only route. The old ten-minute window caught text
     # that was never meant as a caption.
@@ -3939,7 +3961,9 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if not e or e["telegram_user_id"] != tg_id:
             _answer(cq["id"], _t("note_gone", lang))       # undone, or not yours
             return
-        _set_state(cur, tg_id, "await_comment")
+        # The entry travels with the state. It used to be dropped and looked up
+        # again by date, which was one row until a day could hold several.
+        _set_state(cur, tg_id, f"await_comment:{entry_id}")
         _answer(cq["id"])
         res = _send(chat_id, _t("caption_ask", lang),
                     reply_markup=_force_reply(tg_id, lang, "caption_placeholder"))

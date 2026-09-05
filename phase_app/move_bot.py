@@ -3760,6 +3760,10 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if not _circles_enabled(cur, tg_id):
             _answer(cq["id"])
             return
+        if act == "list":
+            _answer(cq["id"])
+            _redraw(chat_id, msg_id, *_circles_view(cur, tg_id, lang))
+            return
         if act == "new":
             _set_state(cur, tg_id, "await_circle_name")
             conn.commit()
@@ -3811,10 +3815,6 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _answer(cq["id"])
             _redraw(chat_id, msg_id, *_circles_view(cur, tg_id, lang))
             _send_t(cur, conn, chat_id, _t("circle_deleted", lang, name=c["name"]))
-            return
-        if act == "list":
-            _answer(cq["id"])
-            _redraw(chat_id, msg_id, *_circles_view(cur, tg_id, lang))
             return
         _answer(cq["id"])
         return

@@ -2173,10 +2173,18 @@ def _circle_view(cur, tg_id: int, circle_id: int, lang: str) -> tuple[str, dict]
     c = _circle(cur, tg_id, circle_id)
     members = _circle_member_ids(cur, circle_id)
     rows = []
+    cur.execute("SELECT m.member_tg_id, c.name FROM move_circle_members m "
+                "JOIN move_circles c ON c.id = m.circle_id "
+                "WHERE m.owner_tg_id = %s AND m.circle_id <> %s", (tg_id, circle_id))
+    elsewhere = {r["member_tg_id"]: r["name"] for r in cur.fetchall()}
     for p in _crew_members(cur, tg_id):
-        on = p["telegram_user_id"] in members
-        rows.append([{"text": f"{'✅' if on else '⬜'} {p['participant_name']}",
-                      "callback_data": f"mv:cr:tog:{circle_id}:{p['telegram_user_id']}"}])
+        pid = p["telegram_user_id"]
+        on = pid in members
+        # Naming the circle they are in now: tapping will move them, and that is
+        # better known before the tap than after.
+        tail = f" · {elsewhere[pid]}" if pid in elsewhere else ""
+        rows.append([{"text": f"{'✅' if on else '⬜'} {p['participant_name']}{tail}",
+                      "callback_data": f"mv:cr:tog:{circle_id}:{pid}"}])
     rows.append([{"text": _t("btn_circle_rename", lang),
                   "callback_data": f"mv:cr:ren:{circle_id}"},
                  {"text": _t("btn_circle_delete", lang),
@@ -3802,8 +3810,15 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 cur.execute("DELETE FROM move_circle_members WHERE circle_id = %s "
                             "AND member_tg_id = %s", (cid, member))
             else:
-                cur.execute("INSERT INTO move_circle_members (circle_id, member_tg_id) "
-                            "VALUES (%s, %s) ON CONFLICT DO NOTHING", (cid, member))
+                # A person is in one circle at a time, so adding them here takes
+                # them out of wherever they were. Moving rather than refusing:
+                # "already in Родина" is a correction to go and undo somewhere
+                # else, and the tick that didn't appear says nothing.
+                cur.execute("DELETE FROM move_circle_members WHERE owner_tg_id = %s "
+                            "AND member_tg_id = %s", (tg_id, member))
+                cur.execute("INSERT INTO move_circle_members "
+                            "  (circle_id, member_tg_id, owner_tg_id) VALUES (%s, %s, %s)",
+                            (cid, member, tg_id))
             conn.commit()
             _answer(cq["id"])
             _redraw(chat_id, msg_id, *_circle_view(cur, tg_id, cid, lang))

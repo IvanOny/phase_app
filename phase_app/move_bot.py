@@ -1304,6 +1304,19 @@ def _build_button_map() -> dict[str, str]:
 
 _BUTTON_TO_CMD = _build_button_map()
 
+# Every word the dispatcher below answers to. The slash is optional there —
+# `word = head.lstrip("/")` — so "start" runs exactly like "/start", and until
+# now only the slashed form was recorded for the morning sweep. A bare "start"
+# was obeyed and then left in the chat forever.
+#
+# Kept next to the dispatcher it mirrors; a command added there without a line
+# here is only ever untidy, never broken.
+_COMMAND_WORDS = frozenset({
+    "start", "info", "help", "rename", "move", "feedback", "support", "radar",
+    "settings", "pause", "summary", "invite", "mod", "language", "lang",
+    "undo", "delete", "log",
+})
+
 _MONTHS = {
     "en": ["", "January", "February", "March", "April", "May", "June", "July",
            "August", "September", "October", "November", "December"],
@@ -3059,7 +3072,7 @@ def handle_move_webhook(body: dict, conn) -> None:
     # a stray "Rukh razom" sitting in the chat tomorrow is as much clutter as the
     # menu it opened. Moves, comments and names are never marked -- only the two
     # kinds of message whose whole content is "show me a menu".
-    if tapped or text.startswith("/"):
+    if tapped or text.startswith("/")             or text.split()[0].lstrip("/").lower() in _COMMAND_WORDS:
         _mark_transient(cur, chat_id, msg["message_id"])
 
     # 2) conversation state (name entry)

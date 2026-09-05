@@ -4375,16 +4375,26 @@ def send_move_zap_reports(conn) -> None:
     # reactor was looking at is kind='radar' for a stranger and kind='move' for
     # crew. A ⚡ from outside your crew is the only sign that sharing to radar did
     # anything at all, and it used to disappear into one undifferentiated number.
+    # Grouped by person, not by move. A day can now hold a move for the crew and
+    # one for each circle, and three reports in a row saying "your move got 2 ⚡"
+    # would be three messages about the same morning. One line, one total.
     cur.execute(
-        "SELECT e.id, e.telegram_user_id, u.chat_id, u.language_code, "
-        "       (SELECT COUNT(*) FROM move_reactions r WHERE r.entry_id = e.id) AS zaps, "
+        "SELECT e.telegram_user_id, MAX(u.chat_id) AS chat_id, "
+        "       MAX(u.language_code) AS language_code, "
         "       (SELECT COUNT(*) FROM move_reactions r "
+        "          JOIN move_entries e2 ON e2.id = r.entry_id "
+        "         WHERE e2.telegram_user_id = e.telegram_user_id "
+        "           AND e2.entry_date = %s) AS zaps, "
+        "       (SELECT COUNT(*) FROM move_reactions r "
+        "          JOIN move_entries e2 ON e2.id = r.entry_id "
         "          JOIN move_forwards f ON f.entry_id = r.entry_id "
         "                              AND f.recipient_tg_id = r.reactor_tg_id "
-        "         WHERE r.entry_id = e.id AND f.kind = 'radar') AS radar_zaps "
+        "         WHERE e2.telegram_user_id = e.telegram_user_id "
+        "           AND e2.entry_date = %s AND f.kind = 'radar') AS radar_zaps "
         "FROM move_entries e JOIN move_users u ON u.telegram_user_id = e.telegram_user_id "
-        "WHERE e.entry_date = %s",
-        (yesterday,),
+        "WHERE e.entry_date = %s "
+        "GROUP BY e.telegram_user_id",
+        (yesterday, yesterday, yesterday),
     )
     rows = cur.fetchall()
     notified = 0

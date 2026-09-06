@@ -852,6 +852,14 @@ _STRINGS: dict[str, dict[str, str]] = {
     # a pasted block to guess how much of it has to go; "419 too long" is a cut
     # they can make. And the second line, because editing the message is what
     # everyone tries first and it used to do nothing at all.
+    # Shown in place of the lines a long thread has outgrown. Not "3 messages
+    # hidden": a count is a number nobody can act on, and the only thing worth
+    # saying is that the conversation started before what you can see.
+    "talk_trimmed": {
+        "en": "…earlier in this conversation",
+        "uk": "…раніше в цій розмові",
+        "de": "…früher in diesem Gespräch",
+    },
     "note_too_long": {
         "en": "{over} characters too long — {max} at most. It's a comment, not "
               "a letter.\nEdit your message and it'll go as soon as it fits.",
@@ -1729,6 +1737,11 @@ def _own_view(cur, entry_id: int, lang: str, tg_id: int) -> tuple[str, dict]:
 
 
 _NOTE_MAX = 500                       # a comment, not a letter
+# A thread is one Telegram message, rebuilt and re-sent whenever a line is
+# added, and Telegram refuses a message over 4096 characters. Nothing enforced
+# that, so a long enough conversation would simply stop updating one day, for
+# both people, with no error anywhere. The oldest lines go instead.
+_TALK_MAX = 3800
 # Which upload triggers a hint. Three in a row was nagging; spaced out, each
 # one lands on someone who has had time to forget rather than time to be annoyed.
 _BUBBLE_HINT_AT = (3, 10, 20)
@@ -1809,6 +1822,18 @@ def _talk_text(cur, entry_id: int, viewer_id: int, other_id: int, lang: str) -> 
     lines, named = [], False
     for r in rows:
         text = _esc(r["body"])
+        # One line can't be allowed to blow the whole thread on its own. It
+        # can't today — _NOTE_MAX is well inside the limit even after escaping
+        # turns every & into five characters — but the cap and the limit are
+        # separate numbers, and only one of them is checked when a comment is
+        # written. Cut on the escaped text, then drop a half-written entity,
+        # which is the one cut that would corrupt the markup.
+        if len(text) > _TALK_MAX - 80:
+            text = text[:_TALK_MAX - 80]
+            amp = text.rfind("&")
+            if amp > len(text) - 12 and ";" not in text[amp:]:
+                text = text[:amp]
+            text += "…"
         if r["from_tg_id"] == viewer_id:
             lines.append(text)
         else:
@@ -1817,6 +1842,23 @@ def _talk_text(cur, entry_id: int, viewer_id: int, other_id: int, lang: str) -> 
             head = f"<b>{name}</b> · " if not named else ""
             named = True
             lines.append(f"<blockquote>{head}{text}</blockquote>")
+
+    # Trimmed from the top, one whole line at a time: the newest lines are the
+    # ones being replied to, and half a sentence is worse than an honest gap.
+    # Measured on the built string, because the name and the blockquote tags
+    # count against the limit exactly as the words do.
+    if len("\n".join(lines)) > _TALK_MAX:
+        mark = _t("talk_trimmed", lang)
+        while len(lines) > 1 and len("\n".join([mark] + lines)) > _TALK_MAX:
+            lines.pop(0)
+        # The name rode on the first of their lines, which may have just gone.
+        if lines and name and f"<b>{name}</b>" not in "\n".join(lines):
+            for i, ln in enumerate(lines):
+                if ln.startswith("<blockquote>"):
+                    lines[i] = ln.replace("<blockquote>",
+                                          f"<blockquote><b>{name}</b> " + "·" + " ", 1)
+                    break
+        lines = [mark] + lines
     return "\n".join(lines)
 
 

@@ -930,7 +930,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "Як назвемо це коло?",
         "de": "Wie soll dieser Kreis heißen?",
     },
-    "circle_name_placeholder": {"en": "gym, family…", "uk": "зал, родина…", "de": "Gym, Familie…"},
     "circle_name_taken": {
         "en": "You already have a circle called {name}.",
         "uk": "У тебе вже є коло «{name}».",
@@ -2197,6 +2196,9 @@ def _circles_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     rows = [[{"text": f"{c['name']} · {c['members']}",
               "callback_data": f"mv:cr:open:{c['id']}"}] for c in circles]
     rows.append([{"text": _t("btn_circle_new", lang), "callback_data": "mv:cr:new"}])
+    # The way back. Without it this screen is a dead end: the crew list it came
+    # from is above but replaced, and the reply keyboard is the only other exit.
+    rows.append([{"text": _t("btn_back", lang), "callback_data": "mv:crew:list"}])
     return (_t("circles_offer", lang) if not circles
             else _t("circles_title", lang)), {"inline_keyboard": rows}
 
@@ -3915,14 +3917,13 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _redraw(chat_id, msg_id, *_circles_view(cur, tg_id, lang))
             return
         if act == "new":
+            # A toast, not a ForceReply. A ForceReply has to be a message, that
+            # message takes the reply keyboard away until something brings it
+            # back, and left unanswered it sits in the chat looking live — one
+            # was answered fourteen hours later.
             _set_state(cur, tg_id, "await_circle_name")
             conn.commit()
-            _answer(cq["id"])
-            res = _send(chat_id, _t("circle_ask_name", lang),
-                        reply_markup=_force_reply(tg_id, lang, "circle_name_placeholder"))
-            if res and res.get("message_id"):
-                _mark_transient(cur, chat_id, res["message_id"])
-            conn.commit()
+            _answer(cq["id"], _t("circle_ask_name", lang))
             return
         cid = int(parts[2])
         c = _circle(cur, tg_id, cid)
@@ -3955,12 +3956,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if act == "ren":
             _set_state(cur, tg_id, f"await_circle_name:{cid}")
             conn.commit()
-            _answer(cq["id"])
-            res = _send(chat_id, _t("circle_ask_name", lang),
-                        reply_markup=_force_reply(tg_id, lang, "circle_name_placeholder"))
-            if res and res.get("message_id"):
-                _mark_transient(cur, chat_id, res["message_id"])
-            conn.commit()
+            _answer(cq["id"], _t("circle_ask_name", lang))
             return
         if act == "del":
             # The circle goes; the people in it stay in the crew. Not said out

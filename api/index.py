@@ -152,14 +152,21 @@ def _run_daily_jobs(conn) -> dict:
         ("burpee_milestones", check_milestones),
         ("burpee_monthly", send_monthly_summaries),
         ("snacks_overview", send_exercise_overview),
-        ("move_zaps", send_move_zap_reports),
-        ("move_radar", process_move_radar),
-        ("move_monthly", send_move_monthly_summaries),
-        ("move_nudges", send_move_nudges),
-        # Before anything else: a move nobody addressed should go out, not
-        # sit for another day.
+        # Order is a priority list, not a preference. Every job runs inside one
+        # request, and when that request is cut short everything after the cut
+        # simply doesn't happen -- silently, until tomorrow. On 6 September the
+        # zap report and radar ran; the nudges and the sweep did not.
+        #
+        # So yesterday's business goes first. A move nobody addressed has to go
+        # out, and the sweep clears a chat that has been collecting scaffolding
+        # since yesterday morning. Radar and the nudges are today's business and
+        # can afford to be last.
         ("move_flush", flush_pending_moves),
         ("move_sweep", purge_move_transient),
+        ("move_zaps", send_move_zap_reports),
+        ("move_monthly", send_move_monthly_summaries),
+        ("move_radar", process_move_radar),
+        ("move_nudges", send_move_nudges),
     ]
     failed = []
     for name, fn in jobs:
@@ -172,14 +179,15 @@ def _run_daily_jobs(conn) -> dict:
                 conn.rollback()
             except Exception:
                 pass
-    if failed:
-        # Surface it in the log channel — a silently skipped job is how the Move
-        # zap report went missing while the burpee report arrived fine.
-        try:
-            from phase_app.bot import _log
-            _log("⚠️ Cron: job(s) failed\n• " + ", ".join(failed))
-        except Exception:
-            pass
+    # A line even when nothing failed. A run that is cut short raises nothing
+    # and logs nothing, so its signature is the absence of this -- which is
+    # only a signature if it is normally there.
+    try:
+        from phase_app.bot import _log
+        _log("✅ Cron: all daily jobs finished" if not failed
+             else "⚠️ Cron: job(s) failed\n• " + ", ".join(failed))
+    except Exception:
+        pass
     return {"ok": not failed, "failed": failed}
 
 

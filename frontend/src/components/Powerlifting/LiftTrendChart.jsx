@@ -30,6 +30,9 @@ const LIFT_CONFIG = {
   total:    { label: 'Total',    color: '#f59e0b' },
 };
 
+// Squat, bench, deadlift, pull-up, then Total — the order they are read in.
+const LIFT_ORDER = ['squat', 'bench', 'deadlift', 'pullup', 'total'];
+
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const [, mm, dd] = (dateStr.split('T')[0] || dateStr).split('-');
@@ -118,6 +121,22 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   const isTouch = useIsTouchDevice();
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-pl');
   const [hovered, setHovered] = useState(null); // { date, lift }
+  // Bench alone to start with. Four lines plus Total on one axis was five
+  // overlapping series and a y-range wide enough to flatten all of them; one
+  // lift is the question anybody actually opens this chart with, and the rest
+  // are one tap away.
+  const [selected, setSelected] = useState(['bench']);
+
+  function toggleLift(lift) {
+    setSelected(prev => {
+      // Never all off: an empty chart is a worse answer than the one lift
+      // already on screen, so the last active pill doesn't turn itself off.
+      if (prev.includes(lift)) return prev.length === 1 ? prev : prev.filter(l => l !== lift);
+      // Kept in LIFT_ORDER rather than tap order, so the pills and the legend
+      // don't disagree about which lift is which.
+      return LIFT_ORDER.filter(l => l === lift || prev.includes(l));
+    });
+  }
 
   // Global tap-outside dismiss — same pattern as ClassificationPanel tiles
   useEffect(() => {
@@ -127,12 +146,19 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
     return () => document.removeEventListener('pointerdown', dismiss, { capture: true });
   }, [tooltip]);
 
+  // A tooltip pinned to a line that has just been switched off would hang there
+  // describing something invisible.
+  useEffect(() => { openTooltip(null); setHovered(null); }, [selected]);
+
   const data = buildChartData(sessions, plMetrics);
   const hasData = data.length > 0;
 
   // Last index in data where each lift has a non-null value (for inline label placement)
   const lastIndexByLift = {};
-  const liftsToShow = ['squat', 'bench', 'deadlift', 'pullup', ...(showTotal ? ['total'] : [])];
+  // Only what the pills have on. The y-axis reads dataMin/dataMax off the
+  // series actually rendered, so hiding the rest re-scales the chart around
+  // what is left — which is most of the reason to hide them.
+  const liftsToShow = selected.filter(l => l !== 'total' || showTotal);
   liftsToShow.forEach(lift => {
     for (let i = data.length - 1; i >= 0; i--) {
       if (data[i][lift] != null) { lastIndexByLift[lift] = i; break; }
@@ -213,6 +239,30 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
     <div className="chart-wrapper">
       <div className="chart-title-row">
         <span className="card-title">Lift Trend — e1RM (kg)</span>
+      </div>
+      {/* Each pill wears its own line's colour when it is on, so the chart can
+          be read without counting back to a legend. */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+        {LIFT_ORDER.filter(l => l !== 'total' || showTotal).map(lift => {
+          const cfg = LIFT_CONFIG[lift];
+          const on = selected.includes(lift);
+          return (
+            <button
+              key={lift}
+              className={`filter-chip${on ? ' active' : ''}`}
+              onClick={() => toggleLift(lift)}
+              aria-pressed={on}
+              style={{
+                fontSize: 11,
+                padding: '1px 8px',
+                ...(on ? { color: cfg.color, borderColor: cfg.color,
+                           background: 'transparent' } : null),
+              }}
+            >
+              {cfg.label}
+            </button>
+          );
+        })}
       </div>
       {hasData ? (
         <>

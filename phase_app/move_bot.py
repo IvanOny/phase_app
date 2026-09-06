@@ -1278,6 +1278,22 @@ _STRINGS: dict[str, dict[str, str]] = {
               "{link}",
         "de": "Schick 🔗 deinen Link an jemanden, mit dem du dich bewegen willst:\n{link}",
     },
+    # Said while the idea is still forming, then not again. The 🤝 screen is
+    # the most-tapped in the bot, so a permanent paragraph there is a
+    # permanent tax on the thing people use most.
+    "invite_rule": {
+        "en": "They'll exchange moves with you only — everyone has their own circle.",
+        "uk": "Ця людина обмінюватиметься рухами лише з тобою — у кожного своє коло.",
+        "de": "Sie tauschen Bewegungen nur mit dir — jeder hat seinen eigenen Kreis.",
+    },
+    # For the person who just joined, at the one moment "what is my circle"
+    # is a live question for them. The second sentence is the part that
+    # needs doing, addressed to whoever has to do it.
+    "crew_first_note": {
+        "en": "This circle is just the two of you — {name}'s other people won't see your moves. To move with someone else, open their link or send them yours.",
+        "uk": "Це коло тільки ваше — інші люди {name} твоїх рухів не побачать. Щоб рухатися ще з кимось, відкрий його посилання або надішли своє.",
+        "de": "Dieser Kreis gehört nur euch beiden — die anderen Leute von {name} sehen deine Bewegungen nicht. Um dich mit jemand anderem zu bewegen, öffne dessen Link oder schick deinen.",
+    },
     "invite_connected": {
         "en": "🤝 You and {name} are now moving together!",
         "uk": "🤝 Тепер ти з {name} рухаєшся разом!",
@@ -2769,8 +2785,28 @@ def _inviter_from_payload(cur, payload: str) -> int | None:
     return row["telegram_user_id"] if row else None
 
 
-def _invite_line(cur, tg_id: int, lang: str, name: str | None = None) -> str:
-    return _t("invite_line", lang, link=_invite_link(cur, tg_id, name))
+_INVITE_HINTS = 3                     # showings of the rule on the 🤝 screen
+
+
+def _invite_line(cur, tg_id: int, lang: str, name: str | None = None,
+                 hint: bool = False) -> str:
+    """The link, and for the first few showings what sending it actually does.
+
+    hint is only passed by the 🤝 screen. /info renders the same line and does
+    not count: the rule belongs where someone is about to invite, and counting
+    a screen they opened to read something else would spend the three showings
+    without ever teaching anything.
+    """
+    line = _t("invite_line", lang, link=_invite_link(cur, tg_id, name))
+    if not hint:
+        return line
+    cur.execute("SELECT invite_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+    shown = ((cur.fetchone() or {}).get("invite_hints") or 0)
+    if shown >= _INVITE_HINTS:
+        return line
+    cur.execute("UPDATE move_users SET invite_hints = invite_hints + 1 "
+                "WHERE telegram_user_id = %s", (tg_id,))
+    return line + "\n\n" + _t("invite_rule", lang)
 
 
 def _cmd_info(cur, conn, tg_id: int, chat_id: int, lang: str, name: str | None = None) -> None:
@@ -2806,7 +2842,7 @@ def _cmd_move(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     # sweep. Deleting the first one doesn't take the keyboard with it — a reply
     # keyboard lives in the client, not in the message that delivered it.
     _send_t(cur, conn, chat_id,
-            _invite_line(cur, tg_id, lang, me["participant_name"] if me else None),
+            _invite_line(cur, tg_id, lang, me["participant_name"] if me else None, hint=True),
             reply_markup=_main_kb(lang, tg_id, cur))
     # The crew goes in its own message: one message can hold either the main
     # keyboard or an inline one, and the buttons need the inline slot.
@@ -4118,9 +4154,18 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 return
             rname = requester["participant_name"]
             _send_t(cur, conn, chat_id, _t("crew_added_back", lang, name=rname))
-            _send(requester["chat_id"] or requester["telegram_user_id"],
-                  _t("crew_request_accepted", _norm_lang(requester["language_code"]),
-                     name=me["participant_name"]))
+            rlang = _norm_lang(requester["language_code"])
+            note = _t("crew_request_accepted", rlang, name=me["participant_name"])
+            # Only on their very first connection, which is the one moment "what
+            # is my circle" is a live question for them — and the only time the
+            # sentence is true without qualification. On a second connection
+            # they already have people, and "інші люди X" would be describing
+            # the wrong crew.
+            cur.execute("SELECT COUNT(*) AS n FROM move_crew WHERE telegram_user_id = %s",
+                        (requester["telegram_user_id"],))
+            if ((cur.fetchone() or {}).get("n") or 0) <= 1:
+                note += "\n\n" + _t("crew_first_note", rlang, name=me["participant_name"])
+            _send(requester["chat_id"] or requester["telegram_user_id"], note)
             return
         if action == "addback":
             cur.execute(

@@ -4,6 +4,13 @@ from typing import Any
 
 import psycopg2.extensions
 
+# How much of bodyweight a pull-up actually raises. The forearms and hands hang
+# from the bar rather than travelling with the body, so the scale reads high for
+# this purpose; 90% is the common correction. Kept here, named, because it is a
+# judgement rather than arithmetic, and because changing it moves every historic
+# point on the pull-up line at once.
+PULLUP_BW_FACTOR = 0.90
+
 
 def get_bench_top_set_e1rm(conn: psycopg2.extensions.connection, session_id: int) -> dict[str, Any] | None:
     with conn.cursor() as cur:
@@ -379,6 +386,13 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
         # actually lifted is bodyweight plus whatever is hanging off it, so the
         # weight moved is (bodyweight + load) and the e1RM follows from that.
         #
+        # Not all of bodyweight, though. The forearms and hands stay with the
+        # bar rather than travelling with the body, so the mass actually raised
+        # is short of the number on the scale — 90% is the usual correction, and
+        # it is the difference between a pull-up e1RM that reads as heavier than
+        # this lifter's bench and one that doesn't. The added load is not
+        # discounted: a belt plate travels the full distance.
+        #
         # Bodyweight comes from the most recent log entry on or before the
         # session; before the first entry, the first entry is used, because the
         # alternative is dropping the earliest sessions from the line. A phase
@@ -392,7 +406,8 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
                 es.load_kg,
                 es.reps,
                 bw.weight_kg AS bodyweight_kg,
-                ROUND(((bw.weight_kg + es.load_kg) * (1 + es.reps / 30.0))::numeric, 2) AS e1rm_kg
+                ROUND(((bw.weight_kg * %(bw_factor)s + es.load_kg)
+                        * (1 + es.reps / 30.0))::numeric, 2) AS e1rm_kg
             FROM sessions s
             JOIN session_exercises se ON se.session_id = s.session_id
             JOIN exercises e ON e.exercise_id = se.exercise_id
@@ -405,13 +420,13 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
                          ABS(b.logged_date - s.session_date::date)
                 LIMIT 1
             ) bw
-            WHERE s.phase_id = %s
+            WHERE s.phase_id = %(phase_id)s
               AND e.is_pullup = 1
               AND es.is_top_set = 1
-            ORDER BY s.session_id, (bw.weight_kg + es.load_kg) DESC, es.reps DESC,
-                     es.exercise_set_id DESC
+            ORDER BY s.session_id, (bw.weight_kg * %(bw_factor)s + es.load_kg) DESC,
+                     es.reps DESC, es.exercise_set_id DESC
             """,
-            (phase_id,),
+            {"phase_id": phase_id, "bw_factor": PULLUP_BW_FACTOR},
         )
         pullup_rows = cur.fetchall()
 

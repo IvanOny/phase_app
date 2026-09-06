@@ -11,13 +11,21 @@ import {
 } from 'recharts';
 import { useChartColors } from '../../hooks/useChartColors.js';
 
+// Mirrors PULLUP_BW_FACTOR in phase_app/metrics.py, which is where the e1RM is
+// actually computed. Here only so the tooltip can show the weight the formula
+// used rather than the number on the scale.
+const PULLUP_BW_FACTOR = 0.9;
+
 const LIFT_CONFIG = {
   squat:    { label: 'Squat',    color: '#6366f1' },
   bench:    { label: 'Bench',    color: '#0891b2' },
   deadlift: { label: 'Deadlift', color: '#10b981' },
-  // Pull-up e1RM is (bodyweight + added) × (1 + reps/30) — the bar load alone is
-  // 0 on an unweighted set, so it lands on the same axis as the barbell lifts
-  // rather than on the floor. It is not part of Total: that stays S+B+D.
+  // Pull-up e1RM is (0.9 × bodyweight + added) × (1 + reps/30) — the bar load
+  // alone is 0 on an unweighted set, so it lands on the same axis as the barbell
+  // lifts rather than on the floor. The 0.9 is the arms, which hang from the bar
+  // instead of being lifted; it lives in metrics.py as PULLUP_BW_FACTOR and is
+  // only echoed here so the tooltip shows the sum it actually used. Not part of
+  // Total: that stays S+B+D.
   pullup:   { label: 'Pull-up',  color: '#ec4899' },
   total:    { label: 'Total',    color: '#f59e0b' },
 };
@@ -280,7 +288,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                             <span>top set</span>
                             <span>
                               {topSet.bodyweight != null
-                                ? `${topSet.bodyweight}${topSet.load ? ` + ${topSet.load}` : ''} × ${topSet.reps}`
+                                ? `${(topSet.bodyweight * PULLUP_BW_FACTOR).toFixed(1)}${topSet.load ? ` + ${topSet.load}` : ''} × ${topSet.reps}`
                                 : `${topSet.load}×${topSet.reps}`}
                             </span>
                           </div>

@@ -863,13 +863,16 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Doesn't name a cause. The move may well still be there — the usual reason
     # is a prompt older than the tracking that would route it — and guessing
     # wrong in the text is worse than not saying.
+    # Conditional, because this catches an answer to any expired question, not
+    # only a comment. Someone answering a circle prompt from yesterday was told
+    # to tap 💬 under a move, which was advice about something else entirely.
     "reply_stale": {
-        "en": "This prompt is no longer active. Tap 💬 under a move to write "
-              "about it.",
-        "uk": "Цей запит уже не активний. Натисни 💬 під рухом, "
-              "щоб написати про нього.",
-        "de": "Diese Frage ist nicht mehr aktiv. Tippe 💬 unter einer Bewegung, "
-              "um etwas dazu zu schreiben.",
+        "en": "That question timed out — open the menu again. To comment on a "
+              "move, tap 💬 under it.",
+        "uk": "Цей запит уже не активний — відкрий меню ще раз. "
+              "Щоб прокоментувати рух — натисни 💬 під ним.",
+        "de": "Diese Frage ist abgelaufen — öffne das Menü noch einmal. Um eine "
+              "Bewegung zu kommentieren, tippe 💬 darunter.",
     },
     "note_gone": {
         "en": "That move is no longer available.",

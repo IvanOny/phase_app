@@ -969,6 +969,24 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "📹 Вибору не було, тому рух пішов колу всіх твоїх людей.",
         "de": "📹 Nichts gewählt, also ging deine Bewegung an deine ganze Crew.",
     },
+    # The same, when everyone is no longer on the table: today's crew-wide move
+    # has already gone out, so what is left is the circles that haven't had one.
+    "pick_expired_left": {
+        "en": "📹 Nothing was chosen, so your move went to every circle that "
+              "hadn't had one today.",
+        "uk": "📹 Вибору не було, тому рух пішов усім колам, які сьогодні ще "
+              "нічого не отримали.",
+        "de": "📹 Nichts gewählt, also ging deine Bewegung an jeden Kreis, der "
+              "heute noch nichts bekommen hat.",
+    },
+    # Tapping Send with no circle chosen, after the crew-wide move for today has
+    # already gone. The button that would have done it is gone from the redraw
+    # that follows, so this says why rather than leaving it to be noticed.
+    "pick_crew_gone": {
+        "en": "Everyone already had a move from you today — choose a circle.",
+        "uk": "Коло всіх твоїх людей сьогодні вже отримало рух — обери коло.",
+        "de": "All deine Leute hatten heute schon eine Bewegung — wähl einen Kreis.",
+    },
     # "All" is doing real work here. Once a crew can be divided into named
     # circles, "коло твоїх людей" and "коло" mean two different things one line
     # apart; "коло всіх твоїх людей" is the whole of it, and a circle is a part.
@@ -2245,8 +2263,14 @@ def _used_today(cur, tg_id: int) -> tuple[bool, set]:
 
 
 def _has_room_today(cur, tg_id: int) -> bool:
-    """Is there any audience left that hasn't had a move from you today?"""
-    if not _circles(cur, tg_id):
+    """Is there any audience left that hasn't had a move from you today?
+
+    Enabled, not merely existing. Circles a person can no longer reach — beta
+    revoked, crew shrunk back below two — are not audiences, and counting them
+    would wave a second move past the one-a-day check into a picker that never
+    appears and a delivery the index refuses.
+    """
+    if not (_circles_enabled(cur, tg_id) and _circles(cur, tg_id)):
         return False
     crew_used, used = _used_today(cur, tg_id)
     return (not crew_used) or any(c["id"] not in used for c in _circles(cur, tg_id))
@@ -2326,6 +2350,29 @@ def _drop_picker(cur, entry_id: int) -> None:
     cur.execute("DELETE FROM move_forwards WHERE entry_id = %s AND kind = 'pick'", (entry_id,))
 
 
+def _fallback_audience(cur, tg_id: int, entry_id: int) -> tuple[set | None, bool]:
+    """Where an unaddressed move goes once its window has run out.
+
+    Everyone, exactly as before circles existed — unless the crew has already
+    had a move today, in which case that audience is spent and what remains is
+    the circles that haven't. Returns (audience, sent): sent is False when
+    nothing is left, and then the move stays where it is, counted and
+    undelivered, because there is no one it may still reach.
+    """
+    if _picked_circles(cur, entry_id):
+        return _pick_audience(cur, tg_id, entry_id), True
+    crew_used, used = _used_today(cur, tg_id)
+    if not crew_used:
+        return None, True
+    free = [c["id"] for c in _circles(cur, tg_id) if c["id"] not in used]
+    if not free:
+        return None, False
+    cur.execute("INSERT INTO move_entry_circles (entry_id, circle_id) "
+                "SELECT %s, UNNEST(%s::bigint[]) ON CONFLICT DO NOTHING",
+                (entry_id, free))
+    return _pick_audience(cur, tg_id, entry_id), True
+
+
 def flush_pending_moves(conn) -> None:
     """Send anything that was recorded and never addressed.
 
@@ -2347,9 +2394,18 @@ def flush_pending_moves(conn) -> None:
         lang = _norm_lang((u or {}).get("language_code"))
         chat_id = (u or {}).get("chat_id") or e["chat_id"] or tg_id
         _drop_picker(cur, e["id"])
-        _finish_move(cur, conn, tg_id, chat_id, e["id"], lang,
-                     only=_pick_audience(cur, tg_id, e["id"]))
-        _send_t(cur, conn, chat_id, _t("pick_expired", lang))
+        audience, sendable = _fallback_audience(cur, tg_id, e["id"])
+        if not sendable:
+            # Nowhere left to send it. Take it out of the pending state anyway,
+            # so the job doesn't pick it up again every morning, and say so.
+            cur.execute("UPDATE move_entries SET pending_since = NULL WHERE id = %s",
+                        (e["id"],))
+            conn.commit()
+            _send_t(cur, conn, chat_id, _t("already_logged_circles", lang))
+            continue
+        _finish_move(cur, conn, tg_id, chat_id, e["id"], lang, only=audience)
+        _send_t(cur, conn, chat_id,
+                _t("pick_expired" if audience is None else "pick_expired_left", lang))
 
 
 def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_body: str | None) -> None:
@@ -2378,9 +2434,17 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
     src_chat = src_msg = None
     if media:
         src_chat, src_msg, media_type = media[0], media[1], media[2]
+    # is_crew_wide FALSE, always: a move that has just been recorded has no
+    # audience yet, and the column is what the one-crew-wide-move-a-day index is
+    # built on. Defaulting it to TRUE meant the second move of a day collided
+    # with the first at INSERT — before anyone had said who it was for, and
+    # before the picker had a chance to offer the circle it was meant for.
+    # Whoever settles the audience sets it: _finish_move, one call below or
+    # half an hour later.
     cur.execute(
-        "INSERT INTO move_entries (telegram_user_id, entry_date, media_type, chat_id, message_id, text_body) "
-        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+        "INSERT INTO move_entries (telegram_user_id, entry_date, media_type, chat_id, "
+        "                          message_id, text_body, is_crew_wide) "
+        "VALUES (%s, %s, %s, %s, %s, %s, FALSE) RETURNING id",
         (tg_id, today, media_type or "text", src_chat, src_msg, text_body),
     )
     entry_id = cur.fetchone()["id"]
@@ -3888,6 +3952,14 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                         "WHERE id = %s", (entry_id,))
         elif act == "go":
             audience = _pick_audience(cur, tg_id, entry_id)
+            if audience is None and _used_today(cur, tg_id)[0]:
+                # Two moves recorded before either was addressed, and both
+                # pickers offered the crew. The first one to send takes it; the
+                # second would violate the one-a-day index, so it is refused
+                # here and redrawn without the option.
+                _answer(cq["id"], _t("pick_crew_gone", lang))
+                _redraw(chat_id, msg_id, *_pick_view(cur, tg_id, entry_id, lang))
+                return
             # Written now rather than at insert: until Send, the move has no
             # audience and has spent nothing. These two columns are what the
             # one-a-day indexes are built on.

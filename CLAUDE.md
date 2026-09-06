@@ -150,7 +150,7 @@ Backend dev server: `http://localhost:5001`
 `MOVE_TRACE_CHAT_ID` — every incoming Move update, one line each. Unset falls back
 to the log chat (where it buries the ⚠️ reports); `off` disables tracing.
 `MOVE_BETA_IDS` — telegram ids that see changes before everyone else (comma-separated).
-Currently unused: everything it gated has shipped to all users.
+Gates circles (`_circles_enabled`), which also need a crew of two or more.
 `POOL_COOLDOWN_DAYS` — days before radar may show you the same stranger again (default 7)
 `RADAR_FRESH_DAYS` — how far back radar looks for a move to show (default 33)
 

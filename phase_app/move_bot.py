@@ -848,10 +848,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "your name in Move", "uk": "Напиши своє ім'я у Move",
         "de": "dein Name in Move",
     },
+    # The overshoot, not just the ceiling. "At most 500" leaves someone holding
+    # a pasted block to guess how much of it has to go; "419 too long" is a cut
+    # they can make. And the second line, because editing the message is what
+    # everyone tries first and it used to do nothing at all.
     "note_too_long": {
-        "en": "Too long — {max} characters at most. It's a comment, not a letter.",
-        "uk": "Задовге — щонайбільше {max} символів. Це коментар, а не лист.",
-        "de": "Zu lang — höchstens {max} Zeichen. Ein Kommentar, kein Brief.",
+        "en": "{over} characters too long — {max} at most. It's a comment, not "
+              "a letter.\nEdit your message and it'll go as soon as it fits.",
+        "uk": "Задовге на {over} символів — щонайбільше {max}. Це коментар, а не "
+              "лист.\nВідредагуй повідомлення — щойно влізе, воно піде.",
+        "de": "{over} Zeichen zu lang — höchstens {max}. Ein Kommentar, kein "
+              "Brief.\nBearbeite die Nachricht — sobald sie passt, geht sie raus.",
     },
     "note_undelivered": {
         # Deliberately vague. "They've hidden you" or "they're paused" would both
@@ -1945,6 +1952,29 @@ def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
     _clear_prompts(cur, tg_id, entry_id)
 
 
+def _refuse_long(cur, conn, tg_id: int, chat_id: int, lang: str,
+                 text: str, entry_id: int) -> None:
+    """Refuse a comment for its length — once, however often it is retried.
+
+    Recorded as a prompt against the move, which buys two things: the next
+    attempt replaces this complaint instead of stacking an identical one under a
+    message the person is visibly still editing, and the comment finally landing
+    clears it along with every other prompt it answered.
+    """
+    _clear_prompts(cur, tg_id, entry_id)
+    res = _send_t(cur, conn, chat_id,
+                  _t("note_too_long", lang, max=_NOTE_MAX, over=len(text) - _NOTE_MAX))
+    if res and res.get("message_id"):
+        cur.execute(
+            "INSERT INTO move_forwards "
+            "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+            "SELECT %s, %s, %s, %s, 'ask', %s "
+            "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+            (entry_id, tg_id, chat_id, res["message_id"], tg_id, entry_id),
+        )
+        conn.commit()
+
+
 def _drop_undo(cur, entry_id: int) -> None:
     """Take Undo off the author's confirmation: someone has now seen the move.
 
@@ -2561,6 +2591,30 @@ def _finish_move(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str,
     _log(f"🏃 Move logged\n👤 {user['participant_name']}"
          + (f"\n📤 → {', '.join(names)}" if names else "\n📤 → nobody"))
     _check_milestone(cur, conn, user, streak)
+
+
+def _edited_retry(cur, msg: dict | None) -> dict | None:
+    """An edited message, if it is a second attempt at a comment.
+
+    Telegram sends edits as `edited_message`, and this bot has always dropped
+    them — rightly, for the most part: an edited caption is not a second move,
+    and re-running the whole handler on every edit would replay whatever the
+    text last triggered. The exception is a comment that was refused for being
+    too long. The message says to shorten it, and shortening it in place is what
+    everyone does first, so the one thing the refusal asks for has to work.
+
+    The armed prompt is what makes it safe: only a state that is waiting for a
+    comment right now lets an edit through, and answering it clears it, so an
+    edit of an edit does nothing.
+    """
+    if not msg:
+        return None
+    text = (msg.get("text") or "").strip()
+    tg_id = (msg.get("from") or {}).get("id")
+    if not text or text.startswith("/") or tg_id is None:
+        return None
+    state = (_get_state(cur, tg_id) or "").split(":")[0]
+    return msg if state in ("await_note", "await_comment") else None
 
 
 def _reply_target(cur, chat_id: int, replied_message_id: int):
@@ -3527,7 +3581,7 @@ def handle_move_webhook(body: dict, conn) -> None:
         _handle_callback(cur, conn, cq)
         return
 
-    msg = body.get("message")
+    msg = body.get("message") or _edited_retry(cur, body.get("edited_message"))
     if not msg:
         return
     tg_id = msg["from"]["id"]
@@ -3665,7 +3719,14 @@ def handle_move_webhook(body: dict, conn) -> None:
         if target:
             entry_id, author = target
             if len(text) > _NOTE_MAX:
-                _send_t(cur, conn, chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
+                # Armed, so the shorter version needs no second swipe — and so
+                # editing this one in place reaches _edited_retry. Which prompt
+                # depends on whose move it is: a note to someone else, or a
+                # caption on your own.
+                _set_state(cur, tg_id, f"await_comment:{entry_id}" if author == tg_id
+                           else f"await_note:{entry_id}:{author}")
+                conn.commit()
+                _refuse_long(cur, conn, tg_id, chat_id, lang, text, entry_id)
                 return
             _clear_state(cur, tg_id)       # this reply outranks any pending prompt
             if author == tg_id:
@@ -3704,7 +3765,7 @@ def handle_move_webhook(body: dict, conn) -> None:
                 # trim, and the prompt is still the one they were answering.
                 _set_state(cur, tg_id, f"await_note:{entry_id}:{to_id}")
                 conn.commit()
-                _send_t(cur, conn, chat_id, _t("note_too_long", lang, max=_NOTE_MAX))
+                _refuse_long(cur, conn, tg_id, chat_id, lang, text, entry_id)
                 return
             _send_note(cur, conn, tg_id, chat_id, lang, entry_id, to_id, text,
                        src_msg_id=msg.get("message_id"))
@@ -3831,7 +3892,7 @@ def handle_move_webhook(body: dict, conn) -> None:
     # Not commands. An unknown word falls past the whole command section to get
     # here, so without this a mistyped "/setttings" would be delivered to
     # whoever moved last, with no way to take it back.
-    if len(text) <= _NOTE_MAX and not text.startswith("/"):
+    if not text.startswith("/"):
         cur.execute(
             "SELECT f.entry_id, e.telegram_user_id AS author FROM move_forwards f "
             "JOIN move_entries e ON e.id = f.entry_id "
@@ -3840,6 +3901,14 @@ def handle_move_webhook(body: dict, conn) -> None:
             (tg_id,),
         )
         fresh = cur.fetchone()
+        if fresh and fresh["author"] != tg_id and len(text) > _NOTE_MAX:
+            # It was a comment. Length is the only thing wrong with it, and
+            # "I didn't understand that" for a long one and delivery for a
+            # short one is the bot pretending not to know which was which.
+            _set_state(cur, tg_id, f"await_note:{fresh['entry_id']}:{fresh['author']}")
+            conn.commit()
+            _refuse_long(cur, conn, tg_id, chat_id, lang, text, fresh["entry_id"])
+            return
         if fresh and fresh["author"] != tg_id:
             _send_note(cur, conn, tg_id, chat_id, lang, fresh["entry_id"], fresh["author"],
                        text, src_msg_id=msg.get("message_id"))

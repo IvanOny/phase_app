@@ -191,6 +191,13 @@ verified against the live bot on 2026-09-04, and the whole model rests on it.
 Re-sending rather than editing is deliberate: an edit sends no notification, so
 the other person would never learn a comment had arrived.
 
+**Testing Move against the live database:** a rolled-back transaction is not a
+sandbox. `_send_t`, `_send_note`, `_finish_move` and most other helpers call
+`conn.commit()` themselves, so a script that ends in `conn.rollback()` still
+leaves everything behind — and a fake move delivered to real crew members is
+one a real person can then comment on. Pass the helpers a wrapper whose
+`commit()` does nothing and roll back the real connection at the end.
+
 Bot messages that are scaffolding — menus, prompts, confirmations, the ⚙️ buttons
 under a move — are recorded in `move_transient` and deleted the next morning by
 the `move_sweep` job. Moves, comments and the ⚡ report stay. Answered prompts are

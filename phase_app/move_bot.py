@@ -767,6 +767,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "Вже пізно забрати.",
         "de": "Zu spät, um das zurückzunehmen.",
     },
+    # Ukrainian needs to know who it is talking about. The base above avoids
+    # the pronoun for the one person whose gender is not on record.
+    "note_armed_m": {"uk": "💬 Напиши коментар для {name} — наступне повідомлення піде йому"},
+    "note_armed_f": {"uk": "💬 Напиши коментар для {name} — наступне повідомлення піде їй"},
     "btn_note_reply": {"en": "💬 Reply", "uk": "💬 Відповісти", "de": "💬 Antworten"},
     # Named, because a thread belongs to one person: with one message per
     # counterpart, "Reply" alone would leave you working out which one.
@@ -780,7 +784,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     # in the chat and nothing covering the keyboard.
     "note_armed": {
         "en": "💬 Write your comment for {name} — your next message goes to them",
-        "uk": "💬 Напиши коментар для {name} — наступне повідомлення піде йому",
+        "uk": "💬 Напиши коментар для {name} — наступне повідомлення піде цій людині",
         "de": "💬 Schreib deinen Kommentar für {name} — deine nächste Nachricht geht an sie",
     },
     # One line for both cases. "on your move" and "replied" existed because
@@ -1291,9 +1295,12 @@ _STRINGS: dict[str, dict[str, str]] = {
     # needs doing, addressed to whoever has to do it.
     "crew_first_note": {
         "en": "This circle is just the two of you — {name}'s other people won't see your moves. To move with someone else, open their link or send them yours.",
-        "uk": "Це коло тільки ваше — інші люди {name} твоїх рухів не побачать. Щоб рухатися ще з кимось, відкрий його посилання або надішли своє.",
+        "uk": "Це коло тільки ваше — інші люди {name} твоїх рухів не побачать. Щоб рухатися ще з кимось, відкрий посилання тієї людини або надішли своє.",
         "de": "Dieser Kreis gehört nur euch beiden — die anderen Leute von {name} sehen deine Bewegungen nicht. Um dich mit jemand anderem zu bewegen, öffne dessen Link oder schick deinen.",
     },
+    # Whose link to open: Ukrainian has to pick, and the base above doesn't.
+    "crew_first_note_m": {"uk": "Це коло тільки ваше — інші люди {name} твоїх рухів не побачать. Щоб рухатися ще з кимось, відкрий його посилання або надішли своє."},
+    "crew_first_note_f": {"uk": "Це коло тільки ваше — інші люди {name} твоїх рухів не побачать. Щоб рухатися ще з кимось, відкрий її посилання або надішли своє."},
     "invite_connected": {
         "en": "🤝 You and {name} are now moving together!",
         "uk": "🤝 Тепер ти з {name} рухаєшся разом!",
@@ -4120,7 +4127,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # The toast carries the whole instruction instead.
         _clear_prompts(cur, tg_id, entry_id)
         conn.commit()
-        _answer(cq["id"], _t("note_armed", lang, name=them["participant_name"]))
+        _answer(cq["id"], _tgen("note_armed", lang, them["gender"],
+                               name=them["participant_name"]))
         return
 
     if body.startswith("crew:"):
@@ -4164,7 +4172,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             cur.execute("SELECT COUNT(*) AS n FROM move_crew WHERE telegram_user_id = %s",
                         (requester["telegram_user_id"],))
             if ((cur.fetchone() or {}).get("n") or 0) <= 1:
-                note += "\n\n" + _t("crew_first_note", rlang, name=me["participant_name"])
+                note += "\n\n" + _tgen("crew_first_note", rlang, me["gender"], name=me["participant_name"])
             _send(requester["chat_id"] or requester["telegram_user_id"], note)
             return
         if action == "addback":

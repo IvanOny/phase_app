@@ -1459,8 +1459,8 @@ def _daily_report(cur, user_id: int, tz, day):
         # need congratulating; the point of snacks is that there is another one
         # tomorrow, and the line says so without asking for anything.
         lines.append("")
-        lines.append("Everyday we breathe.")
-        lines.append("Everyday we move.")
+        lines.append("Every day we breathe.")
+        lines.append("Every day we move.")
 
     rows = []
     for i in pending:                                    # ✓ / ⏭ per pending item

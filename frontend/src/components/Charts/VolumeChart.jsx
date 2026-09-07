@@ -42,6 +42,8 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
   const isTouch = useIsTouchDevice();
   const [selectedExerciseId, setSelectedExerciseId] = useState(null);
   const [benchFilters, setBenchFilters] = useState(['volume']);
+  // Pull-ups only: drop the weighted sets and compare like with like.
+  const [bwOnly, setBwOnly] = useState(false);
   // One series. The three pills - volume, top load, both - were a choice
   // between a number nobody read (kg x reps) and the one everybody did.
   const series = 'load';
@@ -71,8 +73,12 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
 
   useEffect(() => {
     setBenchFilters(['volume']);
+    setBwOnly(false);
     openTooltip(null);
   }, [selectedExerciseId]);
+
+  // The bar under an open tooltip may not exist in the other series.
+  useEffect(() => { openTooltip(null); }, [bwOnly]);
 
   const sessionTypeByDate = useMemo(() => {
     const map = {};
@@ -100,7 +106,19 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
   // correctly — (bodyweight + added) × (1 + reps/30) — so when it has been
   // fetched, the bars use it and the two cards say the same thing. Without it
   // (the main dashboard doesn't fetch plMetrics) reps remain the fallback.
-  const pullupE1rm = isPullup ? plMetrics?.e1rm?.pullup ?? null : null;
+  //
+  // Bodyweight-only is the same measure over the unweighted sets alone. A
+  // session's top set is whichever pull-up moved the most weight, so +20 kg for
+  // 7 and a bodyweight 16 sit in one series and the bars swing between two
+  // different exercises. Ticking the box asks the narrower question — how the
+  // reps are going at a load that never changes — and sessions whose top set
+  // carried weight drop out rather than being restated as sets nobody did.
+  const pullupE1rm = isPullup
+    ? (bwOnly ? plMetrics?.e1rm?.pullupBw : plMetrics?.e1rm?.pullup) ?? null
+    : null;
+  // Only worth offering when there is something on both sides of it.
+  const hasWeighted = isPullup && plMetrics?.e1rm?.pullup && plMetrics?.e1rm?.pullupBw
+    && Object.keys(plMetrics.e1rm.pullup).length > Object.keys(plMetrics.e1rm.pullupBw).length;
 
   const data = (selectedExercise?.sessions ?? [])
     .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate))
@@ -133,7 +151,8 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
   const hasData = data.length > 0;
   const unit     = isTimed ? 'min' : (isBodyweight && !pullupE1rm) ? 'reps' : 'kg·reps';
   const topLabel = isTimed ? 'longest set (min)'
-    : pullupE1rm ? 'top set e1RM (kg, bodyweight included)'
+    : pullupE1rm ? (bwOnly ? 'top set e1RM (kg, bodyweight sets only)'
+                           : 'top set e1RM (kg, bodyweight included)')
     : isBodyweight ? 'top set (reps)' : 'top load (kg)';
 
   const volumes   = data.map(d => d.volume).filter(v => v != null);
@@ -241,7 +260,25 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
               </linearGradient>
             </defs>
           </svg>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>{topLabel}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10,
+                        marginBottom: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{topLabel}</span>
+            {/* On the same line as the caption it modifies, because it changes
+                what that caption says. */}
+            {hasWeighted && (
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer',
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              userSelect: 'none' }}>
+                <input
+                  type="checkbox"
+                  checked={bwOnly}
+                  onChange={e => setBwOnly(e.target.checked)}
+                  style={{ cursor: 'pointer', margin: 0 }}
+                />
+                bodyweight only
+              </label>
+            )}
+          </div>
           <ResponsiveContainer width="100%" height={210}>
             <BarChart
               data={data}

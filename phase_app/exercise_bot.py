@@ -22,8 +22,48 @@ except ImportError:  # pragma: no cover
 
 # Reuse the burpee bot's Telegram helpers. This module is imported lazily from
 # handle_webhook, so phase_app.bot is fully initialized by the time this runs.
-from phase_app.bot import _tg, _send, _log
+from phase_app.bot import _tg as _burpee_tg, _send as _burpee_send, _log
 from phase_app.exercise_due import first_due, interval_of
+
+# ── Who delivers ─────────────────────────────────────────────────────────────
+#
+# Snacks answer in whichever chat asked. The burpee bot owns this module's
+# original front end; Move drives the same code through its own token. Rather
+# than thread a sender through sixty call sites, the two functions everything
+# already goes through look here first.
+#
+# Reset in a finally, always: on Vercel the module outlives the request, and an
+# override left standing would have the burpee bot replying with Move's token
+# on the next warm invocation.
+_transport: dict | None = None
+
+
+class transport:
+    """Deliver everything inside this block through someone else's bot."""
+
+    def __init__(self, send, tg):
+        self._new = {"send": send, "tg": tg}
+
+    def __enter__(self):
+        global _transport
+        self._prev, _transport = _transport, self._new
+        return self
+
+    def __exit__(self, *exc):
+        global _transport
+        _transport = self._prev
+        return False
+
+
+def _send(chat_id: int, text: str, reply_markup: dict | None = None) -> None:
+    if _transport:
+        _transport["send"](chat_id, text, reply_markup=reply_markup)
+        return
+    _burpee_send(chat_id, text, reply_markup)
+
+
+def _tg(method: str, payload: dict) -> None:
+    (_transport["tg"] if _transport else _burpee_tg)(method, payload)
 
 _STATE_TIMEOUT_MINUTES = 10
 
@@ -37,11 +77,55 @@ _SCHEDULES = ("queue", "fixed", "acquisition")
 _EX_COMMANDS = {
     "add", "next", "done", "skip", "overview", "list", "edit", "tier",
     "pause", "park", "activate", "remove", "stats", "history", "undo", "exhelp",
-    "exapp",
+    "exapp", "score", "snacks",
 }
 
 # Web UI base (calendar / log / stats), reads ?exq_token=.
 _EXQ_APP_BASE = "https://phase-app-yf5x.vercel.app"
+
+
+def owns(word: str) -> bool:
+    """Is this word a snack command? Asked by whichever bot is routing."""
+    return word in _EX_COMMANDS
+
+
+def in_flow(cur, tg_id: int) -> bool:
+    """Is this person part-way through a snack conversation right now?
+
+    Move needs to know, because in Move a bare line of text is a comment on
+    somebody's video. Only an armed snack prompt — the add flow asking for a
+    name, an interval, a dose — makes plain text mean something else, and it
+    times out in ten minutes like every other prompt here.
+    """
+    user_id = _get_user_id(cur, tg_id)
+    if user_id is None:
+        return False
+    state, _ = _get_state(cur, user_id)
+    return bool(state)
+
+
+def send_overview_for(conn, tg_ids: set[int]) -> set[int]:
+    """The morning report, for these people only. Returns who got one.
+
+    Move calls this with its own crew so the report arrives in the chat where
+    the person already is, and the burpee bot skips whoever is covered here —
+    two identical reports at 08:00 would be worse than none.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT id, telegram_user_id, chat_id FROM exercise_users "
+                "WHERE telegram_user_id = ANY(%s)", (list(tg_ids),))
+    sent = set()
+    for u in cur.fetchall():
+        tz = _user_tz(cur, u["id"])
+        today = datetime.now(tz).date()
+        _lock_in(cur, u["id"], tz, today)
+        text, kb, has_content = _daily_report(cur, u["id"], tz, today)
+        sent.add(u["telegram_user_id"])
+        if not has_content:
+            continue
+        _send(u["chat_id"] or u["telegram_user_id"], text, reply_markup=kb)
+    conn.commit()
+    return sent
 
 
 # ── User + state helpers ─────────────────────────────────────────────────────
@@ -143,6 +227,54 @@ def _next_due_date(ex, tz, as_of=None):
 # bottom tier comes up half as often as the one above it, with no fractions. The
 # serve query multiplies seconds by this, so integers are the point.
 _TIER_WEIGHT = {1: 12, 2: 8, 3: 4, 4: 2, 5: 1}
+
+
+def _points(ex) -> int:
+    """What this snack is worth. Tier 1 is twelve tier-5s, which is the whole
+    point of tiering them: ten trivial ticks should not outscore the one thing
+    that was hard. An untiered item counts 1 rather than 0 — it was done."""
+    return _TIER_WEIGHT.get(ex.get("tier") if hasattr(ex, "get") else None, 1)
+
+
+def score_summary(cur, user_id: int, tz, today) -> dict:
+    """Points today, this week, and the run of consecutive scoring days.
+
+    Read from exercise_history.points, which was frozen when each snack was
+    ticked, so re-tiering an item today leaves last month alone.
+    """
+    cur.execute(
+        "SELECT (done_at AT TIME ZONE 'UTC' AT TIME ZONE %s)::date AS day, "
+        "       SUM(points)::int AS pts, COUNT(*)::int AS n "
+        "FROM exercise_history WHERE user_id = %s "
+        "GROUP BY 1 ORDER BY 1 DESC LIMIT 400",
+        (str(tz), user_id),
+    )
+    rows = cur.fetchall()
+    by_day = {r["day"]: r for r in rows}
+    # Seven calendar days back from today, not the seven most recent days that
+    # happened to score. Those are the same number in a good week and wildly
+    # different after a lay-off, and only one of them is "this week".
+    week_from = today - timedelta(days=6)
+
+    # A streak counts back from today, and an empty today doesn't break it until
+    # tomorrow — the day is still open, and a bot that zeroes your streak at
+    # one minute past midnight is lying about what happened.
+    streak, cursor_day = 0, today
+    if today not in by_day:
+        cursor_day = today - timedelta(days=1)
+    while cursor_day in by_day:
+        streak += 1
+        cursor_day -= timedelta(days=1)
+
+    return {
+        "today":  (by_day.get(today) or {}).get("pts", 0),
+        "todayN": (by_day.get(today) or {}).get("n", 0),
+        "week":   sum(r["pts"] for d, r in by_day.items() if week_from <= d <= today),
+        "streak": streak,
+        "best":   max((r["pts"] for r in rows), default=0),
+        "days":   [{"day": str(r["day"]), "points": r["pts"], "snacks": r["n"]}
+                   for r in reversed(rows)],
+    }
 
 
 def _serve_next(cur, user_id: int, filters: dict):
@@ -378,6 +510,8 @@ def maybe_handle_exercise(cur, conn, tg_id: int, chat_id: int, text: str) -> boo
         _cmd_undo(cur, conn, user_id, chat_id)
     elif word == "exapp":
         _cmd_exapp(cur, conn, user_id, chat_id)
+    elif word in ("score", "snacks"):
+        _cmd_score(cur, user_id, chat_id)
     return True
 
 
@@ -518,9 +652,9 @@ def _cmd_done(cur, conn, user_id: int, chat_id: int, actual: str | None) -> None
         (ex["id"],),
     )
     cur.execute(
-        "INSERT INTO exercise_history (user_id, exercise_id, done_at, dose_actual, source) "
-        "VALUES (%s, %s, NOW(), %s, %s)",
-        (user_id, ex["id"], actual, source),
+        "INSERT INTO exercise_history (user_id, exercise_id, done_at, dose_actual, source, points) "
+        "VALUES (%s, %s, NOW(), %s, %s, %s)",
+        (user_id, ex["id"], actual, source, _points(ex)),
     )
     cur.execute("DELETE FROM exercise_pending_serves WHERE user_id = %s", (user_id,))
 
@@ -577,6 +711,28 @@ def _cmd_skip(cur, conn, user_id: int, chat_id: int) -> None:
             ]]})
     else:
         _send(chat_id, f"⏭ Skipped {ex['name']} for 1h.")
+
+
+def _cmd_score(cur, user_id: int, chat_id: int) -> None:
+    tz = _user_tz(cur, user_id)
+    sc = score_summary(cur, user_id, tz, datetime.now(tz).date())
+    if not sc["days"]:
+        _send(chat_id, "No snacks logged yet — tick one and the score starts.")
+        return
+    lines = [
+        "⭐ Snack score",
+        f"• today: {sc['today']} pts ({sc['todayN']} snacks)",
+        f"• this week: {sc['week']} pts",
+        f"• best day: {sc['best']} pts",
+        f"• run: {sc['streak']} day{'s' if sc['streak'] != 1 else ''}",
+        "",
+        "Tier 1 counts 12, then 8, 4, 2, 1.",
+    ]
+    last = sc["days"][-7:]
+    if len(last) > 1:
+        lines.append("")
+        lines.append("Last days: " + " · ".join(f"{d['day'][5:]} {d['points']}" for d in last))
+    _send(chat_id, "\n".join(lines))
 
 
 def _cmd_overview(cur, user_id: int, chat_id: int) -> None:
@@ -695,8 +851,9 @@ def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool,
         (ex_id,),
     )
     cur.execute(
-        "INSERT INTO exercise_history (user_id, exercise_id, done_at, source) VALUES (%s, %s, NOW(), 'overview')",
-        (user_id, ex_id),
+        "INSERT INTO exercise_history (user_id, exercise_id, done_at, source, points) "
+        "VALUES (%s, %s, NOW(), 'overview', %s)",
+        (user_id, ex_id, _points(ex)),
     )
     msg = f"✓ {ex['name']} done"
     if ex["schedule_type"] == "acquisition":
@@ -1252,7 +1409,13 @@ def _daily_report(cur, user_id: int, tz, day):
     done_n = sum(1 for i in today_items if i["status"] == "done")
     pending = [i for i in today_items if i["status"] == "planned"]
 
+    sc = score_summary(cur, user_id, tz, day)
     lines = [f"🗓 Daily report — {day.strftime('%a %d %b')}", ""]
+    # The score before the list, because it is the one line worth reading when
+    # the report arrives at 08:00 and the list is still all pending.
+    run = f" · {sc['streak']}-day run" if sc["streak"] > 1 else ""
+    lines.append(f"⭐ {sc['today']} pts today · {sc['week']} this week{run}")
+    lines.append("")
     if today_items:
         lines.append(f"✅ TODAY — {done_n}/{len(today_items)} done")
         for i in today_items:
@@ -1289,12 +1452,14 @@ def _daily_report(cur, user_id: int, tz, day):
     return "\n".join(lines), ({"inline_keyboard": rows} if rows else None), has_content
 
 
-def send_exercise_overview(conn) -> None:
+def send_exercise_overview(conn, skip: set[int] | None = None) -> None:
     """Morning daily report: today's plan with ✓/⏭, tomorrow previewed, queue to tick off.
     Wired into the shared daily cron at 06:00 UTC = 08:00 Europe/Berlin."""
     cur = conn.cursor()
     cur.execute("SELECT id, telegram_user_id, chat_id FROM exercise_users")
     for u in cur.fetchall():
+        if skip and u["telegram_user_id"] in skip:
+            continue
         user_id = u["id"]
         chat_id = u["chat_id"] or u["telegram_user_id"]
         tz = _user_tz(cur, user_id)

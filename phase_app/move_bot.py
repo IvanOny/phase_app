@@ -1456,6 +1456,33 @@ _COMMAND_WORDS = frozenset({
     "undo", "delete", "log",
 })
 
+# ── Snacks ───────────────────────────────────────────────────────────────────
+#
+# The snack queue — small daily exercises with a morning report and a tick per
+# item — lives in exercise_bot, which was written against the burpee bot. Move
+# drives the same code and the same tables through its own token rather than
+# owning a second copy: two implementations of "what is due today" would
+# disagree within a week.
+#
+# In Move a snack command must be slashed. A bare word here is a comment on
+# somebody's video, and "done" or "next" typed after watching a crew move means
+# what Move thinks it means, not what the snack bot would. The exception is a
+# snack prompt already on screen: mid-flow, plain text is the answer to the
+# question that was asked.
+def _snacks():
+    from phase_app import exercise_bot
+    return exercise_bot
+
+
+def _snack_transport(exercise_bot):
+    """exercise_bot's sends, routed out through Move."""
+    return exercise_bot.transport(
+        send=lambda chat_id, text, reply_markup=None:
+            _send(chat_id, text, reply_markup=reply_markup),
+        tg=lambda method, payload: _api_call(method, payload),
+    )
+
+
 _MONTHS = {
     "en": ["", "January", "February", "March", "April", "May", "June", "July",
            "August", "September", "October", "November", "December"],
@@ -2443,6 +2470,24 @@ def _fallback_audience(cur, tg_id: int, entry_id: int) -> tuple[set | None, bool
                 "SELECT %s, UNNEST(%s::bigint[]) ON CONFLICT DO NOTHING",
                 (entry_id, free))
     return _pick_audience(cur, tg_id, entry_id), True
+
+
+def send_snack_reports(conn) -> set[int]:
+    """The morning snack report, in Move, for everyone Move knows.
+
+    Returns the telegram ids served, so the burpee bot's own version of this
+    job can skip them: the two would otherwise arrive within a second of each
+    other, identical apart from which bot sent them, and ticking one would
+    leave the other standing with live buttons over stale rows.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT telegram_user_id FROM move_users")
+    ids = {r["telegram_user_id"] for r in cur.fetchall()}
+    if not ids:
+        return set()
+    eb = _snacks()
+    with _snack_transport(eb):
+        return eb.send_overview_for(conn, ids)
 
 
 def flush_pending_moves(conn) -> None:
@@ -3843,6 +3888,16 @@ def handle_move_webhook(body: dict, conn) -> None:
     if word in ("info", "help"):
         _cmd_info(cur, conn, tg_id, chat_id, lang, u["participant_name"])
         return
+    # Slashed only, and never a word Move already owns: /pause and /undo mean
+    # Move's pause and Move's undo, whatever the snack bot would have done with
+    # them. The snack equivalents are reachable by their other names.
+    if text.startswith("/") and word not in _COMMAND_WORDS:
+        eb = _snacks()
+        if eb.owns(word):
+            with _snack_transport(eb):
+                eb.maybe_handle_exercise(cur, conn, tg_id, chat_id, text.lstrip("/"))
+            conn.commit()
+            return
     if word == "rename":
         _set_state(cur, tg_id, "await_rename")
         conn.commit()
@@ -3915,6 +3970,16 @@ def handle_move_webhook(body: dict, conn) -> None:
         conn.commit()
         return
 
+    # 4b) a snack prompt is on screen and waiting for this answer. Ahead of the
+    #     comment paths on purpose: the question was asked a moment ago and is
+    #     the newest thing in the chat, which is exactly what people answer.
+    eb = _snacks()
+    if eb.in_flow(cur, tg_id):
+        with _snack_transport(eb):
+            eb.maybe_handle_exercise(cur, conn, tg_id, chat_id, text)
+        conn.commit()
+        return
+
     # 5) a plain text soon after a move is its comment
     if _attach_comment(cur, conn, tg_id, chat_id, text):
         return
@@ -3971,6 +4036,16 @@ def _handle_callback(cur, conn, cq: dict) -> None:
     chat_id = cq["message"]["chat"]["id"]
     msg_id = cq["message"]["message_id"]
     data = cq.get("data") or ""
+    if data.startswith("ex:"):
+        # A tick on the morning report. exercise_bot rebuilds the whole message
+        # and edits it in place, so the answer to the tap is the report itself
+        # with one more line crossed off.
+        eb = _snacks()
+        with _snack_transport(eb):
+            eb.handle_exercise_callback(cur, conn, tg_id, chat_id, msg_id, data)
+        conn.commit()
+        _answer(cq["id"])
+        return
     if not data.startswith("mv:"):
         return
     lang = _lang(cur, tg_id)

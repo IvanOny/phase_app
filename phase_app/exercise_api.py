@@ -466,6 +466,23 @@ class ExerciseQueueApi:
         } for r in cur.fetchall()]
         return ApiResponse(200, {"items": items})
 
+    def get_score(self, qp: dict[str, str]) -> ApiResponse:
+        """The snack score: points today, this week, the run, and every day of
+        it for a chart.
+
+        Computed by exercise_bot.score_summary — the same function the bot's
+        own /score answers with, so the two surfaces cannot drift into
+        disagreeing about what a week is worth.
+        """
+        uid = self._uid(qp)
+        if uid is None:
+            return ApiResponse(401, {"error": "unauthorized"})
+        from datetime import datetime
+        from phase_app.exercise_bot import _user_tz, score_summary
+        cur = self.conn.cursor()
+        tz = _user_tz(cur, uid)
+        return ApiResponse(200, score_summary(cur, uid, tz, datetime.now(tz).date()))
+
     def get_stats(self, qp: dict[str, str]) -> ApiResponse:
         uid = self._uid(qp)
         if uid is None:

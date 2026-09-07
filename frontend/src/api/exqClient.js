@@ -22,6 +22,8 @@ async function req(method, path, body) {
   return res.json();
 }
 
+export const getExqScore = () => req('GET', '/v1/exq/score');
+
 export const getExqExercises = () => req('GET', '/v1/exq/exercises').then(r => r.items ?? []);
 
 export const updateExqExercise = (id, patch) => req('PATCH', `/v1/exq/exercises/${id}`, patch);

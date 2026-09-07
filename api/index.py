@@ -140,6 +140,7 @@ def _run_daily_jobs(conn) -> dict:
     from phase_app.move_bot import (
         send_move_zap_reports, process_move_radar, send_move_monthly_summaries,
         send_move_nudges, purge_move_transient, flush_pending_moves,
+        send_snack_reports,
     )
     import traceback
 
@@ -151,7 +152,11 @@ def _run_daily_jobs(conn) -> dict:
         # exists; putting the line back turns it on again.
         ("burpee_milestones", check_milestones),
         ("burpee_monthly", send_monthly_summaries),
-        ("snacks_overview", send_exercise_overview),
+        # Snacks report in Move first; the burpee bot then covers only the
+        # people Move doesn't know. Whoever has both bots gets exactly one
+        # report, from the chat they actually use.
+        ("snacks_move", None),
+        ("snacks_overview", None),
         # Order is a priority list, not a preference. Every job runs inside one
         # request, and when that request is cut short everything after the cut
         # simply doesn't happen -- silently, until tomorrow. On 6 September the
@@ -168,6 +173,20 @@ def _run_daily_jobs(conn) -> dict:
         ("move_radar", process_move_radar),
         ("move_nudges", send_move_nudges),
     ]
+    # The two snack jobs are the only pair that has to talk to each other: the
+    # second needs to know who the first already served.
+    served: set = set()
+
+    def _snacks_move(c):
+        nonlocal served
+        served = send_snack_reports(c)
+
+    def _snacks_rest(c):
+        send_exercise_overview(c, skip=served)
+
+    jobs = [(n, {"snacks_move": _snacks_move,
+                 "snacks_overview": _snacks_rest}.get(n, f)) for n, f in jobs]
+
     failed = []
     for name, fn in jobs:
         try:

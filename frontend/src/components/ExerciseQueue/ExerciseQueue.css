@@ -318,3 +318,41 @@
   .exq-rail { position: static; }
   .exq-grid--month .exq-day { min-height: 64px; }
 }
+
+/* Snack score — sits in the header, between the title and the tabs. Tier-
+   weighted points; the sparkline is one bar per scoring day, newest right. */
+.exq-score {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.exq-score-figure { display: flex; align-items: baseline; gap: 5px; }
+.exq-score-value { font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1; }
+.exq-score-unit  { font-size: 11px; color: var(--text-muted); }
+.exq-score-rest {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.exq-score-rest strong { color: var(--text-primary); font-weight: 600; }
+.exq-score-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 24px;
+}
+.exq-score-bar {
+  width: 4px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+  opacity: 0.55;
+}
+.exq-score-bar:last-child { opacity: 1; }
+
+/* Narrow screens: the sparkline is the first thing worth dropping. */
+@media (max-width: 560px) {
+  .exq-score-spark { display: none; }
+}

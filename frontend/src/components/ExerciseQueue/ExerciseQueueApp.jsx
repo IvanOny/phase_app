@@ -65,7 +65,14 @@ export default function ExerciseQueueApp({ token }) {
   // calendar instead of contradicting it until the next visit.
   const [scoreKey, setScoreKey] = useState(0);
 
-  useEffect(() => { setExqToken(token); }, [token]);
+  // During render, not in an effect. React runs a child's effects before its
+  // parent's, so a token assigned in an effect here is assigned *after* any
+  // child that fetches on mount has already fetched — ScoreBar did, with an
+  // empty token, got a 401, and stayed invisible. Everything else on this
+  // screen is loaded by this component's own effects, which is why nothing
+  // else noticed. The assignment is idempotent, so running it every render
+  // costs nothing.
+  setExqToken(token);
   useEffect(() => { document.title = 'Movement Snacks'; }, []);
 
   const loadExercises = useCallback(async () => {

@@ -176,14 +176,27 @@ def _run_daily_jobs(conn) -> dict:
     ]
     # The two snack jobs are the only pair that has to talk to each other: the
     # second needs to know who the first already served.
+    #
+    # And the only pair that has to be claimed together. Every other job here
+    # guards itself with cron_log, which is what makes hitting this endpoint by
+    # hand safe; the snack report never did, so a manual run sent everyone a
+    # second copy of their morning list. Claiming them as one also keeps the
+    # hand-off honest: a guard on the first alone would leave `served` empty and
+    # the second would then send to the very people the first had covered.
+    from datetime import date as _date
+    from phase_app.move_bot import _claim_job
     served: set = set()
+    _cur = conn.cursor()
+    snacks_due = _claim_job(_cur, conn, "snacks_daily", _date.today())
 
     def _snacks_move(c):
         nonlocal served
-        served = send_snack_reports(c)
+        if snacks_due:
+            served = send_snack_reports(c)
 
     def _snacks_rest(c):
-        send_exercise_overview(c, skip=served)
+        if snacks_due:
+            send_exercise_overview(c, skip=served)
 
     jobs = [(n, {"snacks_move": _snacks_move,
                  "snacks_overview": _snacks_rest}.get(n, f)) for n, f in jobs]

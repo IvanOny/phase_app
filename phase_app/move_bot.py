@@ -936,6 +936,30 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "👥 Різні рухи різним людям?",
         "de": "👥 Verschiedene Bewegungen an verschiedene Leute?",
     },
+    # Said once, to someone who has just been given circles. Deliberately three
+    # short lines: what they are, what they change, and the one rule that
+    # surprises people. No gendered verb, so it reads the same for everyone.
+    "circles_news": {
+        "en": "✨ You have circles now."
+              "\n\n"
+              "A circle is a part of your crew — the gym, the family, one "
+              "person. Each move can go to everyone, or to the circles you pick."
+              "\n\n"
+              "Someone can only be in one of your circles.",
+        "uk": "✨ У тебе тепер є кола."
+              "\n\n"
+              "Коло — це частина твоїх людей: зал, родина, хтось один. "
+              "Кожен рух може йти всім або тільки тим колам, які ти обереш."
+              "\n\n"
+              "Одна людина може бути тільки в одному твоєму колі.",
+        "de": "✨ Du hast jetzt Kreise."
+              "\n\n"
+              "Ein Kreis ist ein Teil deiner Crew — das Gym, die Familie, eine "
+              "Person. Jede Bewegung kann an alle gehen oder nur an die Kreise, "
+              "die du wählst."
+              "\n\n"
+              "Jemand kann nur in einem deiner Kreise sein.",
+    },
     "btn_circle_new": {"en": "➕ New circle", "uk": "➕ Нове коло", "de": "➕ Neuer Kreis"},
     "btn_circle_rename": {"en": "✏️ Rename", "uk": "✏️ Перейменувати", "de": "✏️ Umbenennen"},
     "btn_circle_delete": {"en": "🗑 Delete circle", "uk": "🗑 Видалити коло", "de": "🗑 Kreis löschen"},
@@ -2472,6 +2496,48 @@ def _fallback_audience(cur, tg_id: int, entry_id: int) -> tuple[set | None, bool
     return _pick_audience(cur, tg_id, entry_id), True
 
 
+def _tell_about_circles(cur, conn, tg_id: int, chat_id: int, lang: str) -> bool:
+    """Say once that circles exist, to someone who now has them.
+
+    Circles live behind one button inside 🤝, which is not somewhere anyone
+    looks twice — beta access without this notice is a feature nobody finds.
+    The timestamp is written before the send: a Telegram error would otherwise
+    leave the row untouched and the notice would arrive again tomorrow, and
+    again the day after.
+    """
+    if not _circles_enabled(cur, tg_id):
+        return False
+    cur.execute("SELECT circles_told_at FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+    row = cur.fetchone()
+    if not row or row["circles_told_at"]:
+        return False
+    cur.execute("UPDATE move_users SET circles_told_at = NOW() "
+                "WHERE telegram_user_id = %s", (tg_id,))
+    conn.commit()
+    # Not tracked as scaffolding: this is said once ever, and sweeping it away
+    # the next morning would delete the only explanation the feature has.
+    _send(chat_id, _t("circles_news", lang),
+          reply_markup={"inline_keyboard": [[
+              {"text": _t("btn_circles", lang, n=0).replace(" · 0", ""),
+               "callback_data": "mv:cr:list:0"}]]})
+    return True
+
+
+def announce_circles(conn) -> None:
+    """The same notice, swept for daily, so nobody has to open the bot to learn.
+
+    Whoever was added to MOVE_BETA_IDS since yesterday hears about it in the
+    morning rather than whenever they next happen to send something.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT telegram_user_id, chat_id, language_code FROM move_users "
+                "WHERE circles_told_at IS NULL AND banned_at IS NULL")
+    for u in cur.fetchall():
+        _tell_about_circles(cur, conn, u["telegram_user_id"],
+                            u["chat_id"] or u["telegram_user_id"],
+                            _norm_lang(u["language_code"]))
+
+
 def send_snack_reports(conn) -> set[int]:
     """The morning snack report, in Move, for everyone Move knows.
 
@@ -3677,6 +3743,11 @@ def handle_move_webhook(body: dict, conn) -> None:
     u = _user(cur, tg_id)
     if u and u["language_code"]:
         lang = _norm_lang(u["language_code"])
+
+    # Anyone newly given circles hears about it before whatever they came to do.
+    # Once, ever — and ahead of the rest, so the notice isn't buried under the
+    # answer to their actual message.
+    _tell_about_circles(cur, conn, tg_id, chat_id, lang)
 
     # A move recorded and never addressed goes out on its own. Checked here as
     # well as in the daily job, because the daily job is once a day and someone

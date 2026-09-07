@@ -1384,12 +1384,13 @@ def _collect_day(cur, user_id: int, tz, day):
     have no row yet. Each entry carries its status so the report can show
     progress (✓ / ⏭ / pending)."""
     cur.execute(
-        "SELECT s.exercise_id AS id, s.status, e.name FROM exercise_schedule s "
+        "SELECT s.exercise_id AS id, s.status, e.name, e.tier FROM exercise_schedule s "
         "JOIN exercise_items e ON e.id = s.exercise_id "
         "WHERE s.user_id = %s AND s.scheduled_date = %s",
         (user_id, day),
     )
-    items = {r["id"]: {"id": r["id"], "name": r["name"], "status": r["status"]} for r in cur.fetchall()}
+    items = {r["id"]: {"id": r["id"], "name": r["name"], "status": r["status"],
+                       "tier": r["tier"]} for r in cur.fetchall()}
 
     cur.execute(
         "SELECT * FROM exercise_items WHERE user_id = %s AND status = 'active' "
@@ -1400,13 +1401,14 @@ def _collect_day(cur, user_id: int, tz, day):
         if e["id"] in items:
             continue  # a committed row wins over its own suggestion
         if _next_due_date(e, tz, day) == day:
-            items[e["id"]] = {"id": e["id"], "name": e["name"], "status": "planned"}
+            items[e["id"]] = {"id": e["id"], "name": e["name"], "status": "planned",
+                              "tier": e["tier"]}
     return sorted(items.values(), key=lambda x: x["name"].lower())
 
 
 def _queue_items(cur, user_id: int, handled_ids: set):
     cur.execute(
-        "SELECT id, name, load_tag FROM exercise_items "
+        "SELECT id, name, load_tag, tier FROM exercise_items "
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
         "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
         "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC LIMIT 10",
@@ -1446,19 +1448,29 @@ def _daily_report(cur, user_id: int, tz, day):
     if queue:
         lines.append(f"📋 QUEUE ({len(queue)})")
         lines.append(" · ".join(f"{q['name']}" for q in queue))
+    # Each button carries what ticking it is worth. Ten identical-looking rows
+    # otherwise give no reason to pick one over another, and the whole point of
+    # tiering them is that some are worth twelve of the others.
+    def _label(item):
+        return f"✓ {item['name']} · {_points(item)}"
+
     if today_items and not pending:
+        # Where "🎉 All clear for today." used to be. A day finished doesn't
+        # need congratulating; the point of snacks is that there is another one
+        # tomorrow, and the line says so without asking for anything.
         lines.append("")
-        lines.append("🎉 All clear for today.")
+        lines.append("Everyday we breathe.")
+        lines.append("Everyday we move.")
 
     rows = []
     for i in pending:                                    # ✓ / ⏭ per pending item
         rows.append([
-            {"text": f"✓ {i['name']}", "callback_data": f"ex:tdone:{i['id']}:{day}"},
+            {"text": _label(i), "callback_data": f"ex:tdone:{i['id']}:{day}"},
             {"text": "⏭", "callback_data": f"ex:tskip:{i['id']}:{day}"},
         ])
     row = []
     for q in queue:                                      # ✓ only, two per row
-        row.append({"text": f"✓ {q['name']}", "callback_data": f"ex:tdone:{q['id']}:{day}"})
+        row.append({"text": _label(q), "callback_data": f"ex:tdone:{q['id']}:{day}"})
         if len(row) == 2:
             rows.append(row)
             row = []

@@ -119,7 +119,10 @@ export default function ScheduleCalendar({
     const active = exercises.filter(e => e.status === 'active');
     const byTier = { 1: [], 2: [], 3: [], 4: [], 5: [] };
     for (const e of active) (byTier[e.tier] ?? byTier[2]).push(e);
-    for (const t of [1, 2, 3, 4, 5]) byTier[t].sort((a, b) => a.name.localeCompare(b.name));
+    // Most overdue first inside each tier, name only to break a tie.
+    for (const t of [1, 2, 3, 4, 5]) {
+      byTier[t].sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.name.localeCompare(b.name));
+    }
     return byTier;
   }, [exercises]);
   const total = [1, 2, 3, 4, 5].reduce((n, t) => n + groups[t].length, 0);
@@ -146,11 +149,11 @@ export default function ScheduleCalendar({
         title={ex.description || ex.name}
       >
         <span className="exq-pill-name">{ex.name}</span>
-        {/* What this snack has earned, all-time. Not what a tick is worth —
-            that is fixed by the tier, which is already the heading this pill
-            sits under. The running total is the number that changes. */}
-        <span className="exq-pill-tag" title={`Tier ${tier} · ${ex.points ?? 0} pts all-time`}>
-          {ex.points ?? 0}
+        {/* What this snack owes: up by the tier weight each day, down by it
+            each time it is done. High means overdue, and the rail is sorted by
+            it, so the top of each tier is what to reach for. */}
+        <span className="exq-pill-tag" title={`Tier ${tier} · ${ex.score ?? 0} overdue`}>
+          {ex.score ?? 0}
         </span>
         <button
           className="exq-pill-edit"

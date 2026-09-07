@@ -92,15 +92,17 @@ class ExerciseQueueApi:
         if uid is None:
             return ApiResponse(401, {"error": "unauthorized"})
         cur = self.conn.cursor()
+        # Bring the debt up to today before reading it, exactly as the bot does.
+        # The planner is often the first thing opened in a morning, and a score
+        # a day behind would disagree with the report sitting in Telegram.
+        from phase_app.exercise_bot import accrue
+        accrue(cur, uid, self.conn)
         cur.execute(
             "SELECT id, name, description, schedule_type, repeat_interval_days, "
             "       acq_interval_days, acq_target_sessions, acq_sessions_done, "
             "       focus_area, location, equipment, load_tag, status, last_done_at, tier, "
-            # All-time points for this snack. Left-joined and summed here rather
-            # than fetched per row: the planner draws every exercise at once.
-            "       COALESCE((SELECT SUM(h.points) FROM exercise_history h "
-            "                 WHERE h.exercise_id = exercise_items.id), 0)::int AS points "
-            "FROM exercise_items WHERE user_id = %s ORDER BY tier, name",
+            "       score "
+            "FROM exercise_items WHERE user_id = %s ORDER BY score DESC, name",
             (uid,),
         )
         return ApiResponse(200, {"items": [self._exercise_row(r) for r in cur.fetchall()]})
@@ -120,7 +122,7 @@ class ExerciseQueueApi:
             "location": r["location"],
             "equipment": r["equipment"],
             "loadTag": r["load_tag"],
-            "points": r["points"] if "points" in r else 0,
+            "score": r["score"] if "score" in r else 0,
             "status": r["status"],
             "tier": r["tier"] if "tier" in r else 2,
             "lastDoneAt": r["last_done_at"].isoformat() if r["last_done_at"] else None,

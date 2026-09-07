@@ -198,6 +198,27 @@ leaves everything behind — and a fake move delivered to real crew members is
 one a real person can then comment on. Pass the helpers a wrapper whose
 `commit()` does nothing and roll back the real connection at the end.
 
+## Snacks
+
+Small daily exercises with a morning report and a tick per item. The code and
+tables live in `phase_app/exercise_bot.py` (`exercise_*`), written for the
+burpee bot; **Move drives the same code through its own token** via
+`exercise_bot.transport`, set and cleared around each call. In Move a snack
+command must be slashed — a bare word there is a comment on somebody's video —
+except while a snack prompt is armed. `/pause <snack name>` pauses that snack;
+bare `/pause` still mutes Move.
+
+Two different numbers, both called a score:
+
+- **Day score** (the ⭐ line, `/score`, `GET /v1/exq/score`) — what you did.
+  Tier-weighted 12/8/4/2/1, frozen into `exercise_history.points` at tick time
+  so re-tiering an item never rescores the past.
+- **Debt** (`exercise_items.score`, on every pill and tick button) — what you
+  owe. Rises by the tier weight per day, falls by it per tick, orders every
+  list. Accrual is `weight x (CURRENT_DATE - score_day)`, applied by
+  `accrue()` on read rather than by a nightly job, so a missed cron catches up
+  instead of losing a day. Paused items stand still. No ceiling.
+
 Bot messages that are scaffolding — menus, prompts, confirmations, the ⚙️ buttons
 under a move — are recorded in `move_transient` and deleted the next morning by
 the `move_sweep` job. Moves, comments and the ⚡ report stay. Answered prompts are

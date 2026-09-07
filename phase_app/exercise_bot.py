@@ -243,6 +243,47 @@ def _next_due_date(ex, tz, as_of=None):
 _TIER_WEIGHT = {1: 12, 2: 8, 3: 4, 4: 2, 5: 1}
 
 
+# The tier weight as SQL, for the places that have to do the arithmetic in the
+# database. Kept next to _TIER_WEIGHT so the two can't drift.
+_TIER_WEIGHT_SQL = ("CASE tier WHEN 1 THEN 12 WHEN 2 THEN 8 WHEN 3 THEN 4 "
+                    "WHEN 4 THEN 2 WHEN 5 THEN 1 ELSE 1 END")
+
+
+def accrue(cur, user_id: int, conn=None) -> None:
+    """Bring every active snack's debt up to today.
+
+    Called before anything reads or orders by score, rather than from a nightly
+    job: a job that must never be missed eventually is, and a day of accrual
+    lost is invisible. This catches up however many days have passed, and a
+    second call the same day adds nothing.
+
+    Paused snacks stand still, which is what pausing is for.
+    """
+    cur.execute(
+        f"UPDATE exercise_items SET score = score + {_TIER_WEIGHT_SQL} "
+        "                                   * (CURRENT_DATE - score_day), "
+        "    score_day = CURRENT_DATE "
+        "WHERE user_id = %s AND status = 'active' AND score_day < CURRENT_DATE",
+        (user_id,),
+    )
+    if cur.rowcount and conn is not None:
+        conn.commit()
+
+
+def _pay_down(cur, ex) -> None:
+    """A snack was done: knock one day's worth off what it owes.
+
+    Subtracted rather than zeroed, so something months overdue doesn't come all
+    the way back to level on a single tick — it takes as many days of doing it
+    as it took of skipping it. Which also means a snack kept at its cadence
+    sits flat: +12 a day, −12 a tick.
+    """
+    cur.execute(
+        f"UPDATE exercise_items SET score = score - {_TIER_WEIGHT_SQL} WHERE id = %s",
+        (ex["id"],),
+    )
+
+
 def _points(ex) -> int:
     """What this snack is worth. Tier 1 is twelve tier-5s, which is the whole
     point of tiering them: ten trivial ticks should not outscore the one thing
@@ -292,6 +333,7 @@ def score_summary(cur, user_id: int, tz, today) -> dict:
 
 
 def _serve_next(cur, user_id: int, filters: dict):
+    accrue(cur, user_id)
     cur.execute(
         "SELECT * FROM exercise_items "
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
@@ -299,14 +341,10 @@ def _serve_next(cur, user_id: int, filters: dict):
         "  AND (%s IS NULL OR focus_area ILIKE '%%' || %s || '%%') "
         "  AND (%s IS NULL OR location = %s OR location = 'random') "
         "  AND (%s IS NULL OR load_tag = %s) "
-        # Never-done items are backdated a year so they still come up first,
-        # which is what NULLS FIRST used to do -- you added it because you
-        # wanted to do it, not to have it wait its turn.
-        "ORDER BY EXTRACT(EPOCH FROM (NOW() - COALESCE(last_done_at, "
-        "                                              created_at - INTERVAL '365 days'))) "
-        "         * CASE tier WHEN 1 THEN 12 WHEN 2 THEN 8 WHEN 3 THEN 4 "
-        "                       WHEN 4 THEN 2 ELSE 1 END DESC, "
-        "         created_at ASC "
+        # Ordered by the stored debt, so `next` and the morning report can't
+        # disagree about what is most overdue. This used to recompute age x tier
+        # here, which was the same idea before there was a column for it.
+        "ORDER BY score DESC, created_at ASC "
         "LIMIT 1",
         (
             user_id,
@@ -673,6 +711,7 @@ def _cmd_done(cur, conn, user_id: int, chat_id: int, actual: str | None) -> None
         "VALUES (%s, %s, NOW(), %s, %s, %s)",
         (user_id, ex["id"], actual, source, _points(ex)),
     )
+    _pay_down(cur, ex)
     cur.execute("DELETE FROM exercise_pending_serves WHERE user_id = %s", (user_id,))
 
     msg = f"✓ {ex['name']} done"
@@ -872,6 +911,7 @@ def _mark_today(cur, conn, user_id: int, chat_id: int, ex_id: int, done: bool,
         "VALUES (%s, %s, NOW(), 'overview', %s)",
         (user_id, ex_id, _points(ex)),
     )
+    _pay_down(cur, ex)
     msg = f"✓ {ex['name']} done"
     if ex["schedule_type"] == "acquisition":
         done_n = (ex["acq_sessions_done"] or 0) + 1
@@ -1384,13 +1424,13 @@ def _collect_day(cur, user_id: int, tz, day):
     have no row yet. Each entry carries its status so the report can show
     progress (✓ / ⏭ / pending)."""
     cur.execute(
-        "SELECT s.exercise_id AS id, s.status, e.name, e.tier FROM exercise_schedule s "
+        "SELECT s.exercise_id AS id, s.status, e.name, e.tier, e.score FROM exercise_schedule s "
         "JOIN exercise_items e ON e.id = s.exercise_id "
         "WHERE s.user_id = %s AND s.scheduled_date = %s",
         (user_id, day),
     )
     items = {r["id"]: {"id": r["id"], "name": r["name"], "status": r["status"],
-                       "tier": r["tier"]} for r in cur.fetchall()}
+                       "tier": r["tier"], "score": r["score"]} for r in cur.fetchall()}
 
     cur.execute(
         "SELECT * FROM exercise_items WHERE user_id = %s AND status = 'active' "
@@ -1402,29 +1442,21 @@ def _collect_day(cur, user_id: int, tz, day):
             continue  # a committed row wins over its own suggestion
         if _next_due_date(e, tz, day) == day:
             items[e["id"]] = {"id": e["id"], "name": e["name"], "status": "planned",
-                              "tier": e["tier"]}
+                              "tier": e["tier"], "score": e["score"]}
     return sorted(items.values(), key=lambda x: x["name"].lower())
 
 
 def _queue_items(cur, user_id: int, handled_ids: set):
     cur.execute(
-        "SELECT id, name, load_tag, tier FROM exercise_items "
+        "SELECT id, name, load_tag, tier, score FROM exercise_items "
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
         "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
-        "ORDER BY last_done_at ASC NULLS FIRST, created_at ASC LIMIT 10",
+        # Most overdue first. Age alone couldn't tell a tier-1 left three days
+        # from a tier-5 left three weeks; the debt already knows.
+        "ORDER BY score DESC, last_done_at ASC NULLS FIRST LIMIT 10",
         (user_id,),
     )
     return [r for r in cur.fetchall() if r["id"] not in handled_ids]
-
-
-def _points_by_exercise(cur, user_id: int) -> dict[int, int]:
-    """All-time points per snack, from the frozen weights in the history."""
-    cur.execute(
-        "SELECT exercise_id, SUM(points)::int AS pts FROM exercise_history "
-        "WHERE user_id = %s GROUP BY exercise_id",
-        (user_id,),
-    )
-    return {r["exercise_id"]: r["pts"] for r in cur.fetchall()}
 
 
 def _daily_report(cur, user_id: int, tz, day):
@@ -1438,6 +1470,7 @@ def _daily_report(cur, user_id: int, tz, day):
     done_n = sum(1 for i in today_items if i["status"] == "done")
     pending = [i for i in today_items if i["status"] == "planned"]
 
+    accrue(cur, user_id)
     sc = score_summary(cur, user_id, tz, day)
     lines = [f"🗓 Daily report — {day.strftime('%a %d %b')}", ""]
     # The score before the list, because it is the one line worth reading when
@@ -1458,14 +1491,12 @@ def _daily_report(cur, user_id: int, tz, day):
     if queue:
         lines.append(f"📋 QUEUE ({len(queue)})")
         lines.append(" · ".join(f"{q['name']}" for q in queue))
-    # Each button carries what that snack has earned so far, all-time. Not what
-    # a tick is worth: that is fixed by the tier and says the same thing every
-    # morning, whereas the running total says which ones are actually carrying
-    # the score and which have been quietly ignored for a month.
-    totals = _points_by_exercise(cur, user_id)
-
+    # Each button carries what that snack owes. Not what a tick is worth — that
+    # is fixed by the tier and reads the same every morning — and not what it
+    # has earned, which only ever grew, so skipping something cost nothing
+    # visible. The debt falls when you do it and climbs when you don't.
     def _label(item):
-        return f"✓ {item['name']} · {totals.get(item['id'], 0)}"
+        return f"✓ {item['name']} · {item.get('score', 0)}"
 
     if today_items and not pending:
         # Where "🎉 All clear for today." used to be. A day finished doesn't

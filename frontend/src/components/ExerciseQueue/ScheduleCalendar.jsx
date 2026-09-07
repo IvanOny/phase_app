@@ -112,9 +112,6 @@ export default function ScheduleCalendar({
   // recurring, but every item is a queue item now, so that put everything in
   // one bucket. Tier is the distinction that's left, and it's the one that
   // decides how often something comes up.
-  // What one rep of this snack adds to the day's score. Mirrors _TIER_WEIGHT in
-  // exercise_bot.py, which is where a tick's points are actually written.
-  const TIER_POINTS = { 1: 12, 2: 8, 3: 4, 4: 2, 5: 1 };
   const TIER_LABELS = { 1: 'Tier 1 — most often', 2: 'Tier 2 — regular',
                        3: 'Tier 3 — occasional', 4: 'Tier 4 — rare',
                        5: 'Tier 5 — hardly ever' };
@@ -149,11 +146,11 @@ export default function ScheduleCalendar({
         title={ex.description || ex.name}
       >
         <span className="exq-pill-name">{ex.name}</span>
-        {/* What it's worth, not which tier it is. The tier is already the
-            heading this pill sits under, and the number people want while
-            deciding what to drag onto today is the one that moves the score. */}
-        <span className="exq-pill-tag" title={`Tier ${tier} — worth ${TIER_POINTS[tier]} pts`}>
-          {TIER_POINTS[tier]} pts
+        {/* What this snack has earned, all-time. Not what a tick is worth —
+            that is fixed by the tier, which is already the heading this pill
+            sits under. The running total is the number that changes. */}
+        <span className="exq-pill-tag" title={`Tier ${tier} · ${ex.points ?? 0} pts all-time`}>
+          {ex.points ?? 0}
         </span>
         <button
           className="exq-pill-edit"

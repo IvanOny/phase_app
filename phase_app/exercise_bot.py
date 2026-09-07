@@ -1417,6 +1417,16 @@ def _queue_items(cur, user_id: int, handled_ids: set):
     return [r for r in cur.fetchall() if r["id"] not in handled_ids]
 
 
+def _points_by_exercise(cur, user_id: int) -> dict[int, int]:
+    """All-time points per snack, from the frozen weights in the history."""
+    cur.execute(
+        "SELECT exercise_id, SUM(points)::int AS pts FROM exercise_history "
+        "WHERE user_id = %s GROUP BY exercise_id",
+        (user_id,),
+    )
+    return {r["exercise_id"]: r["pts"] for r in cur.fetchall()}
+
+
 def _daily_report(cur, user_id: int, tz, day):
     """(text, keyboard, has_content) for the daily report. Rebuilt after every
     button press so the message edits itself in place."""
@@ -1448,11 +1458,14 @@ def _daily_report(cur, user_id: int, tz, day):
     if queue:
         lines.append(f"📋 QUEUE ({len(queue)})")
         lines.append(" · ".join(f"{q['name']}" for q in queue))
-    # Each button carries what ticking it is worth. Ten identical-looking rows
-    # otherwise give no reason to pick one over another, and the whole point of
-    # tiering them is that some are worth twelve of the others.
+    # Each button carries what that snack has earned so far, all-time. Not what
+    # a tick is worth: that is fixed by the tier and says the same thing every
+    # morning, whereas the running total says which ones are actually carrying
+    # the score and which have been quietly ignored for a month.
+    totals = _points_by_exercise(cur, user_id)
+
     def _label(item):
-        return f"✓ {item['name']} · {_points(item)}"
+        return f"✓ {item['name']} · {totals.get(item['id'], 0)}"
 
     if today_items and not pending:
         # Where "🎉 All clear for today." used to be. A day finished doesn't

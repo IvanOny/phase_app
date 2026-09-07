@@ -95,7 +95,11 @@ class ExerciseQueueApi:
         cur.execute(
             "SELECT id, name, description, schedule_type, repeat_interval_days, "
             "       acq_interval_days, acq_target_sessions, acq_sessions_done, "
-            "       focus_area, location, equipment, load_tag, status, last_done_at, tier "
+            "       focus_area, location, equipment, load_tag, status, last_done_at, tier, "
+            # All-time points for this snack. Left-joined and summed here rather
+            # than fetched per row: the planner draws every exercise at once.
+            "       COALESCE((SELECT SUM(h.points) FROM exercise_history h "
+            "                 WHERE h.exercise_id = exercise_items.id), 0)::int AS points "
             "FROM exercise_items WHERE user_id = %s ORDER BY tier, name",
             (uid,),
         )
@@ -116,6 +120,7 @@ class ExerciseQueueApi:
             "location": r["location"],
             "equipment": r["equipment"],
             "loadTag": r["load_tag"],
+            "points": r["points"] if "points" in r else 0,
             "status": r["status"],
             "tier": r["tier"] if "tier" in r else 2,
             "lastDoneAt": r["last_done_at"].isoformat() if r["last_done_at"] else None,

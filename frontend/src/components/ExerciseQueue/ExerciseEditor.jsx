@@ -10,7 +10,9 @@ const TIERS = [
   { v: 4, label: 'Tier 4 — rare' },
   { v: 5, label: 'Tier 5 — hardly ever' },
 ];
-const STATUSES = ['active', 'paused', 'parked'];
+// 'parked' was a third status that behaved exactly like 'paused' — every query
+// filters on active, and nothing ever asked which of the two an item was.
+const STATUSES = ['active', 'paused'];
 
 export default function ExerciseEditor({ exercise, onSave, onDelete, onClose }) {
   const [f, setF] = useState({

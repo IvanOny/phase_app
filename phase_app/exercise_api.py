@@ -137,7 +137,7 @@ class ExerciseQueueApi:
             return ApiResponse(400, {"error": "validation_error", "detail": "no updatable fields"})
         int_cols = {"repeat_interval_days", "acq_interval_days", "acq_target_sessions", "tier"}
         enums = {"schedule_type": {"queue", "fixed", "acquisition"},
-                 "status": {"active", "paused", "parked"}}
+                 "status": {"active", "paused"}}
         updates: dict[str, Any] = {}
         for col, val in raw.items():
             if col in int_cols:

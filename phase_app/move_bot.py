@@ -3959,12 +3959,19 @@ def handle_move_webhook(body: dict, conn) -> None:
     if word in ("info", "help"):
         _cmd_info(cur, conn, tg_id, chat_id, lang, u["participant_name"])
         return
-    # Slashed only, and never a word Move already owns: /pause and /undo mean
-    # Move's pause and Move's undo, whatever the snack bot would have done with
-    # them. The snack equivalents are reachable by their other names.
-    if text.startswith("/") and word not in _COMMAND_WORDS:
+    # Slashed only, and never a word Move already owns — /undo is Move's undo
+    # whatever the snack bot would have done with it.
+    #
+    # /pause is the one shared word with no way round it: bare, it means mute
+    # Move, and with a snack's name it can only mean that snack, which used to
+    # be reachable as `park` and now isn't. So the name decides, and only when
+    # it matches something real. "/pause 3" still mutes.
+    if text.startswith("/"):
         eb = _snacks()
-        if eb.owns(word):
+        mine = word in _COMMAND_WORDS
+        if word == "pause" and args and eb.has_snack(cur, tg_id, args):
+            mine = False
+        if not mine and eb.owns(word):
             with _snack_transport(eb):
                 eb.maybe_handle_exercise(cur, conn, tg_id, chat_id, text.lstrip("/"))
             conn.commit()

@@ -76,7 +76,7 @@ _SCHEDULES = ("queue", "fixed", "acquisition")
 # Command words this feature owns (first token, leading slash stripped).
 _EX_COMMANDS = {
     "add", "next", "done", "skip", "overview", "list", "edit", "tier",
-    "pause", "park", "activate", "remove", "stats", "history", "undo", "exhelp",
+    "pause", "activate", "remove", "stats", "history", "undo", "exhelp",
     "exapp", "score", "snacks",
 }
 
@@ -87,6 +87,20 @@ _EXQ_APP_BASE = "https://phase-app-yf5x.vercel.app"
 def owns(word: str) -> bool:
     """Is this word a snack command? Asked by whichever bot is routing."""
     return word in _EX_COMMANDS
+
+
+def has_snack(cur, tg_id: int, name: str) -> bool:
+    """Is there a snack by this name? Asked where two bots want the same word.
+
+    `pause` is Move's own command and always will be — muting the whole bot is
+    the more important meaning. But `pause <snack>` has nowhere else to go now
+    that `park` is gone, so the name decides: it routes here only when it
+    actually matches something.
+    """
+    user_id = _get_user_id(cur, tg_id)
+    if user_id is None or not (name or "").strip():
+        return False
+    return _get_ex_by_name(cur, user_id, name.strip()) is not None
 
 
 def in_flow(cur, tg_id: int) -> bool:
@@ -498,7 +512,7 @@ def maybe_handle_exercise(cur, conn, tg_id: int, chat_id: int, text: str) -> boo
         _cmd_edit(cur, conn, user_id, chat_id, " ".join(args))
     elif word == "tier":
         _cmd_tier(cur, conn, user_id, chat_id, args)
-    elif word in ("pause", "park", "activate"):
+    elif word in ("pause", "activate"):
         _cmd_status(cur, conn, user_id, chat_id, word, " ".join(args))
     elif word == "remove":
         _cmd_remove(cur, conn, user_id, chat_id, " ".join(args))
@@ -550,12 +564,15 @@ def handle_exercise_callback(cur, conn, tg_id: int, chat_id: int, msg_id: int, d
                 "text": text, "reply_markup": kb or {},
             })
         return
-    if body.startswith("park:"):
-        name = body[len("park:"):]
+    # park: was the old name for these two. Kept as an alias so a button
+    # sitting in someone's chat from before still does something sensible
+    # rather than silently failing — it pauses now, which is what park did.
+    if body.startswith(("pause:", "park:")):
+        name = body.split(":", 1)[1]
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
-        _cmd_status(cur, conn, user_id, chat_id, "park", name)
+        _cmd_status(cur, conn, user_id, chat_id, "pause", name)
         return
-    if body == "park_no":
+    if body in ("pause_no", "park_no"):
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         _send(chat_id, "Kept it active.")
         return
@@ -604,7 +621,7 @@ def _cmd_help(chat_id: int) -> None:
         "list — all exercises\n"
         "edit <name> — change a field\n"
         "tier <name> [1|2|3|4|5] — how often it comes up (1 = most often)\n"
-        "pause/park/activate <name> — status\n"
+        "pause/activate <name> — status\n"
         "remove <name> — delete\n"
         "stats <name> / history — logs\n"
         "undo — revert last done")
@@ -704,10 +721,10 @@ def _cmd_skip(cur, conn, user_id: int, chat_id: int) -> None:
     _log(f"⏭ Exercise skipped\n• {ex['name']} (skips: {skips})")
     if skips >= 3:
         _send(chat_id,
-            f"⏭ Skipped {ex['name']} (for 1h).\n\nYou keep skipping {ex['name']} — park it?",
+            f"⏭ Skipped {ex['name']} (for 1h).\n\nYou keep skipping {ex['name']} — pause it?",
             reply_markup={"inline_keyboard": [[
-                {"text": "Park it", "callback_data": f"ex:park:{ex['name']}"},
-                {"text": "Keep active", "callback_data": "ex:park_no"},
+                {"text": "Pause it", "callback_data": f"ex:pause:{ex['name']}"},
+                {"text": "Keep active", "callback_data": "ex:pause_no"},
             ]]})
     else:
         _send(chat_id, f"⏭ Skipped {ex['name']} for 1h.")
@@ -909,7 +926,7 @@ def _cmd_status(cur, conn, user_id: int, chat_id: int, action: str, name: str) -
     if not ex:
         _send(chat_id, f'No exercise named "{name}".')
         return
-    new_status = {"pause": "paused", "park": "parked", "activate": "active"}[action]
+    new_status = {"pause": "paused", "activate": "active"}[action]
     cur.execute("UPDATE exercise_items SET status = %s WHERE id = %s", (new_status, ex["id"]))
     conn.commit()
     _send(chat_id, f"{ex['name']} → {new_status}.")

@@ -328,6 +328,42 @@ def _describe_callback(cur, data: str) -> str:
         u = _user(cur, int(tok)) if tok.isdigit() else None
         return (u["participant_name"] if u and u["participant_name"] else tok)
 
+    if head == "pk":
+        # The audience picker. Eleven of these in a row is what somebody trying
+        # to work out the difference between a circle and everyone looks like,
+        # and reading that as mv:pk:all:3228 tells you nothing about what they
+        # were trying to do.
+        act, _, tail = rest.partition(":")
+        entry, _, extra = tail.partition(":")
+        if act == "c":
+            row = None
+            if extra.isdigit():
+                cur.execute("SELECT name FROM move_circles WHERE id = %s", (extra,))
+                row = cur.fetchone()
+            name = row["name"] if row else f"circle {extra}"
+            return f"📹 tick «{name}» · move #{entry}"
+        if act == "all":
+            return f"📹 tick everyone · move #{entry}"
+        if act == "r":
+            return f"📹 tick radar · move #{entry}"
+        if act == "go":
+            return f"📹 SEND · move #{entry}"
+        if act == "x":
+            return f"🗑 delete before sending · move #{entry}"
+        return f"📹 picker: {rest}"
+    if head == "cr":
+        act, _, tail = rest.partition(":")
+        cid, _, member = tail.partition(":")
+        row = None
+        if cid.isdigit():
+            cur.execute("SELECT name FROM move_circles WHERE id = %s", (cid,))
+            row = cur.fetchone()
+        name = f" «{row['name']}»" if row else ""
+        labels = {"list": "circles: open the list", "new": "circles: new one",
+                  "open": "circles: open", "ren": "circles: rename",
+                  "del": "circles: delete", "tog": "circles: toggle member"}
+        label = labels.get(act, f"circles: {act}")
+        return f"👥 {label}{name}" + (f" · {who(member)}" if member else "")
     if head == "zap":
         # Names the author: the standalone "X → Y" log this replaced is gone, and
         # who you cheered is the part worth reading.
@@ -348,6 +384,22 @@ def _describe_callback(cur, data: str) -> str:
     if head == "note":
         entry, _, to = rest.partition(":")
         return f"💬 comment → {who(to)} · move #{entry}"
+    if head == "ex":
+        # Snacks. `ex:tdone:2:2026-09-09` is a tick on snack id 2, and the id is
+        # the least useful part of it.
+        act, _, tail = rest.partition(":")
+        ex_id, _, day = tail.partition(":")
+        name = ex_id
+        if ex_id.isdigit():
+            cur.execute("SELECT name FROM exercise_items WHERE id = %s", (ex_id,))
+            row = cur.fetchone()
+            if row:
+                name = row["name"]
+        if act == "tdone":
+            return f"🍎 snack done · {name}"
+        if act == "tskip":
+            return f"🍎 snack skipped · {name}"
+        return f"🍎 snack: {act} · {name}"
     if head == "radarnow":
         return "📡 radar: show me someone now"
     if head == "radarsend":
@@ -447,7 +499,20 @@ def _summary_append(cur, conn, chat: int, tg_id: int, who: str, line: str) -> No
                 "WHERE telegram_user_id = %s AND log_date = %s", (tg_id, today))
     row = cur.fetchone()
     if row and len(row["body"]) + len(entry) < _SUMMARY_MAX:
-        body = f"{row['body']}\n{entry}"
+        # The same action twice running gets a count rather than a second line.
+        # Somebody pressing one button eleven times is worth seeing — it is what
+        # confusion looks like — but eleven identical lines bury the rest of
+        # their day. "× 3" says it in the space of one.
+        lines = row["body"].split("\n")
+        last = lines[-1] if lines else ""
+        stamp, _, said = last.partition("  ")
+        base, _, count = said.rpartition("  × ")
+        if (base or said) == line:
+            n = (int(count) if count.isdigit() else 1) + 1
+            lines[-1] = f"{stamp}  {line}  × {n}"
+            body = "\n".join(lines)
+        else:
+            body = f"{row['body']}\n{entry}"
         if _api_call("editMessageText", {"chat_id": chat, "message_id": row["message_id"],
                                          "text": f"{header}\n{body}"}) is None:
             return                     # message gone or unchanged; leave the row alone

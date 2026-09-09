@@ -84,22 +84,43 @@ _MEDIA_KEYS = ("video_note", "video", "photo", "animation")
 # database.
 _REPLAY_METHODS = {"sendMessage", "copyMessage", "editMessageText", "deleteMessage"}
 _sent_conn = None
+_sent_rows: list | None = None
 
 
 class recording:
-    """Lend a connection to the replay log for the length of a request."""
+    """Collect what the bot says, and write it once at the end of the request.
+
+    Buffered rather than written as it goes. The first version inserted and
+    committed inside _api_call, which meant every send committed whatever
+    transaction its caller happened to have open — _summary_append writes its
+    row after an edit, _finish_move writes several around a delivery, and all
+    of them silently lost their atomicity to a logging call. A log that changes
+    when the thing it observes commits is not a log.
+    """
 
     def __init__(self, conn):
         self._conn = conn
 
     def __enter__(self):
-        global _sent_conn
-        self._prev, _sent_conn = _sent_conn, self._conn
+        global _sent_conn, _sent_rows
+        self._prev, self._prev_rows = _sent_conn, _sent_rows
+        _sent_conn, _sent_rows = self._conn, []
         return self
 
     def __exit__(self, *exc):
-        global _sent_conn
-        _sent_conn = self._prev
+        global _sent_conn, _sent_rows
+        rows, conn = _sent_rows, _sent_conn
+        _sent_conn, _sent_rows = self._prev, self._prev_rows
+        if not rows or conn is None:
+            return False
+        try:
+            cur = conn.cursor()
+            cur.executemany(
+                "INSERT INTO move_sent (chat_id, message_id, method, body) "
+                "VALUES (%s, %s, %s, %s)", rows)
+            conn.commit()
+        except Exception as e:                   # pragma: no cover
+            print(f"Move replay log failed: {e}")
         return False
 
 
@@ -110,7 +131,7 @@ def _record_sent(method: str, payload: dict, result: dict | None) -> None:
     and re-sent every time a line is added, and without those rows the replay
     of a conversation is nonsense.
     """
-    if _sent_conn is None or method not in _REPLAY_METHODS:
+    if _sent_rows is None or method not in _REPLAY_METHODS:
         return
     try:
         # deleteMessage answers True, not an object, and editMessageText can
@@ -123,13 +144,7 @@ def _record_sent(method: str, payload: dict, result: dict | None) -> None:
             body = "[media]"
         elif method == "deleteMessage":
             body = None
-        cur = _sent_conn.cursor()
-        cur.execute(
-            "INSERT INTO move_sent (chat_id, message_id, method, body) "
-            "VALUES (%s, %s, %s, %s)",
-            (payload.get("chat_id"), message_id, method, body),
-        )
-        _sent_conn.commit()
+        _sent_rows.append((payload.get("chat_id"), message_id, method, body))
     except Exception as e:                       # pragma: no cover
         print(f"Move replay log failed [{method}]: {e}")
 
@@ -2730,9 +2745,17 @@ def _fallback_audience(cur, tg_id: int, entry_id: int) -> tuple[set | None, bool
     free = [c["id"] for c in _circles(cur, tg_id) if c["id"] not in used]
     if not free:
         return None, False
-    cur.execute("INSERT INTO move_entry_circles (entry_id, circle_id) "
-                "SELECT %s, UNNEST(%s::bigint[]) ON CONFLICT DO NOTHING",
-                (entry_id, free))
+    # owner and date included, not just the pair. Written without them, a
+    # flushed move's circles were invisible to _used_today — which reads by
+    # owner and date — so a circle spent by yesterday's stranded move was
+    # offered again today as though free, and the one-per-day index could not
+    # fire either, NULLs being distinct to a unique index. Entry 3163 is the
+    # row that showed it.
+    cur.execute("INSERT INTO move_entry_circles (entry_id, circle_id, owner_tg_id, entry_date) "
+                "SELECT %s, UNNEST(%s::bigint[]), %s, "
+                "       (SELECT entry_date FROM move_entries WHERE id = %s) "
+                "ON CONFLICT DO NOTHING",
+                (entry_id, free, tg_id, entry_id))
     return _pick_audience(cur, tg_id, entry_id), True
 
 

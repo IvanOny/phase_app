@@ -648,21 +648,23 @@ _STRINGS: dict[str, dict[str, str]] = {
     # loudly enough that someone recorded three before noticing. The streak
     # still counts — the move happened — but the point of the thing is that
     # somebody sees it, and the fix is one tap away.
+    # The link itself, not a button and not an instruction to find one. A move
+    # nobody saw is the moment the invite matters, and "tap 🤝" spends that
+    # moment on navigation — this one can be forwarded where it stands. The
+    # confirmation carries the reply keyboard, so an inline button was never
+    # available here anyway: one reply_markup per message.
     "logged_alone": {
         "en": "✓ Move logged{streak}\n\n"
-              "Nobody saw it — there is no one in your Move yet. "
-              "Invite someone and the next one reaches them.",
+              "Nobody saw it — there is no one in your Move yet. Send this "
+              "to someone and they will see the next one:\n{link}",
         "uk": "✓ Рух записано{streak}\n\n"
               "Його ніхто не бачив — у тебе ще "
-              "нікого немає в Move. "
-              "Запроси когось — і наступний рух побачать.",
+              "нікого немає в Move. Надішли це "
+              "комусь — і наступний рух побачать:\n{link}",
         "de": "✓ Bewegung erfasst{streak}\n\n"
               "Niemand hat sie gesehen — in deinem Move ist noch niemand. "
-              "Lad jemanden ein, dann kommt die nächste an.",
+              "Schick das jemandem, dann sieht er die nächste:\n{link}",
     },
-    "btn_invite_now": {"en": "🤝 Invite someone",
-                       "uk": "Запросити людину",
-                       "de": "🤝 Jemanden einladen"},
     "streak_suffix": {"en": " · 🔥 {days}-day streak", "uk": " · 🔥 серія {days} дн.", "de": " · 🔥 {days}-Tage-Serie"},
     "already_logged": {
         "en": "You've already moved today ✓ — only one move a day can be recorded.",
@@ -2835,7 +2837,8 @@ def _finish_move(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str,
         # using it here made the no-crew case unreachable.
         body = _t("logged", lang, streak=suffix)
     else:
-        body = _t("logged_alone", lang, streak=suffix)
+        body = _t("logged_alone", lang, streak=suffix,
+                  link=_invite_link(cur, tg_id))
 
     # Uploaded a file rather than recording a bubble? Show the gesture — but as
     # part of this confirmation, never as a message of its own.

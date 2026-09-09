@@ -208,16 +208,17 @@ command must be slashed — a bare word there is a comment on somebody's video �
 except while a snack prompt is armed. `/pause <snack name>` pauses that snack;
 bare `/pause` still mutes Move.
 
-Two different numbers, both called a score:
+**Ordering.** Every list of snacks — the morning report, the planner rail,
+`next` — is sorted by how overdue each one is *for its own tier*:
+`days_since_last_done / tier_interval`, where the intervals are 1, 2, 4, 6, 8
+days for tiers 1-5. 100% means due now, 300% means three cycles late. Computed
+on read from `last_done_at`; there is nothing stored, accrued, reset or capped.
 
-- **Day score** (the ⭐ line, `/score`, `GET /v1/exq/score`) — what you did.
-  Tier-weighted 12/8/4/2/1, frozen into `exercise_history.points` at tick time
-  so re-tiering an item never rescores the past.
-- **Debt** (`exercise_items.score`, on every pill and tick button) — what you
-  owe. Rises by the tier weight per day, falls by it per tick, orders every
-  list. Accrual is `weight x (CURRENT_DATE - score_day)`, applied by
-  `accrue()` on read rather than by a nightly job, so a missed cron catches up
-  instead of losing a day. Paused items stand still. No ceiling.
+An earlier version stored a point score that rose daily and fell on a tick.
+It could not tell one snack from another — two tier-3s, one done two days ago
+and one untouched for twenty-four, both read 58 — and points are gone
+entirely (migration 076). `exercise_history` still records what was done and
+when; that is the record worth keeping.
 
 Bot messages that are scaffolding — menus, prompts, confirmations, the ⚙️ buttons
 under a move — are recorded in `move_transient` and deleted the next morning by

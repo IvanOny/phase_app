@@ -211,8 +211,6 @@ class PhaseApi:
                 return exq.complete_occurrence(int(path.split("/")[4]), qp)
             if method == "GET" and path == "/v1/exq/history":
                 return exq.get_history(qp)
-            if method == "GET" and path == "/v1/exq/score":
-                return exq.get_score(qp)
             if method == "GET" and path == "/v1/exq/stats":
                 return exq.get_stats(qp)
             if method == "POST" and path == "/v1/exq/suggest-slot":

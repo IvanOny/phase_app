@@ -121,7 +121,7 @@ export default function ScheduleCalendar({
     for (const e of active) (byTier[e.tier] ?? byTier[2]).push(e);
     // Most overdue first inside each tier, name only to break a tie.
     for (const t of [1, 2, 3, 4, 5]) {
-      byTier[t].sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || a.name.localeCompare(b.name));
+      byTier[t].sort((a, b) => (b.overdue ?? 0) - (a.overdue ?? 0) || a.name.localeCompare(b.name));
     }
     return byTier;
   }, [exercises]);
@@ -149,11 +149,12 @@ export default function ScheduleCalendar({
         title={ex.description || ex.name}
       >
         <span className="exq-pill-name">{ex.name}</span>
-        {/* What this snack owes: up by the tier weight each day, down by it
-            each time it is done. High means overdue, and the rail is sorted by
-            it, so the top of each tier is what to reach for. */}
-        <span className="exq-pill-tag" title={`Tier ${tier} · ${ex.score ?? 0} overdue`}>
-          {ex.score ?? 0}
+        {/* Days since it was last done. The rail is sorted by how overdue that
+            makes it for its tier — a daily snack at 3d outranks a fortnightly
+            one at 10d — and this is the number that ordering is read from. */}
+        <span className="exq-pill-tag"
+              title={`Tier ${tier} · ${ex.overdue ?? 0}% of the way past due`}>
+          {ex.daysSince == null ? 'new' : `${ex.daysSince}d`}
         </span>
         <button
           className="exq-pill-edit"

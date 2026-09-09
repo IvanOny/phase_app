@@ -92,17 +92,15 @@ class ExerciseQueueApi:
         if uid is None:
             return ApiResponse(401, {"error": "unauthorized"})
         cur = self.conn.cursor()
-        # Bring the debt up to today before reading it, exactly as the bot does.
-        # The planner is often the first thing opened in a morning, and a score
-        # a day behind would disagree with the report sitting in Telegram.
-        from phase_app.exercise_bot import accrue
-        accrue(cur, uid, self.conn)
+        from phase_app.exercise_bot import _OVERDUE_SQL, _DAYS_SINCE_SQL
         cur.execute(
             "SELECT id, name, description, schedule_type, repeat_interval_days, "
             "       acq_interval_days, acq_target_sessions, acq_sessions_done, "
             "       focus_area, location, equipment, load_tag, status, last_done_at, tier, "
-            "       score "
-            "FROM exercise_items WHERE user_id = %s ORDER BY score DESC, name",
+            "       " + _DAYS_SINCE_SQL + " AS days_since, "
+            "       " + _OVERDUE_SQL + " AS overdue "
+            "FROM exercise_items WHERE user_id = %s "
+            "ORDER BY " + _OVERDUE_SQL + " DESC, name",
             (uid,),
         )
         return ApiResponse(200, {"items": [self._exercise_row(r) for r in cur.fetchall()]})
@@ -122,7 +120,8 @@ class ExerciseQueueApi:
             "location": r["location"],
             "equipment": r["equipment"],
             "loadTag": r["load_tag"],
-            "score": r["score"] if "score" in r else 0,
+            "daysSince": r["days_since"] if "days_since" in r else None,
+            "overdue": r["overdue"] if "overdue" in r else 0,
             "status": r["status"],
             "tier": r["tier"] if "tier" in r else 2,
             "lastDoneAt": r["last_done_at"].isoformat() if r["last_done_at"] else None,
@@ -472,23 +471,6 @@ class ExerciseQueueApi:
             "source": r["source"],
         } for r in cur.fetchall()]
         return ApiResponse(200, {"items": items})
-
-    def get_score(self, qp: dict[str, str]) -> ApiResponse:
-        """The snack score: points today, this week, the run, and every day of
-        it for a chart.
-
-        Computed by exercise_bot.score_summary — the same function the bot's
-        own /score answers with, so the two surfaces cannot drift into
-        disagreeing about what a week is worth.
-        """
-        uid = self._uid(qp)
-        if uid is None:
-            return ApiResponse(401, {"error": "unauthorized"})
-        from datetime import datetime
-        from phase_app.exercise_bot import _user_tz, score_summary
-        cur = self.conn.cursor()
-        tz = _user_tz(cur, uid)
-        return ApiResponse(200, score_summary(cur, uid, tz, datetime.now(tz).date()))
 
     def get_stats(self, qp: dict[str, str]) -> ApiResponse:
         uid = self._uid(qp)

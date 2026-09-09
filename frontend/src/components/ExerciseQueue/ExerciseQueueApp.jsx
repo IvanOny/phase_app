@@ -15,7 +15,6 @@ import {
 import ScheduleCalendar from './ScheduleCalendar.jsx';
 import ExerciseLog from './ExerciseLog.jsx';
 import ExerciseStats from './ExerciseStats.jsx';
-import ScoreBar from './ScoreBar.jsx';
 import CoachChat from './CoachChat.jsx';
 
 const TABS = [
@@ -61,17 +60,12 @@ export default function ExerciseQueueApp({ token }) {
   const [schedule, setSchedule] = useState({ occurrences: [], suggestions: [] });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-  // Bumped whenever a snack is ticked here, so the score reloads with the
-  // calendar instead of contradicting it until the next visit.
-  const [scoreKey, setScoreKey] = useState(0);
 
   // During render, not in an effect. React runs a child's effects before its
-  // parent's, so a token assigned in an effect here is assigned *after* any
-  // child that fetches on mount has already fetched — ScoreBar did, with an
-  // empty token, got a 401, and stayed invisible. Everything else on this
-  // screen is loaded by this component's own effects, which is why nothing
-  // else noticed. The assignment is idempotent, so running it every render
-  // costs nothing.
+  // parent's, so a token assigned in an effect here would be assigned after any
+  // child that fetches on mount had already fetched — which cost a header
+  // component its data once. The assignment is idempotent, so running it on
+  // every render costs nothing.
   setExqToken(token);
   useEffect(() => { document.title = 'Movement Snacks'; }, []);
 
@@ -130,7 +124,6 @@ export default function ExerciseQueueApp({ token }) {
     try {
       await completeOccurrence(occId);
       await Promise.all([loadSchedule(), loadExercises()]);
-      setScoreKey(k => k + 1);
     }
     catch (e) { setError(e.message); }
   }, [loadSchedule, loadExercises]);
@@ -168,7 +161,6 @@ export default function ExerciseQueueApp({ token }) {
     <div className="exq-app">
       <header className="exq-header">
         <span className="exq-title">🍎 Movement Snacks</span>
-        <ScoreBar refreshKey={scoreKey} />
         <nav className="exq-tabs">
           {TABS.map(t => (
             <button key={t.id} className={`exq-tab${tab === t.id ? ' active' : ''}`} onClick={() => setTab(t.id)}>

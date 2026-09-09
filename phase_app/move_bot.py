@@ -414,6 +414,23 @@ def _describe_callback(cur, data: str) -> str:
         return f"🌍 gender → {rest}"
     if head == "langmenu":
         return "🌍 language menu"
+    if head == "intro":
+        act, _, tail = rest.partition(":")
+        if act == "a":
+            return "🫂 introduce: who asks"
+        if act == "b":
+            return f"🫂 introduce: {who(tail)} asks — who?"
+        if act == "go":
+            a, _, b = tail.partition(":")
+            return f"🫂 INTRODUCE {who(a)} → {who(b)}"
+        return f"🫂 introduce: {rest}"
+    if head == "in":
+        act, _, iid = rest.partition(":")
+        if act == "s":
+            return f"🫂 passes the suggestion on · intro #{iid}"
+        if act == "n":
+            return f"🫂 lets the suggestion go · intro #{iid}"
+        return f"🫂 suggestion: {rest}"
     if head == "crew":
         action, _, target = rest.partition(":")
         labels = {"open": "open", "remove": "remove?", "removeok": "REMOVE",
@@ -1332,6 +1349,112 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "That request is no longer valid.",
         "uk": "Цей запит уже недійсний.",
         "de": "Diese Anfrage gilt nicht mehr.",
+    },
+    # ── introductions ────────────────────────────────────────────────────
+    # Iv knows Opanas and Antonator are friends. Move never will.
+    "btn_intro": {"en": "🫂 Introduce two people",
+                  "uk": "🫂 Познайомити двох",
+                  "de": "🫂 Zwei Leute vorstellen"},
+    # Fired once, the first time two people in the crew could be connected. No
+    # names in it: naming them would be the disclosure the feature asks about
+    # before the person has agreed to make it.
+    "intro_hint": {
+        "en": "🫂 There are people in your crew who don't know each other yet.\n"
+              "\n"
+              "If you know two of them would get on, you can suggest it — they "
+              "decide, and you never find out what they chose.",
+        "uk": "🫂 У твоєму колі є люди, які ще не знайомі між собою.\n"
+              "\n"
+              "Якщо ти знаєш, що двоє з них порозуміються — можеш це запропонувати. "
+              "Вирішать вони, а ти не дізнаєшся, що саме.",
+        "de": "🫂 In deiner Crew gibt es Leute, die sich noch nicht kennen.\n\n"
+              "Wenn du weißt, dass zwei davon zusammenpassen, kannst du es "
+              "vorschlagen — sie entscheiden, und du erfährst nie, wie.",
+    },
+    "intro_pick_a": {
+        "en": "🫂 Who should do the asking?\n\n"
+              "They get the suggestion; the other one gets the request.",
+        "uk": "🫂 Хто надішле запит?\n"
+              "\n"
+              "Йому або їй прийде пропозиція, а другій людині — сам запит.",
+        "de": "🫂 Wer soll fragen?\n\n"
+              "Diese Person bekommt den Vorschlag, die andere die Anfrage.",
+    },
+    "intro_pick_b": {
+        "en": "🫂 {name} asks — and who should they ask?",
+        "uk": "🫂 {name} надішле запит — кому саме?",
+        "de": "🫂 {name} fragt — und wen?",
+    },
+    "intro_none": {
+        "en": "Nobody to introduce right now. Everyone in your crew who could be "
+              "connected already is — or has introductions switched off.",
+        "uk": "Зараз нікого знайомити. Усі з твого кола, кого можна було б з’єднати, "
+              "вже з’єднані — або вимкнули знайомства.",
+        "de": "Gerade niemand vorzustellen. Alle in deiner Crew, die man verbinden "
+              "könnte, sind es schon — oder haben Vorstellungen ausgeschaltet.",
+    },
+    # What Iv is told. Deliberately not "we'll let you know": he never finds out.
+    # A decline that gets reported back is a decline with a witness, and that is
+    # what makes saying no to a friend expensive.
+    "intro_sent": {
+        "en": "🫂 Suggested to {name}.\n\n"
+              "It's theirs now — you won't hear what they decide.",
+        "uk": "🫂 Пропозицію надіслано: {name}.\n"
+              "\n"
+              "Далі це їхня справа — ти не дізнаєшся, що вони вирішать.",
+        "de": "🫂 {name} vorgeschlagen.\n\n"
+              "Jetzt liegt es bei ihnen — du erfährst nicht, wie sie entscheiden.",
+    },
+    "intro_already": {
+        "en": "Those two have been introduced once already.",
+        "uk": "Цих двох уже знайомили одного разу.",
+        "de": "Die beiden wurden schon einmal vorgestellt.",
+    },
+    # What A gets. Present tense throughout: Ukrainian past tense inflects for
+    # gender and the suggester's gender is not always known.
+    "intro_offer": {
+        "en": "🫂 {by} thinks you and {name} should be moving together.\n\n"
+              "Send them a request?",
+        "uk": "🫂 {by} вважає, що вам із {name} варто рухатися разом.\n"
+              "\n"
+              "Надіслати запит?",
+        "de": "🫂 {by} findet, du und {name} solltet euch zusammen bewegen.\n\n"
+              "Eine Anfrage schicken?",
+    },
+    "btn_intro_send": {"en": "🤝 Send the request",
+                       "uk": "🤝 Надіслати запит",
+                       "de": "🤝 Anfrage schicken"},
+    "btn_intro_no": {"en": "No thanks", "uk": "Ні, дякую", "de": "Nein, danke"},
+    # What B gets: the ordinary crew request, plus the one clause that makes it
+    # land. Same accept button, same handler, same _connect.
+    "crew_request_intro": {
+        "en": "🤝 {name} wants to move with you — {by} suggested it.\n\n"
+              "Accept and you'll each see the other's moves.",
+        "uk": "🤝 {name} хоче рухатися разом з тобою — це порада від {by}.\n"
+              "\n"
+              "Погодься — і бачитимете рухи одне одного.",
+        "de": "🤝 {name} möchte sich mit dir bewegen — {by} hat es vorgeschlagen.\n\n"
+              "Nimm an, und ihr seht gegenseitig eure Bewegungen.",
+    },
+    "intro_gone": {
+        "en": "That suggestion is no longer valid.",
+        "uk": "Ця пропозиція вже недійсна.",
+        "de": "Dieser Vorschlag gilt nicht mehr.",
+    },
+    "set_intros": {"en": "🫂 Introductions: {value}",
+                   "uk": "🫂 Знайомства: {value}",
+                   "de": "🫂 Vorstellungen: {value}"},
+    "intros_on": {"en": "my crew may", "uk": "моє коло може", "de": "meine Crew darf"},
+    "intros_off": {"en": "off", "uk": "вимкнено", "de": "aus"},
+    "intros_toggled_on": {
+        "en": "People in your crew can suggest you to each other.",
+        "uk": "Люди з твого кола можуть радити тебе одне одному.",
+        "de": "Leute in deiner Crew dürfen dich einander vorschlagen.",
+    },
+    "intros_toggled_off": {
+        "en": "Nobody can suggest you to anyone, and you won't get suggestions.",
+        "uk": "Ніхто не зможе радити тебе іншим, і ти не отримуватимеш пропозицій.",
+        "de": "Niemand kann dich anderen vorschlagen, und du bekommst keine Vorschläge.",
     },
     "btn_accept": {"en": "🤝 Accept", "uk": "🤝 Погодитись", "de": "🤝 Annehmen"},
     "btn_decline": {"en": "Not now", "uk": "Не зараз", "de": "Nicht jetzt"},
@@ -3774,6 +3897,12 @@ def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
               for r in rows if (r["participant_name"] or "").lower() in hidden]
     # Circles hang off this menu, and only once there is more than one person to
     # divide. With a crew of one the whole idea is noise, so it isn't mentioned.
+    # Introductions sit above circles: both divide the crew, but this one is
+    # about people who aren't in it yet, which is the same question the menu is
+    # already open to answer. Hidden when there is no pair left to suggest,
+    # rather than shown and then apologising.
+    if _intro_pairs(cur, tg_id):
+        kb.append([{"text": _t("btn_intro", lang), "callback_data": "mv:intro:a"}])
     if _circles_enabled(cur, tg_id):
         made = _circles(cur, tg_id)
         kb.append([{"text": _t("btn_circles", lang, n=len(made)) if made
@@ -3822,6 +3951,200 @@ def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str)
     # The ask went out — that's the end of this prompt, so stop reading text as names.
     _clear_state(cur, tg_id)
     _send_t(cur, conn, chat_id, _t("crew_request_sent", lang, name=tname))
+
+
+# ── introductions ───────────────────────────────────────────────
+#
+# Radar finds strangers with a query. This finds them with a person: somebody
+# who knows both sides and can see what no cooldown table ever will.
+#
+# One asker, one decider — the same shape _apply_invite was rewritten into. Two
+# symmetric requests would leave nobody in either role: accept first and you are
+# waiting on something you cannot chase, and a decline becomes a social act with
+# a witness rather than a button nobody sees you press. So a suggestion is a
+# pre-filled invite handed to one person, who then sends the ordinary crew
+# request. Everything downstream of that is the existing accept path.
+#
+# The suggester is told it went out and nothing else, ever. That is the whole
+# reason a no stays cheap, and it will be the tempting thing to drop.
+
+def _are_crew(cur, a_id: int, b_id: int) -> bool:
+    """Does a already have b? move_crew keys on the name, so this resolves it."""
+    b = _user(cur, b_id)
+    if not b or not b["participant_name"]:
+        return False
+    cur.execute(
+        "SELECT 1 FROM move_crew WHERE telegram_user_id = %s AND LOWER(crew_name) = LOWER(%s)",
+        (a_id, b["participant_name"]),
+    )
+    return cur.fetchone() is not None
+
+
+def _introducible(cur, tg_id: int) -> list:
+    """The people in my crew I am allowed to name to each other.
+
+    Excluded: anyone with introductions off — which cuts both ways, since being
+    named to somebody and being nudged about somebody are the same switch — and
+    anyone carrying a live warning, who should not be handed new people.
+    """
+    ids = [m["telegram_user_id"] for m in _crew_members(cur, tg_id)
+           if m["telegram_user_id"] != tg_id and m["participant_name"]]
+    if not ids:
+        return []
+    # One query, not two per person: this runs on every crew-menu render.
+    cur.execute(
+        "SELECT u.telegram_user_id, u.participant_name FROM move_users u "
+        "WHERE u.telegram_user_id = ANY(%s) AND u.intros_ok "
+        "  AND u.participant_name IS NOT NULL "
+        "  AND NOT EXISTS (SELECT 1 FROM move_warnings w "
+        "                  WHERE w.telegram_user_id = u.telegram_user_id "
+        "                    AND w.cleared_at IS NULL "
+        "                    AND w.created_at > NOW() - make_interval(days => %s)) "
+        "ORDER BY LOWER(u.participant_name)",
+        (ids, _WARNING_TTL_DAYS),
+    )
+    return cur.fetchall()
+
+
+def _intro_links(cur, ids: list[int]) -> set:
+    """Every pair among `ids` that is already crew, or already introduced.
+
+    Built in two queries rather than one per pair — twenty people is a hundred
+    and ninety pairs, and this is on the path of a menu that redraws.
+    """
+    seen = set()
+    if not ids:
+        return seen
+    cur.execute(
+        "SELECT c.telegram_user_id AS a, u.telegram_user_id AS b "
+        "FROM move_crew c JOIN move_users u ON LOWER(u.participant_name) = LOWER(c.crew_name) "
+        "WHERE c.telegram_user_id = ANY(%s) AND u.telegram_user_id = ANY(%s)",
+        (ids, ids),
+    )
+    for r in cur.fetchall():
+        seen.add((min(r["a"], r["b"]), max(r["a"], r["b"])))
+    cur.execute("SELECT a_id, b_id FROM move_intros "
+                "WHERE a_id = ANY(%s) AND b_id = ANY(%s)", (ids, ids))
+    for r in cur.fetchall():
+        seen.add((min(r["a_id"], r["b_id"]), max(r["a_id"], r["b_id"])))
+    return seen
+
+
+def _intro_pairs(cur, tg_id: int) -> list:
+    """Every (a, b) from my crew who could still be introduced, a before b."""
+    people = _introducible(cur, tg_id)
+    ids = [m["telegram_user_id"] for m in people]
+    taken = _intro_links(cur, ids)
+    return [(a, b) for i, a in enumerate(people) for b in people[i + 1:]
+            if (min(a["telegram_user_id"], b["telegram_user_id"]),
+                max(a["telegram_user_id"], b["telegram_user_id"])) not in taken]
+
+
+def _intro_done(cur, a_id: int, b_id: int) -> bool:
+    """Has this pair been introduced — by anyone, in either direction?"""
+    cur.execute(
+        "SELECT 1 FROM move_intros WHERE LEAST(a_id, b_id) = %s AND GREATEST(a_id, b_id) = %s",
+        (min(a_id, b_id), max(a_id, b_id)),
+    )
+    return cur.fetchone() is not None
+
+
+def _intro_partners(cur, tg_id: int, a_id: int) -> list:
+    """Who a could still be introduced to, out of my crew."""
+    out = []
+    for a, b in _intro_pairs(cur, tg_id):
+        if a["telegram_user_id"] == a_id:
+            out.append(b)
+        elif b["telegram_user_id"] == a_id:
+            out.append(a)
+    return out
+
+
+def _intro_pick_a_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
+    """Who does the asking. Only people who still have somebody to be asked to."""
+    pairs = _intro_pairs(cur, tg_id)
+    firsts = sorted({(p["telegram_user_id"], p["participant_name"])
+                     for pair in pairs for p in pair},
+                    key=lambda r: (r[1] or "").casefold())
+    if not firsts:
+        return _t("intro_none", lang), {"inline_keyboard": [
+            [{"text": _t("btn_back", lang), "callback_data": "mv:crew:list"}]]}
+    rows = [[{"text": name, "callback_data": f"mv:intro:b:{aid}"}]
+            for aid, name in firsts[:_CREW_BUTTON_LIMIT]]
+    rows.append([{"text": _t("btn_back", lang), "callback_data": "mv:crew:list"}])
+    return _t("intro_pick_a", lang), {"inline_keyboard": rows}
+
+
+def _intro_pick_b_view(cur, tg_id: int, a_id: int, lang: str) -> tuple[str, dict]:
+    a = _user(cur, a_id)
+    others = _intro_partners(cur, tg_id, a_id)
+    if not a or not others:
+        return _t("intro_none", lang), {"inline_keyboard": [
+            [{"text": _t("btn_back", lang), "callback_data": "mv:intro:a"}]]}
+    rows = [[{"text": b["participant_name"],
+              "callback_data": f"mv:intro:go:{a_id}:{b['telegram_user_id']}"}]
+            for b in sorted(others, key=lambda r: (r["participant_name"] or "").casefold())
+            [:_CREW_BUTTON_LIMIT]]
+    rows.append([{"text": _t("btn_back", lang), "callback_data": "mv:intro:a"}])
+    return _t("intro_pick_b", lang, name=a["participant_name"]), {"inline_keyboard": rows}
+
+
+def _intro_make(cur, conn, tg_id: int, a_id: int, b_id: int) -> int | None:
+    """Record the suggestion and put it in front of a. Returns the row id.
+
+    Everything is re-checked here, not just at render time: the buttons were
+    drawn from a state that may have moved on — the two could have connected in
+    the meantime, or either could have switched introductions off since.
+    """
+    a, b = _user(cur, a_id), _user(cur, b_id)
+    if not a or not b or a_id == b_id or not a["intros_ok"] or not b["intros_ok"]:
+        return None
+    if not (_are_crew(cur, tg_id, a_id) and _are_crew(cur, tg_id, b_id)):
+        return None                      # only people who both chose me
+    if _are_crew(cur, a_id, b_id) or _intro_done(cur, a_id, b_id):
+        return None
+    cur.execute(
+        "INSERT INTO move_intros (suggested_by, a_id, b_id) VALUES (%s, %s, %s) "
+        "ON CONFLICT DO NOTHING RETURNING id",
+        (tg_id, a_id, b_id),
+    )
+    row = cur.fetchone()
+    conn.commit()
+    if not row:
+        return None                      # lost the race on the pair index
+    me = _user(cur, tg_id)
+    alang = _norm_lang(a["language_code"])
+    _send(a["chat_id"] or a_id,
+          _t("intro_offer", alang, by=me["participant_name"] if me else "?",
+             name=b["participant_name"]),
+          reply_markup={"inline_keyboard": [
+              [{"text": _t("btn_intro_send", alang),
+                "callback_data": f"mv:in:s:{row['id']}"}],
+              [{"text": _t("btn_intro_no", alang),
+                "callback_data": f"mv:in:n:{row['id']}"}],
+          ]})
+    return row["id"]
+
+
+def _intro_hint(cur, conn, tg_id: int, lang: str) -> None:
+    """Once, the first time this person has two people worth introducing.
+
+    Introductions live inside the crew menu, and nobody opens a menu looking for
+    a feature they have never heard of. The condition is the point: told before
+    there is a pair it is an abstraction, and told every time it is nagging — so
+    it waits for the first real pair and then never speaks again.
+    """
+    u = _user(cur, tg_id)
+    if not u or u["intro_hinted_at"] or not u["intros_ok"]:
+        return
+    if not _intro_pairs(cur, tg_id):
+        return
+    cur.execute("UPDATE move_users SET intro_hinted_at = NOW() WHERE telegram_user_id = %s",
+                (tg_id,))
+    conn.commit()
+    _send(u["chat_id"] or tg_id, _t("intro_hint", lang),
+          reply_markup={"inline_keyboard": [
+              [{"text": _t("btn_intro", lang), "callback_data": "mv:intro:a"}]]})
 
 
 def _crew_target(cur, token: str):
@@ -4230,6 +4553,9 @@ def _settings_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
                      value=(_t("pause_until", lang, until=_short_date(u["paused_until"]))
                             if paused else _t("pause_off", lang))),
           "callback_data": "mv:set:pause"}],
+        [{"text": _t("set_intros", lang,
+                     value=_t("intros_on" if (not u or u["intros_ok"]) else "intros_off", lang)),
+          "callback_data": "mv:set:intros"}],
         [{"text": _t("set_lang", lang, value=_LANG_NAMES.get(lang, lang)),
           "callback_data": "mv:set:lang"}],
     ]}
@@ -5125,6 +5451,18 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _redraw(chat_id, msg_id, *_with_back(_radar_freq_view(cur, tg_id, lang), lang))
         elif what == "pause":
             _redraw(chat_id, msg_id, *_with_back(_pause_view(cur, tg_id, lang), lang))
+        elif what == "intros":
+            # A boolean gets a switch, not a submenu: there is nothing to choose
+            # between, and the value is already on the button.
+            cur.execute("UPDATE move_users SET intros_ok = NOT intros_ok "
+                        "WHERE telegram_user_id = %s RETURNING intros_ok", (tg_id,))
+            now_on = ((cur.fetchone() or {}).get("intros_ok"))
+            conn.commit()
+            _redraw(chat_id, msg_id, *_settings_view(cur, tg_id, lang))
+            _answer(cq["id"],
+                    _t("intros_toggled_on" if now_on else "intros_toggled_off", lang),
+                    alert=True)
+            return
         elif what == "lang":
             _redraw(chat_id, msg_id, _LANG_PROMPT, _with_back((None, _kb_lang()), lang)[1])
         _answer(cq["id"])
@@ -5187,6 +5525,88 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                                name=them["participant_name"]))
         return
 
+    # The suggester's side: pick who asks, pick who they ask, send.
+    if body.startswith("intro:"):
+        sub = body[len("intro:"):]
+        if sub == "a":
+            _redraw(chat_id, msg_id, *_intro_pick_a_view(cur, tg_id, lang))
+            _answer(cq["id"])
+            return
+        if sub.startswith("b:"):
+            _redraw(chat_id, msg_id, *_intro_pick_b_view(cur, tg_id, int(sub[2:]), lang))
+            _answer(cq["id"])
+            return
+        if sub.startswith("go:"):
+            a_s, _, b_s = sub[3:].partition(":")
+            b = _user(cur, int(b_s))
+            made = _intro_make(cur, conn, tg_id, int(a_s), int(b_s))
+            a = _user(cur, int(a_s))
+            if not made:
+                # Re-checked at the last moment, so this is reachable: the two
+                # may have connected on their own since the buttons were drawn.
+                _redraw_markup(chat_id, msg_id, {})
+                _send_t(cur, conn, chat_id, _t("intro_already", lang))
+                _answer(cq["id"])
+                return
+            _redraw_markup(chat_id, msg_id, {})
+            _send_t(cur, conn, chat_id,
+                    _t("intro_sent", lang, name=a["participant_name"] if a else a_s))
+            _log("\U0001fac2 Move: introduction suggested"
+                 + f"\n• by {(_user(cur, tg_id) or {}).get('participant_name')}"
+                 + f"\n• {a['participant_name'] if a else a_s} → "
+                 + f"{b['participant_name'] if b else b_s}")
+            _answer(cq["id"])
+            return
+        _answer(cq["id"])
+        return
+
+    # The asker's side. Whatever they choose, the suggester is never told.
+    if body.startswith("in:"):
+        act, _, iid = body[len("in:"):].partition(":")
+        cur.execute("SELECT * FROM move_intros WHERE id = %s AND a_id = %s",
+                    (iid if iid.isdigit() else -1, tg_id))
+        intro = cur.fetchone()
+        _redraw_markup(chat_id, msg_id, {})
+        if not intro or intro["sent_at"] or intro["declined_at"]:
+            _send_t(cur, conn, chat_id, _t("intro_gone", lang))
+            _answer(cq["id"])
+            return
+        if act == "n":
+            cur.execute("UPDATE move_intros SET declined_at = NOW() WHERE id = %s",
+                        (intro["id"],))
+            conn.commit()
+            _send_t(cur, conn, chat_id, _t("cancelled", lang))
+            _answer(cq["id"])
+            return
+        if act == "s":
+            b = _user(cur, intro["b_id"])
+            me = _user(cur, tg_id)
+            by = _user(cur, intro["suggested_by"])
+            if not b or not me or _are_crew(cur, tg_id, intro["b_id"]):
+                _send_t(cur, conn, chat_id, _t("intro_gone", lang))
+                _answer(cq["id"])
+                return
+            cur.execute("UPDATE move_intros SET sent_at = NOW() WHERE id = %s", (intro["id"],))
+            conn.commit()
+            # From here it is an ordinary crew request: same accept callback,
+            # same handler, same _connect. The only difference is one clause
+            # naming who suggested it, which is the part that makes it land.
+            blang = _norm_lang(b["language_code"])
+            _send(b["chat_id"] or b["telegram_user_id"],
+                  _t("crew_request_intro", blang, name=me["participant_name"],
+                     by=by["participant_name"] if by else "?"),
+                  reply_markup={"inline_keyboard": [[
+                      {"text": _t("btn_accept", blang),
+                       "callback_data": f"mv:crew:accept:{tg_id}"},
+                      {"text": _t("btn_decline", blang), "callback_data": "mv:crew:decline"},
+                  ]]})
+            _send_t(cur, conn, chat_id,
+                    _t("crew_request_sent", lang, name=b["participant_name"]))
+            _answer(cq["id"])
+            return
+        _answer(cq["id"])
+        return
+
     if body.startswith("crew:"):
         sub = body[5:]
         # Only the actions that end the conversation drop their buttons. Mute and
@@ -5230,6 +5650,10 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             if ((cur.fetchone() or {}).get("n") or 0) <= 1:
                 note += "\n\n" + _tgen("crew_first_note", rlang, me["gender"], name=me["participant_name"])
             _send(requester["chat_id"] or requester["telegram_user_id"], note)
+            # A new link is the one moment a first introducible pair can appear,
+            # and it appears for both sides at once.
+            _intro_hint(cur, conn, tg_id, lang)
+            _intro_hint(cur, conn, requester["telegram_user_id"], rlang)
             return
         if action == "addback":
             cur.execute(
@@ -5495,6 +5919,26 @@ def _claim_job(cur, conn, job_name: str, day: date) -> bool:
         return False
     conn.commit()
     return True
+
+
+def offer_intros(conn) -> None:
+    """Morning: tell anyone who has just become able to introduce two people.
+
+    The webhook fires this too, on the accept that makes a link — but only for
+    the two people in that link, and only from then on. A pair can appear for
+    reasons no webhook sees: a warning expiring, somebody switching
+    introductions back on, or simply having had the pair all along, since
+    everyone did on the day this shipped. One pass a morning catches all of it.
+
+    Guarded by intro_hinted_at rather than cron_log: the job is per-person and
+    says one thing once, so re-running it is inert by construction.
+    """
+    cur = conn.cursor()
+    cur.execute("SELECT telegram_user_id, language_code FROM move_users "
+                "WHERE banned_at IS NULL AND participant_name IS NOT NULL "
+                "  AND intros_ok AND intro_hinted_at IS NULL")
+    for u in cur.fetchall():
+        _intro_hint(cur, conn, u["telegram_user_id"], _norm_lang(u["language_code"]))
 
 
 def send_move_zap_reports(conn) -> None:

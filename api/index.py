@@ -140,7 +140,7 @@ def _run_daily_jobs(conn) -> dict:
     from phase_app.move_bot import (
         send_move_zap_reports, process_move_radar, send_move_monthly_summaries,
         send_move_nudges, purge_move_transient, flush_pending_moves,
-        send_snack_reports, announce_circles, announce_update,
+        send_snack_reports, announce_circles, announce_update, offer_intros,
     )
     import traceback
 
@@ -176,6 +176,9 @@ def _run_daily_jobs(conn) -> dict:
         # One-off: what changed, to the beta, once each. Guarded by
         # move_news_sent, so it is inert on every run after the first.
         ("move_update_news", announce_update),
+        # Per-person and self-guarding, like the news above: it speaks once to
+        # each person, the first morning they have two people worth introducing.
+        ("move_intro_hint", offer_intros),
     ]
     # The two snack jobs are the only pair that has to talk to each other: the
     # second needs to know who the first already served.

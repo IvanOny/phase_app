@@ -1419,52 +1419,67 @@ _STRINGS: dict[str, dict[str, str]] = {
     "radar_share_on": {"en": "📡 Share my moves: ON ✅", "uk": "📡 Ділитися моїми рухами: УВІМК ✅", "de": "📡 Meine Bewegungen teilen: AN ✅"},
     "radar_share_off": {"en": "📡 Share my moves: OFF 🚫", "uk": "📡 Ділитися моїми рухами: ВИМК 🚫", "de": "📡 Meine Bewegungen teilen: AUS 🚫"},
     # Anonymous on purpose: radar shares the move, never who made it.
-    # Shown on the first _RADAR_INTRO deliveries, then not again. What somebody
-    # wants to know when a stranger's video appears is not how to switch it off
-    # but whether their own moves are going out the same way — so that comes
-    # second, and the third line says where the control for it actually is.
+    # Shown on the first _RADAR_INTRO deliveries, then not again.
+    #
+    # Two labelled halves, because radar is two separate things that people
+    # conflate: what arrives, which is a standing setting, and what leaves,
+    # which is decided per move. A stranger's video showing up is exactly when
+    # somebody wonders whether their own are going out the same way, and the
+    # headings answer that before the sentences do.
     #
     # "отримала" agrees with its subject, so Ukrainian needs both forms plus a
     # base that asks nobody's gender, for accounts registered before the bot
     # started asking.
     "radar_first": {
-        "uk": "Ти отримуєш це відео згідно з твоїми налаштуваннями радару: "
+        "uk": "Отримання відео через радар:\n"
+              "Ти отримуєш це відео згідно з твоїми налаштуваннями радару: "
               "частота — {adv}.\n"
               "Це стосується лише отримання відео через радар, а не "
               "відправлення твоїх відео незнайомцям.\n"
+              "Змінити або вимкнути — ⚙️\n\n"
+              "Надсилання відео через радар:\n"
               "Щоразу, коли надсилаєш своє відео, ти можеш дозволити радару "
-              "показати його незнайомцям — кнопка 📡 під рухом.\n"
-              "Змінити або вимкнути — ⚙️",
-        "en": "You're getting this because of your radar setting: {adv}.\n"
-              "That covers receiving only. Your own moves don't go to "
-              "strangers unless you mark them.\n"
-              "Every time you send a move you can let radar show it to "
-              "strangers — the 📡 button under it.\n"
-              "Change it or switch it off — ⚙️",
-        "de": "Du bekommst das wegen deiner Radar-Einstellung: {adv}.\n"
-              "Das gilt nur fürs Empfangen. Deine eigenen Bewegungen gehen "
-              "nicht an Fremde, solange du sie nicht markierst.\n"
-              "Bei jeder Bewegung kannst du Radar erlauben, sie Fremden zu "
-              "zeigen — der 📡 Knopf darunter.\n"
-              "Ändern oder ausschalten — ⚙️",
+              "показати його незнайомцям — кнопка 📡 під рухом.",
+        "en": "Receiving through radar:\n"
+              "You're getting this video because of your radar setting: "
+              "{adv}.\n"
+              "That covers receiving only, not sending your videos to "
+              "strangers.\n"
+              "Change it or switch it off — ⚙️\n\n"
+              "Sending through radar:\n"
+              "Every time you send a video you can let radar show it to "
+              "strangers — the 📡 button under the move.",
+        "de": "Empfangen über Radar:\n"
+              "Du bekommst dieses Video wegen deiner Radar-Einstellung: "
+              "{adv}.\n"
+              "Das gilt nur fürs Empfangen, nicht fürs Senden deiner Videos an "
+              "Fremde.\n"
+              "Ändern oder ausschalten — ⚙️\n\n"
+              "Senden über Radar:\n"
+              "Jedes Mal, wenn du ein Video schickst, kannst du Radar erlauben, "
+              "es Fremden zu zeigen — der 📡 Knopf unter der Bewegung.",
     },
     "radar_first_m": {
-        "uk": "Ти отримав це відео згідно з твоїми налаштуваннями радару: "
+        "uk": "Отримання відео через радар:\n"
+              "Ти отримав це відео згідно з твоїми налаштуваннями радару: "
               "частота — {adv}.\n"
               "Це стосується лише отримання відео через радар, а не "
               "відправлення твоїх відео незнайомцям.\n"
+              "Змінити або вимкнути — ⚙️\n\n"
+              "Надсилання відео через радар:\n"
               "Щоразу, коли надсилаєш своє відео, ти можеш дозволити радару "
-              "показати його незнайомцям — кнопка 📡 під рухом.\n"
-              "Змінити або вимкнути — ⚙️",
+              "показати його незнайомцям — кнопка 📡 під рухом.",
     },
     "radar_first_f": {
-        "uk": "Ти отримала це відео згідно з твоїми налаштуваннями радару: "
+        "uk": "Отримання відео через радар:\n"
+              "Ти отримала це відео згідно з твоїми налаштуваннями радару: "
               "частота — {adv}.\n"
               "Це стосується лише отримання відео через радар, а не "
               "відправлення твоїх відео незнайомцям.\n"
+              "Змінити або вимкнути — ⚙️\n\n"
+              "Надсилання відео через радар:\n"
               "Щоразу, коли надсилаєш своє відео, ти можеш дозволити радару "
-              "показати його незнайомцям — кнопка 📡 під рухом.\n"
-              "Змінити або вимкнути — ⚙️",
+              "показати його незнайомцям — кнопка 📡 під рухом.",
     },
     "radar_received": {
         "en": "📡 Someone outside your crew moved recently.",

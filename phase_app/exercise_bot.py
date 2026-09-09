@@ -1309,6 +1309,12 @@ def _save_new_exercise(cur, conn, user_id: int, chat_id: int, d: dict) -> None:
 
 _EDITABLE_TEXT = ("name", "description", "focus_area", "equipment")
 
+# One list. There were three, and the edit menu's copy had never been extended
+# past tier 3 — so tiers 4 and 5 existed everywhere except the place you go to
+# set them.
+_TIER_CHOICES = (("1", "1 — most often"), ("2", "2 — regular"), ("3", "3 — occasional"),
+                 ("4", "4 — rare"), ("5", "5 — hardly ever"))
+
 
 def _cmd_edit(cur, conn, user_id: int, chat_id: int, name: str) -> None:
     if not name:
@@ -1352,9 +1358,7 @@ def _cmd_tier(cur, conn, user_id: int, chat_id: int, args: list[str]) -> None:
         _send(chat_id, f"{ex['name']} is tier {ex['tier']}. Set it to:",
               reply_markup={"inline_keyboard": [
                   [{"text": lbl, "callback_data": f"ex:edit:setval:tier:{ex['id']}:{n}"}]
-                  for n, lbl in (("1", "1 — most often"), ("2", "2 — regular"),
-                                 ("3", "3 — occasional"), ("4", "4 — rare"),
-                                 ("5", "5 — hardly ever"))]})
+                  for n, lbl in _TIER_CHOICES]})
         return
     cur.execute("UPDATE exercise_items SET tier = %s WHERE id = %s AND user_id = %s",
                 (int(level), ex["id"], user_id))
@@ -1373,21 +1377,38 @@ def _handle_edit_callback(cur, conn, user_id: int, chat_id: int, msg_id: int, su
         _, field, ex_id = sub.split(":", 2)
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
         _set_state(cur, conn, user_id, f"ex_edit_val:{field}:{ex_id}", {})
-        _send(chat_id, f"Send the new {field}:")
+        # The current value first. "Send the new description:" asks someone to
+        # retype from memory something the bot is holding and could simply
+        # show — and a description edited blind is usually a description
+        # rewritten from scratch. Telegram can't prefill an input, so showing it
+        # on its own line, ready to copy, is as close as this gets.
+        cur.execute("SELECT * FROM exercise_items WHERE id = %s AND user_id = %s",
+                    (int(ex_id), user_id))
+        ex = cur.fetchone()
+        now = (ex or {}).get(field)
+        _send(chat_id, (f"{field} is now:\n{now}\n\nSend the new one."
+                        if now else f"{field} is empty. Send the new one."))
         return
 
     if sub.startswith("pick:"):
         _, field, ex_id = sub.split(":", 2)
         _tg("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id, "reply_markup": {}})
+        cur.execute("SELECT * FROM exercise_items WHERE id = %s AND user_id = %s",
+                    (int(ex_id), user_id))
+        ex = cur.fetchone()
         if field == "tier":
-            opts = ["1", "2", "3"]
-            labels = {"1": "1 — most often", "2": "2 — regular", "3": "3 — occasional"}
+            opts = [o for o, _ in _TIER_CHOICES]
+            labels = dict(_TIER_CHOICES)
         else:
             opts = _LOCATIONS if field == "location" else _LOAD_TAGS
             labels = {}
-        rows = [[{"text": labels.get(o, o),
+        # A ✓ on the one it already is. Picking blind from five options means
+        # reading the menu twice — once to find where you are, once to choose.
+        now = str((ex or {}).get(field) or "")
+        rows = [[{"text": ("✓ " if o == now else "") + labels.get(o, o),
                   "callback_data": f"ex:edit:setval:{field}:{ex_id}:{o}"}] for o in opts]
-        _send(chat_id, f"Pick {field}:", reply_markup={"inline_keyboard": rows})
+        _send(chat_id, f"{field} is {now or '—'}. Pick a new one:",
+              reply_markup={"inline_keyboard": rows})
         return
 
     if sub.startswith("setval:"):

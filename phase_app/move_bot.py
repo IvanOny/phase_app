@@ -1419,21 +1419,42 @@ _STRINGS: dict[str, dict[str, str]] = {
     "radar_share_on": {"en": "📡 Share my moves: ON ✅", "uk": "📡 Ділитися моїми рухами: УВІМК ✅", "de": "📡 Meine Bewegungen teilen: AN ✅"},
     "radar_share_off": {"en": "📡 Share my moves: OFF 🚫", "uk": "📡 Ділитися моїми рухами: ВИМК 🚫", "de": "📡 Meine Bewegungen teilen: AUS 🚫"},
     # Anonymous on purpose: radar shares the move, never who made it.
-    # Said once, on somebody's first radar delivery. A stranger's video arriving
-    # with no explanation is the moment people wonder what they agreed to — and
-    # the thing they actually want to know is not how to switch it off but
-    # whether their own moves are going out the same way. They are not.
+    # Shown on the first _RADAR_INTRO deliveries, then not again. What somebody
+    # wants to know when a stranger's video appears is not how to switch it off
+    # but whether their own moves are going out the same way — so that is the
+    # second line rather than the last.
+    #
+    # "отримала" agrees with its subject, so Ukrainian needs both forms plus a
+    # base that asks nobody's gender, for accounts registered before the bot
+    # started asking.
     "radar_first": {
-        "uk": "Так працює радар: {adv} показуємо рух когось "
-              "поза твоїм колом. Твої рухи туди не йдуть, "
-              "поки ти їх не позначиш.\n"
+        "uk": "Ти отримуєш це відео згідно з твоїми налаштуваннями радару: "
+              "частота — {adv}.\n"
+              "Це стосується лише отримання відео через радар, а не "
+              "відправлення твоїх відео незнайомцям.\n"
               "Змінити або вимкнути — ⚙️",
-        "en": "That's radar: {adv} we show you a move from someone outside your "
-              "crew. Yours don't go the other way unless you mark them.\n"
+        "en": "You're getting this because of your radar setting: {adv}.\n"
+              "That covers receiving only. Your own moves don't go to "
+              "strangers unless you mark them.\n"
               "Change it or switch it off — ⚙️",
-        "de": "Das ist Radar: {adv} zeigen wir dir eine Bewegung von jemandem "
-              "außerhalb deiner Crew. Deine gehen nicht dorthin, solange du sie "
-              "nicht markierst.\nÄndern oder ausschalten — ⚙️",
+        "de": "Du bekommst das wegen deiner Radar-Einstellung: {adv}.\n"
+              "Das gilt nur fürs Empfangen. Deine eigenen Bewegungen gehen "
+              "nicht an Fremde, solange du sie nicht markierst.\n"
+              "Ändern oder ausschalten — ⚙️",
+    },
+    "radar_first_m": {
+        "uk": "Ти отримав це відео згідно з твоїми налаштуваннями радару: "
+              "частота — {adv}.\n"
+              "Це стосується лише отримання відео через радар, а не "
+              "відправлення твоїх відео незнайомцям.\n"
+              "Змінити або вимкнути — ⚙️",
+    },
+    "radar_first_f": {
+        "uk": "Ти отримала це відео згідно з твоїми налаштуваннями радару: "
+              "частота — {adv}.\n"
+              "Це стосується лише отримання відео через радар, а не "
+              "відправлення твоїх відео незнайомцям.\n"
+              "Змінити або вимкнути — ⚙️",
     },
     "radar_received": {
         "en": "📡 Someone outside your crew moved recently.",
@@ -1863,6 +1884,7 @@ _HOLD_HINTS = 10                      # holds that explain themselves before goi
 # text is a Braille blank, which every client renders as nothing at all.
 _HOLD_BLANK = "⠀"
 _PICK_HINTS = 3                       # how many times the picker explains itself
+_RADAR_INTRO = 3                      # radar deliveries that explain the setting
 
 
 def _circles_enabled(cur, tg_id: int) -> bool:
@@ -4024,12 +4046,13 @@ def _radar_deliver(cur, conn, rid: int, chat_id: int, lang: str, cand,
         )
     cur.execute("INSERT INTO move_radar_history (telegram_user_id, from_tg_id) VALUES (%s, %s)",
                 (rid, cand["from_id"]))
-    # Their first? radar_last_received is NULL until the line below fills it, so
-    # the answer is free — no counter column for a thing said exactly once.
-    cur.execute("SELECT radar_last_received, radar_freq FROM move_users "
+    cur.execute("SELECT radar_freq, radar_intro, gender FROM move_users "
                 "WHERE telegram_user_id = %s", (rid,))
     row = cur.fetchone() or {}
-    first_ever = not row.get("radar_last_received")
+    explain = (row.get("radar_intro") or 0) < _RADAR_INTRO
+    if explain:
+        cur.execute("UPDATE move_users SET radar_intro = radar_intro + 1 "
+                    "WHERE telegram_user_id = %s", (rid,))
     if touch_schedule:
         cur.execute("UPDATE move_users SET radar_last_received = NOW() WHERE telegram_user_id = %s",
                     (rid,))
@@ -4038,9 +4061,9 @@ def _radar_deliver(cur, conn, rid: int, chat_id: int, lang: str, cand,
     # people who haven't done anything, which is exactly who a keyboard sent
     # only in reply never reaches.
     body = _t("radar_received", lang)
-    if first_ever:
-        body += "\n\n" + _t("radar_first", lang,
-                                adv=_radar_adverb(row.get("radar_freq") or "weekly", lang))
+    if explain:
+        body += "\n\n" + _tgen("radar_first", lang, row.get("gender"),
+                                   adv=_radar_adverb(row.get("radar_freq") or "weekly", lang))
     _send_t(cur, conn, chat_id, body, reply_markup=_main_kb(lang, rid, cur))
     conn.commit()
     return True

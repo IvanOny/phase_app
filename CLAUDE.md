@@ -183,6 +183,16 @@ Move's trace collapses into one message per person per day (`move_log_summary`),
 edited as the day goes on. ⚠️ reports, crashes and moderation still send their own
 messages so they aren't buried.
 
+A recorded move waits 45 seconds before it goes out (`_hold_then_send`), with a
+🗑 live for the whole wait. Undo could already delete every copy from every
+chat, but never the notification that had already arrived; the only fix for
+that is not to send yet. Forty-five because a Vercel function is capped at
+sixty and the wait happens inside the request that received the video. The
+move is marked pending for the duration, so a function killed mid-wait leaves
+a row the flush already knows how to finish — the wait is the fast path, not
+the guarantee. Someone with circles gets the picker instead, which is the same
+hold with a person rather than a clock deciding when it ends.
+
 A comment is not a message of its own. Each pair of people gets one thread per
 move (`move_comments` + a `talk` row in `move_forwards`), rebuilt and re-sent as
 lines are added, and the sender's own typed message is deleted once its words are

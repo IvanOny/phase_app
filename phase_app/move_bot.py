@@ -23,6 +23,7 @@ import html
 import json
 import os
 import unicodedata
+import time
 import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
@@ -1070,6 +1071,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Not the same as undoing a delivered move: nothing left this chat, so
     # "removed from your people's chats" would be describing a delivery that
     # never happened.
+    "holding": {
+        "en": "📹 Sending in {secs} s — time to change your mind.",
+        "uk": "📹 Надсилаю через {secs} с — є час передумати.",
+        "de": "📹 Geht in {secs} s raus — Zeit, es dir anders zu überlegen.",
+    },
     "pick_cancelled": {
         "en": "🗑 Deleted. Nobody saw it.",
         "uk": "🗑 Видалено. Ніхто його не бачив.",
@@ -1728,6 +1734,17 @@ def _crew_names(cur, tg_id: int) -> list[str]:
 _CIRCLES_MIN_CREW = 2                 # below this, circles are not offered at all
 _CIRCLE_NAME_MAX = 24
 _PICK_WINDOW_MINUTES = 30             # after this an unaddressed move goes to everyone
+# A move waits this long before it leaves, so a bad take can be taken back
+# before anybody's phone buzzes. Undo already deleted the copies from every
+# chat, but it could never unring the notification that arrived a second after
+# recording; the only fix for that is not to send yet.
+#
+# Forty-five, not sixty: a Vercel function is capped at sixty seconds, and the
+# wait happens inside the request that received the video. Forty-five leaves
+# room for the delivery itself.
+_HOLD_SECONDS = 45
+_HOLD_POLL_SECONDS = 3                # how often the wait checks for a cancel
+_STRANDED_HOLD_MINUTES = 2            # a hold still pending after this lost its function
 _PICK_HINTS = 3                       # how many times the picker explains itself
 
 
@@ -2728,10 +2745,16 @@ def flush_pending_moves(conn) -> None:
     before circles existed: everyone.
     """
     cur = conn.cursor()
-    cur.execute("SELECT id, telegram_user_id, chat_id FROM move_entries "
+    # Two different waits share the pending state, so they need two deadlines.
+    # A picker waits on a person and can reasonably sit for half an hour; a hold
+    # waits on a clock and should have finished in forty-five seconds, so one
+    # still pending after two minutes is one whose function died mid-wait.
+    cur.execute("SELECT id, telegram_user_id, chat_id FROM move_entries e "
                 "WHERE pending_since IS NOT NULL "
-                "  AND pending_since < NOW() - make_interval(mins => %s)",
-                (_PICK_WINDOW_MINUTES,))
+                "  AND pending_since < NOW() - make_interval(mins => CASE WHEN EXISTS "
+                "      (SELECT 1 FROM move_circles c WHERE c.owner_tg_id = e.telegram_user_id) "
+                "      THEN %s ELSE %s END)",
+                (_PICK_WINDOW_MINUTES, _STRANDED_HOLD_MINUTES))
     # Falls back to the crew, which is only available if the crew hasn't had one
     # today; _finish_move sets is_crew_wide from the audience it is given.
     for e in cur.fetchall():
@@ -2795,6 +2818,48 @@ def _log_move(cur, conn, tg_id: int, chat_id: int, media: tuple | None, text_bod
         _show_picker(cur, conn, tg_id, chat_id, entry_id, lang)
         return
 
+    _hold_then_send(cur, conn, tg_id, chat_id, entry_id, lang)
+
+
+def _hold_then_send(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str) -> None:
+    """Wait, then deliver — unless it's taken back first.
+
+    The move exists and counts for the streak from the moment it was recorded.
+    What waits is the delivery, and with it the notification on six phones.
+
+    Marked pending for the duration, so this is recoverable: if the function is
+    killed mid-wait, the entry is left in exactly the state the flush already
+    knows how to finish. The wait is the fast path, not the guarantee.
+    """
+    cur.execute("UPDATE move_entries SET pending_since = NOW() WHERE id = %s", (entry_id,))
+    conn.commit()
+    res = _send_t(cur, conn, chat_id, _t("holding", lang, secs=_HOLD_SECONDS),
+                  reply_markup={"inline_keyboard": [[
+                      {"text": _t("btn_pick_cancel", lang),
+                       "callback_data": f"mv:pk:x:{entry_id}"}]]})
+    hold_msg = (res or {}).get("message_id")
+
+    waited = 0
+    while waited < _HOLD_SECONDS:
+        time.sleep(_HOLD_POLL_SECONDS)
+        waited += _HOLD_POLL_SECONDS
+        # Cancelling happens in another request against the same row, so the
+        # only way to see it is to look. Ending the wait early also gives the
+        # function back rather than sleeping out the clock for nothing.
+        # Ends the transaction so the next SELECT sees the cancel, which was
+        # committed by a different request. commit, not rollback: everything
+        # here is already committed, and rollback would throw away anything
+        # that wasn't.
+        conn.commit()
+        cur.execute("SELECT 1 FROM move_entries WHERE id = %s", (entry_id,))
+        if not cur.fetchone():
+            return                    # taken back; the cancel said so already
+
+    if hold_msg:
+        _api_call("deleteMessage", {"chat_id": chat_id, "message_id": hold_msg})
+        cur.execute("DELETE FROM move_transient WHERE chat_id = %s AND message_id = %s",
+                    (chat_id, hold_msg))
+        conn.commit()
     _finish_move(cur, conn, tg_id, chat_id, entry_id, lang)
 
 
@@ -3927,7 +3992,7 @@ def handle_move_webhook(body: dict, conn) -> None:
     cur.execute("SELECT id FROM move_entries WHERE telegram_user_id = %s "
                 "AND pending_since IS NOT NULL "
                 "AND pending_since < NOW() - make_interval(mins => %s)",
-                (tg_id, _PICK_WINDOW_MINUTES))
+                (tg_id, _PICK_WINDOW_MINUTES if _circles(cur, tg_id) else _STRANDED_HOLD_MINUTES))
     stale = cur.fetchone()
     if stale:
         _flush_one(cur, conn, tg_id, chat_id, stale["id"], lang)
@@ -4388,6 +4453,12 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             # picker, drop the entry, and the day is free again. Cheaper than
             # _revoke, which exists to chase copies out of other people's chats.
             _drop_picker(cur, entry_id)
+            # And the message this button was on, which is either the picker or
+            # the "sending in 45 s" line. Left up, it counts down to a delivery
+            # that is no longer going to happen.
+            _api_call("deleteMessage", {"chat_id": chat_id, "message_id": msg_id})
+            cur.execute("DELETE FROM move_transient WHERE chat_id = %s AND message_id = %s",
+                        (chat_id, msg_id))
             cur.execute("DELETE FROM move_entries WHERE id = %s AND telegram_user_id = %s",
                         (entry_id, tg_id))
             conn.commit()

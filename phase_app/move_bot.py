@@ -70,20 +70,90 @@ _MEDIA_KEYS = ("video_note", "video", "photo", "animation")
 
 # ── Telegram plumbing ────────────────────────────────────────────────────────
 
+# ── what the bot said ────────────────────────────────────────────────────────
+#
+# A person's own actions have always been recoverable — move_log_summary keeps
+# them for the day and outlives the message they were rendered into. The bot's
+# half was not stored anywhere, so a chat could only ever be replayed as
+# "[confirm] #1398" instead of the sentence somebody read.
+#
+# Recorded here rather than at sixty call sites, because _api_call is the one
+# funnel everything outgoing already passes through. The connection is lent for
+# the length of a request by `recording()`; with none lent, this does nothing,
+# which is what makes the module still importable and testable without a
+# database.
+_REPLAY_METHODS = {"sendMessage", "copyMessage", "editMessageText", "deleteMessage"}
+_sent_conn = None
+
+
+class recording:
+    """Lend a connection to the replay log for the length of a request."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __enter__(self):
+        global _sent_conn
+        self._prev, _sent_conn = _sent_conn, self._conn
+        return self
+
+    def __exit__(self, *exc):
+        global _sent_conn
+        _sent_conn = self._prev
+        return False
+
+
+def _record_sent(method: str, payload: dict, result: dict | None) -> None:
+    """Keep one outgoing message. Never let bookkeeping break a send.
+
+    Edits and deletes are kept as well as sends: a comment thread is deleted
+    and re-sent every time a line is added, and without those rows the replay
+    of a conversation is nonsense.
+    """
+    if _sent_conn is None or method not in _REPLAY_METHODS:
+        return
+    try:
+        # deleteMessage answers True, not an object, and editMessageText can
+        # answer True as well — so the id comes from the payload there. Reading
+        # .get off a bool was an exception caught and printed on every delete.
+        res = result if isinstance(result, dict) else {}
+        message_id = res.get("message_id") or payload.get("message_id")
+        body = payload.get("text")
+        if method == "copyMessage":
+            body = "[media]"
+        elif method == "deleteMessage":
+            body = None
+        cur = _sent_conn.cursor()
+        cur.execute(
+            "INSERT INTO move_sent (chat_id, message_id, method, body) "
+            "VALUES (%s, %s, %s, %s)",
+            (payload.get("chat_id"), message_id, method, body),
+        )
+        _sent_conn.commit()
+    except Exception as e:                       # pragma: no cover
+        print(f"Move replay log failed [{method}]: {e}")
+
+
 def _api_call(method: str, payload: dict) -> dict | None:
     """Call the Bot API and return the parsed `result`, or None on failure."""
     data = json.dumps(payload).encode()
     req = urllib.request.Request(
         f"{_API}/{method}", data=data, headers={"Content-Type": "application/json"}
     )
+    result = None
     try:
         with urllib.request.urlopen(req, timeout=8) as resp:
             body = json.loads(resp.read().decode())
-            return body.get("result") if body.get("ok") else None
+            result = body.get("result") if body.get("ok") else None
+            return result
     except urllib.error.HTTPError as e:
         print(f"Move API error [{method}]: {e.code} {e.read().decode()}")
     except Exception as e:
         print(f"Move API error [{method}]: {e}")
+    finally:
+        # In the finally, so a message that was sent and then failed to parse is
+        # still recorded, and a refused one is recorded as refused.
+        _record_sent(method, payload, result)
     return None
 
 
@@ -3986,6 +4056,14 @@ def report_webhook_error(body: dict, tb: str) -> None:
 
 
 def handle_move_webhook(body: dict, conn) -> None:
+    # Lent for the length of the update, and taken back after: on Vercel the
+    # module outlives the request, and a connection left behind here would be
+    # used by whatever ran next on the same warm instance.
+    with recording(conn):
+        _handle_move_webhook(body, conn)
+
+
+def _handle_move_webhook(body: dict, conn) -> None:
     cur = conn.cursor()
     # Before dispatch, so an update that goes on to crash is still recorded —
     # a silent failure at least leaves a trace of what triggered it.
@@ -5352,6 +5430,11 @@ def purge_move_transient(conn) -> None:
     cur.execute("DELETE FROM move_transient "
                 "WHERE created_at < NOW() - make_interval(hours => %s)", (_DELETE_LIMIT_HOURS,))
     expired = cur.rowcount
+
+    # The replay log is evidence, not an archive. A month is longer than any
+    # bug has taken to find here, and keeping people's messages past the point
+    # they are useful is a decision nobody made on purpose.
+    cur.execute("DELETE FROM move_sent WHERE created_at < NOW() - INTERVAL '30 days'")
 
     cur.execute("SELECT id, chat_id, message_id FROM move_transient "
                 "WHERE created_at < %s", (today,))

@@ -201,10 +201,16 @@ def _run_daily_jobs(conn) -> dict:
     jobs = [(n, {"snacks_move": _snacks_move,
                  "snacks_overview": _snacks_rest}.get(n, f)) for n, f in jobs]
 
+    # Everything the daily jobs send is recorded too, not just what a webhook
+    # sends — the morning report and the nudges are messages people wake up to
+    # and ask about later.
+    from phase_app.move_bot import recording
+
     failed = []
     for name, fn in jobs:
         try:
-            fn(conn)
+            with recording(conn):
+                fn(conn)
         except Exception:
             failed.append(name)
             traceback.print_exc()

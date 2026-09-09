@@ -201,6 +201,14 @@ verified against the live bot on 2026-09-04, and the whole model rests on it.
 Re-sending rather than editing is deliberate: an edit sends no notification, so
 the other person would never learn a comment had arrived.
 
+**Replaying a chat.** `scripts/replay_move.py <name|id> --from --to` prints one
+person's day: what they did (from `move_log_summary`, which has always kept it)
+against what the bot said (from `move_sent`, which keeps it from 9 Sep 2026).
+`move_sent` is written inside `_api_call` — the one funnel every outgoing call
+passes through — for sends, edits and deletes alike, and the connection is lent
+to it by `recording(conn)` around each webhook and each cron job. The morning
+sweep drops rows older than 30 days.
+
 **Testing Move against the live database:** a rolled-back transaction is not a
 sandbox. `_send_t`, `_send_note`, `_finish_move` and most other helpers call
 `conn.commit()` themselves, so a script that ends in `conn.rollback()` still

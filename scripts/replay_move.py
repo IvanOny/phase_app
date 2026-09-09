@@ -11,10 +11,11 @@ overstates its evidence is worse than none:
     those rows are kept after the Telegram message they were rendered into
     has gone.
 
-  * The bot's own words are NOT stored anywhere. move_transient and
-    move_forwards record that a message was placed, when, and (for forwards)
-    what kind it was, but never its text. So a reply shows here as
-    "← [confirm] #1398" and not as the sentence the person read.
+  * The bot's own words are kept from 9 September 2026 (move_sent), so from
+    that day a chat replays verbatim — sends, edits and deletions alike.
+    Before it, only ids and kinds were recorded, and a reply shows as
+    "← [confirm] #1398" rather than the sentence the person read. The replay
+    log is swept after 30 days.
 
   * What the bot said is recoverable only where the content is itself data:
     the moves, the comments, the captions. Those are printed in full.
@@ -79,7 +80,23 @@ def _events(cur, tg_id: int, day: date) -> list[tuple[str, str, str]]:
     lo = datetime.combine(day, datetime.min.time(), BERLIN)
     hi = lo + timedelta(days=1)
 
-    # 2. Bot messages placed in this chat, by kind. No text — there is none.
+    # 1b. What the bot actually said, where it was kept.
+    cur.execute("SELECT created_at, message_id, method, body FROM move_sent "
+                "WHERE chat_id = %s AND created_at >= %s AND created_at < %s "
+                "ORDER BY id", (tg_id, lo, hi))
+    verbatim = set()
+    for r in cur.fetchall():
+        stamp = r["created_at"].astimezone(BERLIN).strftime("%H:%M")
+        if r["method"] == "deleteMessage":
+            out.append((stamp, "✂", f"removed #{r['message_id']}"))
+            continue
+        verbatim.add(r["message_id"])
+        prefix = "edited " if r["method"] == "editMessageText" else ""
+        body = (r["body"] or "").replace("\n", " ⏎ ")
+        out.append((stamp, "←", f"{prefix}#{r['message_id']}: {body}"))
+
+    # 2. Bot messages placed in this chat, by kind. Only where the text was not
+    #    kept — after move_sent exists, printing both would say it all twice.
     cur.execute(
         "SELECT f.created_at, f.message_id, f.kind, f.entry_id, "
         "       u.participant_name AS author "
@@ -90,6 +107,8 @@ def _events(cur, tg_id: int, day: date) -> list[tuple[str, str, str]]:
         "WHERE f.chat_id = %s AND f.created_at >= %s AND f.created_at < %s "
         "ORDER BY f.created_at", (tg_id, lo, hi))
     for r in cur.fetchall():
+        if r["message_id"] in verbatim:
+            continue
         what = KIND.get(r["kind"], r["kind"])
         by = f" from {r['author']}" if r["author"] and r["kind"] in ("move", "talk") else ""
         out.append((r["created_at"].astimezone(BERLIN).strftime("%H:%M"), "←",
@@ -100,7 +119,12 @@ def _events(cur, tg_id: int, day: date) -> list[tuple[str, str, str]]:
     cur.execute("SELECT created_at, message_id FROM move_transient "
                 "WHERE chat_id = %s AND created_at >= %s AND created_at < %s "
                 "ORDER BY created_at", (tg_id, lo, hi))
-    known = {int(e[2].split("#")[1].split(" ")[0]) for e in out if "#" in e[2]}
+    known = set(verbatim)
+    for e in out:
+        if "#" in e[2]:
+            digits = e[2].split("#", 1)[1].split(" ")[0].rstrip(":")
+            if digits.isdigit():
+                known.add(int(digits))
     for r in cur.fetchall():
         if r["message_id"] in known:
             continue
@@ -178,8 +202,8 @@ def main() -> None:
     tg_id, name = _resolve(cur, args.who)
 
     print(f"Move replay — {name} ({tg_id}) — {since} to {until}")
-    print("→ what they did   ← what the bot placed   · what it contained")
-    print("Bot message text is not stored; kinds and ids are all there is.")
+    print("→ what they did   ← what the bot said   ✂ what it removed   · content")
+    print("Verbatim from 9 Sep 2026; before that, kinds and ids only.")
 
     day = since
     while day <= until:

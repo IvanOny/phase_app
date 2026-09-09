@@ -1421,8 +1421,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Anonymous on purpose: radar shares the move, never who made it.
     # Shown on the first _RADAR_INTRO deliveries, then not again. What somebody
     # wants to know when a stranger's video appears is not how to switch it off
-    # but whether their own moves are going out the same way — so that is the
-    # second line rather than the last.
+    # but whether their own moves are going out the same way — so that comes
+    # second, and the third line says where the control for it actually is.
     #
     # "отримала" agrees with its subject, so Ukrainian needs both forms plus a
     # base that asks nobody's gender, for accounts registered before the bot
@@ -1432,14 +1432,20 @@ _STRINGS: dict[str, dict[str, str]] = {
               "частота — {adv}.\n"
               "Це стосується лише отримання відео через радар, а не "
               "відправлення твоїх відео незнайомцям.\n"
+              "Щоразу, коли надсилаєш своє відео, ти можеш дозволити радару "
+              "показати його незнайомцям — кнопка 📡 під рухом.\n"
               "Змінити або вимкнути — ⚙️",
         "en": "You're getting this because of your radar setting: {adv}.\n"
               "That covers receiving only. Your own moves don't go to "
               "strangers unless you mark them.\n"
+              "Every time you send a move you can let radar show it to "
+              "strangers — the 📡 button under it.\n"
               "Change it or switch it off — ⚙️",
         "de": "Du bekommst das wegen deiner Radar-Einstellung: {adv}.\n"
               "Das gilt nur fürs Empfangen. Deine eigenen Bewegungen gehen "
               "nicht an Fremde, solange du sie nicht markierst.\n"
+              "Bei jeder Bewegung kannst du Radar erlauben, sie Fremden zu "
+              "zeigen — der 📡 Knopf darunter.\n"
               "Ändern oder ausschalten — ⚙️",
     },
     "radar_first_m": {
@@ -1447,6 +1453,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "частота — {adv}.\n"
               "Це стосується лише отримання відео через радар, а не "
               "відправлення твоїх відео незнайомцям.\n"
+              "Щоразу, коли надсилаєш своє відео, ти можеш дозволити радару "
+              "показати його незнайомцям — кнопка 📡 під рухом.\n"
               "Змінити або вимкнути — ⚙️",
     },
     "radar_first_f": {
@@ -1454,6 +1462,8 @@ _STRINGS: dict[str, dict[str, str]] = {
               "частота — {adv}.\n"
               "Це стосується лише отримання відео через радар, а не "
               "відправлення твоїх відео незнайомцям.\n"
+              "Щоразу, коли надсилаєш своє відео, ти можеш дозволити радару "
+              "показати його незнайомцям — кнопка 📡 під рухом.\n"
               "Змінити або вимкнути — ⚙️",
     },
     "radar_received": {

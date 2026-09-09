@@ -644,6 +644,25 @@ _STRINGS: dict[str, dict[str, str]] = {
     # ── logging ──
     "logged": {"en": "✓ Move logged{streak}", "uk": "✓ Рух записано{streak}", "de": "✓ Bewegung erfasst{streak}"},
     "logged_shared": {"en": "✓ Move logged{streak} → shared with {names}", "uk": "✓ Рух записано{streak} → надіслано: {names}", "de": "✓ Bewegung erfasst{streak} → geteilt mit {names}"},
+    # A move with no crew reached nobody, and "✓ Move logged" said the opposite
+    # loudly enough that someone recorded three before noticing. The streak
+    # still counts — the move happened — but the point of the thing is that
+    # somebody sees it, and the fix is one tap away.
+    "logged_alone": {
+        "en": "✓ Move logged{streak}\n\n"
+              "Nobody saw it — there is no one in your Move yet. "
+              "Invite someone and the next one reaches them.",
+        "uk": "✓ Рух записано{streak}\n\n"
+              "Його ніхто не бачив — у тебе ще "
+              "нікого немає в Move. "
+              "Запроси когось — і наступний рух побачать.",
+        "de": "✓ Bewegung erfasst{streak}\n\n"
+              "Niemand hat sie gesehen — in deinem Move ist noch niemand. "
+              "Lad jemanden ein, dann kommt die nächste an.",
+    },
+    "btn_invite_now": {"en": "🤝 Invite someone",
+                       "uk": "Запросити людину",
+                       "de": "🤝 Jemanden einladen"},
     "streak_suffix": {"en": " · 🔥 {days}-day streak", "uk": " · 🔥 серія {days} дн.", "de": " · 🔥 {days}-Tage-Serie"},
     "already_logged": {
         "en": "You've already moved today ✓ — only one move a day can be recorded.",
@@ -825,6 +844,22 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "🔒 Only your crew can see this move.",
         "uk": "🔒 Цей рух бачить лише твоє коло.",
         "de": "🔒 Nur deine Crew sieht diese Bewegung.",
+    },
+    # The same fact as logged_alone, on the message that would otherwise say
+    # "only your crew can see this" two lines below it — to somebody who hasn't
+    # got a crew. Radar is the one route out, so it is named here rather than
+    # left as an unexplained button.
+    "own_state_alone": {
+        "en": "🔒 Nobody can see this move yet. Radar below is the only way it "
+              "reaches anyone before you invite someone.",
+        # Present tense throughout: "поки ти нікого не запросив" needs a gender
+        # the bot may not have been told, and "запросила" for a man is worse
+        # than a sentence that never asks.
+        "uk": "Зараз цей рух ніхто не бачить. "
+              "Поки в тебе нікого немає в Move, "
+              "радар нижче — єдиний шлях, яким він когось досягне.",
+        "de": "🔒 Diese Bewegung sieht noch niemand. Bis du jemanden einlädst, "
+              "ist das Radar unten der einzige Weg nach draußen.",
     },
     "btn_caption": {
         "en": "💬 Add a caption", "uk": "💬 Додати коментар",
@@ -1351,6 +1386,11 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Only asked of Ukrainian speakers — the other two languages don't inflect here.
     "ask_gender": {"uk": "Як про тебе писати?", "en": "How should we refer to you?",
                    "de": "Wie sollen wir über dich schreiben?"},
+    # Carries the reply keyboard, which is drawn in whichever language was
+    # current when it was last sent and lives in the client until replaced. The
+    # old buttons still work — every language's labels are in the routing map —
+    # but a menu in one language under a bot now speaking another looks broken.
+    "lang_set": {"uk": "Готово.", "en": "Done.", "de": "Erledigt."},
     "gender_m": {"uk": "Він", "en": "He", "de": "Er"},
     "gender_f": {"uk": "Вона", "en": "She", "de": "Sie"},
     "btn_language": {"en": "🌍 Language", "uk": "🌍 Мова", "de": "🌍 Sprache"},
@@ -1812,7 +1852,12 @@ def _logged_kb(cur, entry_id: int, lang: str, tg_id: int | None = None) -> dict:
 
 def _own_view(cur, entry_id: int, lang: str, tg_id: int) -> tuple[str, dict]:
     """The ⚙️ message: where this move stands, and what can still be done to it."""
-    key = "own_state_radar" if _radar_ok(cur, entry_id) else "own_state_crew"
+    if _radar_ok(cur, entry_id):
+        key = "own_state_radar"
+    elif _crew_names(cur, tg_id):
+        key = "own_state_crew"
+    else:
+        key = "own_state_alone"
     return _t(key, lang), _logged_kb(cur, entry_id, lang, tg_id)
 
 
@@ -2761,8 +2806,18 @@ def _finish_move(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str,
     streak = _streak(cur, tg_id, today)
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
     # Inline undo and the radar decision — the persistent reply keyboard stays.
-    body = (_t("logged_shared", lang, streak=suffix, names=", ".join(names)) if names
-            else _t("logged", lang, streak=suffix))
+    # Three cases, not two: shared with people, logged with a crew that happened
+    # to receive nothing this time, and logged by someone who has no crew at all.
+    # Only the last one needs telling.
+    if names:
+        body = _t("logged_shared", lang, streak=suffix, names=", ".join(names))
+    elif _crew_names(cur, tg_id):
+        # _crew_names, not _crew_members: the latter answers 'everyone' for an
+        # empty crew because that is what the circle editor needs to offer, and
+        # using it here made the no-crew case unreachable.
+        body = _t("logged", lang, streak=suffix)
+    else:
+        body = _t("logged_alone", lang, streak=suffix)
 
     # Uploaded a file rather than recording a bubble? Show the gesture — but as
     # part of this confirmation, never as a message of its own.
@@ -4405,6 +4460,49 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _send_t(cur, conn, chat_id, _t("circle_deleted", lang, name=c["name"]))
             return
         _answer(cq["id"])
+        return
+
+    if body.startswith("gender:"):
+        # Registration's first question for Ukrainian, and nothing has ever
+        # caught the answer: the buttons were sent, the tap did nothing, and the
+        # person sat on a question that would not accept an answer. One tester
+        # tapped it five times across three /starts and never registered.
+        #
+        # A tap is also worth nothing if it doesn't move on, so this asks the
+        # next question in the same breath.
+        g = body[len("gender:"):]
+        if g not in ("m", "f"):
+            _answer(cq["id"])
+            return
+        state = _get_state(cur, tg_id) or ""
+        pending = state.split(":", 1)[1] if ":" in state else None
+        cur.execute("UPDATE move_users SET gender = %s WHERE telegram_user_id = %s", (g, tg_id))
+        _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
+        conn.commit()
+        _answer(cq["id"])
+        # The question is answered, so its buttons go: left up, they invite a
+        # second answer to something already settled.
+        _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id})
+        _send(chat_id, _t("start_body", lang, tagline=_t("tagline", lang)),
+              reply_markup=_force_reply(tg_id, lang, "name_placeholder"))
+        return
+
+    if body.startswith("lang:"):
+        # Same omission, in the settings menu: three buttons that set nothing.
+        code = body[len("lang:"):]
+        if code not in _SUPPORTED_LANGS:
+            _answer(cq["id"])
+            return
+        cur.execute("UPDATE move_users SET language_code = %s WHERE telegram_user_id = %s",
+                    (code, tg_id))
+        conn.commit()
+        _answer(cq["id"])
+        # The reply keyboard is drawn in the old language and lives in the
+        # client until something replaces it, so it is re-sent here rather than
+        # left to disagree with every other line on screen.
+        _redraw(chat_id, msg_id, *_settings_view(cur, tg_id, code))
+        _send_t(cur, conn, chat_id, _t("lang_set", code),
+                reply_markup=_main_kb(code, tg_id, cur))
         return
 
     if body.startswith("undo:"):

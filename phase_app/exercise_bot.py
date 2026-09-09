@@ -1,14 +1,21 @@
-"""Exercise Queue feature — bolted onto the burpee Telegram bot.
+"""Movement Snacks — small exercises with a morning list and a tick each.
 
-Single-user in v1 (gated by ADMIN_TG_ID in the webhook router), but every
-table is keyed by user_id so multi-user is a later flip, not a rewrite.
+Written for the burpee bot and now driven by Move as well, through its own
+token: see `transport`, and the Snacks section of CLAUDE.md. Every table is
+keyed by user_id, so multi-user is a flip rather than a rewrite.
 
-Two tiers:
-  - Tier 2 (fixed / acquisition): due-based, shown in the daily 19:00 overview.
-  - Tier 3 (queue): opportunistic, served on demand by `next`, ordered by how
-    overdue it is (last_done_at ASC NULLS FIRST, created_at ASC).
+One kind of item. There were two — `fixed`/`acquisition` on a cadence and
+`queue` served on demand — and the distinction is gone in practice: everything
+is a queue item, ranked by how overdue it is *for its own tier*. The tier says
+how often something should come round (1, 2, 4, 6, 8 days for tiers 1-5) and
+the ranking is `days_since / tier_interval`, so 100% means due now. Computed on
+read from last_done_at; nothing is stored, accrued or reset.
 
-English-only: the audience is a single admin user, so we skip the bot's i18n table.
+The schedule_type column and the cadence code still exist for items created
+before that, which is why `_collect_day` still looks for due-based rows.
+
+English-only: this half has one audience and skips the bot's i18n table. What
+Move wraps around it is localised.
 """
 from __future__ import annotations
 

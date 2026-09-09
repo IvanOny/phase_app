@@ -1754,6 +1754,10 @@ _HOLD_SECONDS = 45
 _HOLD_POLL_SECONDS = 3                # how often the wait checks for a cancel
 _STRANDED_HOLD_MINUTES = 2            # a hold still pending after this lost its function
 _HOLD_HINTS = 10                      # holds that explain themselves before going quiet
+# Past that count the hold is the button and nothing else. Telegram has no way
+# to send a keyboard without a message — sendMessage requires text — so the
+# text is a Braille blank, which every client renders as nothing at all.
+_HOLD_BLANK = "⠀"
 _PICK_HINTS = 3                       # how many times the picker explains itself
 
 
@@ -2848,11 +2852,16 @@ def _hold_then_send(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: st
     if explain:
         cur.execute("UPDATE move_users SET hold_hints = hold_hints + 1 "
                     "WHERE telegram_user_id = %s", (tg_id,))
+    cancel_kb = {"inline_keyboard": [[{"text": _t("btn_pick_cancel", lang),
+                                      "callback_data": f"mv:pk:x:{entry_id}"}]]}
     res = _send_t(cur, conn, chat_id,
-                  _t("holding" if explain else "holding_short", lang, secs=_HOLD_SECONDS),
-                  reply_markup={"inline_keyboard": [[
-                      {"text": _t("btn_pick_cancel", lang),
-                       "callback_data": f"mv:pk:x:{entry_id}"}]]})
+                  _t("holding", lang, secs=_HOLD_SECONDS) if explain else _HOLD_BLANK,
+                  reply_markup=cancel_kb)
+    if not explain and not res:
+        # Telegram refused the blank. Rather than lose the only way to stop the
+        # send, fall back to the shortest text that is certainly accepted.
+        res = _send_t(cur, conn, chat_id, _t("holding_short", lang, secs=_HOLD_SECONDS),
+                      reply_markup=cancel_kb)
     hold_msg = (res or {}).get("message_id")
 
     waited = 0

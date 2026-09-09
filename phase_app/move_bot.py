@@ -1143,6 +1143,9 @@ _STRINGS: dict[str, dict[str, str]] = {
                      "uk": "Всі, хто в Move разом з тобою",
                      "de": "Alle, die mit dir in Move sind"},
     "btn_pick_send": {"en": "→ Send", "uk": "→ Надіслати", "de": "→ Senden"},
+    # The word that stands in for the whole crew on the Send button, where
+    # "Всі, хто в Move разом з тобою" would not fit beside it.
+    "pick_all_short": {"en": "everyone", "uk": "всім", "de": "alle"},
     # First few times only. The picker looks like a menu where tapping a line
     # does something, and a beta tester tapped a circle and waited: the move
     # sat unaddressed because nothing said the choice needed confirming.
@@ -2674,7 +2677,23 @@ def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
         rows.append([{"text": f"{'✅' if radar else '⬜'} 📡 "
                               + _t("btn_radar", lang).split(" ", 1)[-1],
                       "callback_data": f"mv:pk:r:{entry_id}"}])
-    rows.append([{"text": _t("btn_pick_send", lang), "callback_data": f"mv:pk:go:{entry_id}"}])
+    # Send says who it will send to. A tick that failed to register is
+    # otherwise invisible until the move has already gone to the wrong people:
+    # on 9 September a circle was ticked, the row never arrived, and the move
+    # went to the whole crew with nothing on screen having said it would.
+    if picked:
+        names = [c["name"] for c in _circles(cur, tg_id) if c["id"] in picked]
+        who = ", ".join(names)
+        if len(who) > 24:
+            who = f"{len(names)} × 👥"
+    elif not crew_used:
+        who = _t("pick_all_short", lang)
+    else:
+        who = ""                       # nothing to send to yet; the refusal says so
+    if who and radar:
+        who += " + 📡"
+    label = _t("btn_pick_send", lang) + (f" · {who}" if who else "")
+    rows.append([{"text": label, "callback_data": f"mv:pk:go:{entry_id}"}])
     # Recording a move used to end in a confirmation carrying 🗑; with circles it
     # ends here instead, so this is where taking it back has to live.
     rows.append([{"text": _t("btn_pick_cancel", lang),

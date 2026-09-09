@@ -2733,13 +2733,19 @@ def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
     if not crew_used:
         rows.append([{"text": f"{'⬜' if picked else '✅'} {_t('btn_pick_all', lang)}",
                       "callback_data": f"mv:pk:all:{entry_id}"}])
-    # Radar only alongside the crew-wide move. A move sent to one circle is a
-    # narrower audience on purpose, and "fewer of my own people, plus every
-    # stranger" is not a thing anyone means.
-    if not picked and not crew_used:
-        rows.append([{"text": f"{'✅' if radar else '⬜'} 📡 "
-                              + _t("btn_radar", lang).split(" ", 1)[-1],
-                      "callback_data": f"mv:pk:r:{entry_id}"}])
+    # Always shown. It used to appear only alongside the crew-wide move, on the
+    # argument that "fewer of my own people, plus every stranger" is not a thing
+    # anyone means — but radar_ok is set independently and survived the row
+    # vanishing, so turning radar on and then picking a circle left it on with
+    # no way to turn it off. The Send button underneath still read "+ 📡" while
+    # the control for it was gone from the screen.
+    #
+    # The two are orthogonal anyway: circles say which of your own people see a
+    # move, radar says whether strangers do. Choosing one has never implied
+    # anything about the other.
+    rows.append([{"text": f"{'✅' if radar else '⬜'} 📡 "
+                          + _t("btn_radar", lang).split(" ", 1)[-1],
+                  "callback_data": f"mv:pk:r:{entry_id}"}])
     # Send says who it will send to. A tick that failed to register is
     # otherwise invisible until the move has already gone to the wrong people:
     # on 9 September a circle was ticked, the row never arrived, and the move

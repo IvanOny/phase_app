@@ -995,9 +995,33 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "📹 Рух записано. Хто його побачить?",
         "de": "📹 Bewegung aufgenommen. Wer soll sie sehen?",
     },
-    "btn_pick_all": {"en": "All your people", "uk": "Коло всіх твоїх людей",
-                     "de": "All deine Leute"},
+    # Not "your circle" in any form. Once the crew can be divided into named
+    # circles, "коло" means a part of it, and using the same word for the whole
+    # made the one line that had to be unambiguous the most confusing one.
+    "btn_pick_all": {"en": "Everyone in Move with you",
+                     "uk": "Всі, хто в Move разом з тобою",
+                     "de": "Alle, die mit dir in Move sind"},
     "btn_pick_send": {"en": "→ Send", "uk": "→ Надіслати", "de": "→ Senden"},
+    # First few times only. The picker looks like a menu where tapping a line
+    # does something, and a beta tester tapped a circle and waited: the move
+    # sat unaddressed because nothing said the choice needed confirming.
+    "pick_how": {
+        "en": "Tick who gets your video first, then press Send.",
+        "uk": "Спочатку відміть чек бокси, "
+              "хто отримає твоє відео. "
+              "Після цього натисни Надіслати.",
+        "de": "Hak zuerst ab, wer dein Video bekommt, dann drück Senden.",
+    },
+    # Not the same as undoing a delivered move: nothing left this chat, so
+    # "removed from your people's chats" would be describing a delivery that
+    # never happened.
+    "pick_cancelled": {
+        "en": "🗑 Deleted. Nobody saw it.",
+        "uk": "🗑 Видалено. Ніхто його не бачив.",
+        "de": "🗑 Gelöscht. Niemand hat es gesehen.",
+    },
+    "btn_pick_cancel": {"en": "🗑 Delete", "uk": "🗑 Видалити",
+                        "de": "🗑 Löschen"},
     "pick_none": {
         "en": "Choose at least one circle first.",
         "uk": "Спершу обери хоча б одне коло.",
@@ -1023,7 +1047,8 @@ _STRINGS: dict[str, dict[str, str]] = {
     # that follows, so this says why rather than leaving it to be noticed.
     "pick_crew_gone": {
         "en": "Everyone already had a move from you today — choose a circle.",
-        "uk": "Коло всіх твоїх людей сьогодні вже отримало рух — обери коло.",
+        "uk": "Всі, хто в Move разом з тобою, "
+              "сьогодні вже отримали рух — обери коло.",
         "de": "All deine Leute hatten heute schon eine Bewegung — wähl einen Kreis.",
     },
     # "All" is doing real work here. Once a crew can be divided into named
@@ -1641,6 +1666,7 @@ def _crew_names(cur, tg_id: int) -> list[str]:
 _CIRCLES_MIN_CREW = 2                 # below this, circles are not offered at all
 _CIRCLE_NAME_MAX = 24
 _PICK_WINDOW_MINUTES = 30             # after this an unaddressed move goes to everyone
+_PICK_HINTS = 3                       # how many times the picker explains itself
 
 
 def _circles_enabled(cur, tg_id: int) -> bool:
@@ -2169,13 +2195,27 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     Needs an explicit trigger: Telegram never tells a bot that the user deleted
     their original message in a private chat.
     """
-    cur.execute(
-        "SELECT id, created_at FROM move_entries WHERE telegram_user_id = %s AND entry_date = %s",
-        (tg_id, date.today()),
-    )
+    # The entry the button names, scoped to its owner — not "today's move".
+    # A day can hold a move for the crew and one per circle, and the old lookup
+    # took whichever row Postgres handed back first: with two moves up, undoing
+    # the one you meant was a coin toss between deleting the other and being
+    # told there was nothing to undo. Without an id — the typed /undo — it is
+    # the newest, which is the one you just made.
+    if entry_id is not None:
+        cur.execute(
+            "SELECT id, created_at FROM move_entries "
+            "WHERE id = %s AND telegram_user_id = %s AND entry_date = %s",
+            (entry_id, tg_id, date.today()),
+        )
+    else:
+        cur.execute(
+            "SELECT id, created_at FROM move_entries "
+            "WHERE telegram_user_id = %s AND entry_date = %s "
+            "ORDER BY id DESC LIMIT 1",
+            (tg_id, date.today()),
+        )
     e = cur.fetchone()
-    # entry_id guards a stale button from an earlier day revoking today's move.
-    if not e or (entry_id is not None and e["id"] != entry_id):
+    if not e:
         _send_t(cur, conn, chat_id, _t("undo_none", lang))
         return False
     cur.execute("SELECT 1 FROM move_reactions WHERE entry_id = %s", (e["id"],))
@@ -2446,11 +2486,33 @@ def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
                               + _t("btn_radar", lang).split(" ", 1)[-1],
                       "callback_data": f"mv:pk:r:{entry_id}"}])
     rows.append([{"text": _t("btn_pick_send", lang), "callback_data": f"mv:pk:go:{entry_id}"}])
-    return _t("pick_prompt", lang), {"inline_keyboard": rows}
+    # Recording a move used to end in a confirmation carrying 🗑; with circles it
+    # ends here instead, so this is where taking it back has to live.
+    rows.append([{"text": _t("btn_pick_cancel", lang),
+                  "callback_data": f"mv:pk:x:{entry_id}"}])
+    text = _t("pick_prompt", lang)
+    if _pick_hints_left(cur, tg_id):
+        text += "\n\n" + _t("pick_how", lang)
+    return text, {"inline_keyboard": rows}
+
+
+def _pick_hints_left(cur, tg_id: int) -> bool:
+    """Is the how-to still owed? Three pickers, then it stops.
+
+    Counted on the pickers actually shown rather than on moves logged: someone
+    who has seen the screen three times has either understood it or has a
+    problem a sentence won't fix.
+    """
+    cur.execute("SELECT pick_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+    row = cur.fetchone()
+    return bool(row) and (row["pick_hints"] or 0) < _PICK_HINTS
 
 
 def _show_picker(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str) -> None:
     text, kb = _pick_view(cur, tg_id, entry_id, lang)
+    if _pick_hints_left(cur, tg_id):
+        cur.execute("UPDATE move_users SET pick_hints = COALESCE(pick_hints, 0) + 1 "
+                    "WHERE telegram_user_id = %s", (tg_id,))
     res = _send(chat_id, text, reply_markup=kb, reply_to=_talk_anchor(cur, entry_id, tg_id))
     if res and res.get("message_id"):
         # kind='pick' so the sender can be found again when the move is sent or
@@ -4214,6 +4276,20 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         elif act == "r":
             cur.execute("UPDATE move_entries SET radar_ok = NOT COALESCE(radar_ok, FALSE) "
                         "WHERE id = %s", (entry_id,))
+        elif act == "x":
+            # Nothing was delivered, so there is nothing to un-deliver: drop the
+            # picker, drop the entry, and the day is free again. Cheaper than
+            # _revoke, which exists to chase copies out of other people's chats.
+            _drop_picker(cur, entry_id)
+            cur.execute("DELETE FROM move_entries WHERE id = %s AND telegram_user_id = %s",
+                        (entry_id, tg_id))
+            conn.commit()
+            _answer(cq["id"])
+            # A message rather than only a toast: it carries the reply keyboard,
+            # which the picker's own message never had.
+            _send_t(cur, conn, chat_id, _t("pick_cancelled", lang),
+                    reply_markup=_main_kb(lang, tg_id, cur))
+            return
         elif act == "go":
             audience = _pick_audience(cur, tg_id, entry_id)
             if audience is None and _used_today(cur, tg_id)[0]:
@@ -4306,6 +4382,20 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _send_t(cur, conn, chat_id, _t("circle_deleted", lang, name=c["name"]))
             return
         _answer(cq["id"])
+        return
+
+    if body.startswith("undo:"):
+        # 🗑 Скасувати under a logged move. The button has emitted this since it
+        # was added and nothing ever caught it: no toast, no error, the tap just
+        # spun until Telegram gave up. Reported as a circles problem, but it was
+        # never wired for anyone.
+        entry_id = int(body[len("undo:"):])
+        _answer(cq["id"])
+        if _revoke(cur, conn, tg_id, chat_id, lang, entry_id=entry_id):
+            # Its own message carried this button; the message is gone with the
+            # move, so there is nothing left to redraw.
+            return
+        _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id})
         return
 
     if body.startswith("nundo:"):

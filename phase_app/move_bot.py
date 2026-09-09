@@ -1355,16 +1355,19 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_intro": {"en": "🫂 Suggest two friends move together",
                   "uk": "🫂 Запропонувати друзям рухатись разом",
                   "de": "🫂 Zwei Freunden vorschlagen, zusammen zu trainieren"},
-    # Fired once, the first time two people in the crew could be connected. No
-    # names in it: naming them would be the disclosure the feature asks about
-    # before the person has agreed to make it.
-    # Fired once, the first time two people in the crew could be connected. No
-    # names in it: naming them would be the disclosure the feature asks about
-    # before the person has agreed to make it.
+    # Fired once, the first time two people in the crew could be connected.
+    #
+    # It says they are not moving together — not that they don't know each
+    # other, which was the first wording and which Move is in no position to
+    # claim. Two people can be old friends and still be strangers in here;
+    # the only thing the crew table knows is whether there is a link.
+    #
+    # No names either: naming them would be the disclosure the suggestion
+    # asks about, made before anyone agreed to make it.
     "intro_hint": {
-        "en": "🫂 There are people in your crew who don't know each other yet.\n\nIf you know two of them would get on, you can suggest it — they decide, and you never find out what they chose.",
-        "uk": "🫂 У твоєму колі є люди, які ще не знайомі між собою.\n\nЯкщо ти знаєш, що двоє з них порозуміються — можеш це запропонувати. Вирішать вони, а ти не дізнаєшся, що саме.",
-        "de": "🫂 In deiner Crew gibt es Leute, die sich noch nicht kennen.\n\nWenn du weißt, dass zwei davon zusammenpassen, kannst du es vorschlagen — sie entscheiden, und du erfährst nie, wie.",
+        "en": "🫂 There are people in your crew who aren't moving together yet.\n\nIf you think the two of them would like seeing each other's moves, you can suggest it. They decide.",
+        "uk": "🫂 У твоєму колі є люди, які ще не рухаються разом.\n\nЯкщо ти гадаєш, що обом буде цікаво бачити рухи одне одного — можеш їм запропонувати рух разом. Вирішать вони.",
+        "de": "🫂 In deiner Crew gibt es Leute, die sich noch nicht zusammen bewegen.\n\nWenn du denkst, dass die beiden gern die Bewegungen des anderen sehen würden, kannst du es ihnen vorschlagen. Sie entscheiden.",
     },
     "intro_pick_a": {
         "en": "🫂 Pick two people we'll send the suggestion to.",

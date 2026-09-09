@@ -1387,17 +1387,19 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "Gerade niemand vorzustellen. Alle in deiner Crew, die man verbinden "
               "könnte, sind es schon.",
     },
-    # What the suggester is told. Deliberately not "we'll let you know": they
-    # never find out. A decline that gets reported back is a decline with a
-    # witness, and that is what makes saying no to a friend expensive.
+    # What the suggester is told. Deliberately not "we'll let you know":
+    # nothing follows this message, ever. A decline reported back is a
+    # decline with a witness, and that is what makes saying no to a friend
+    # expensive.
+    #
+    # Move is the subject, not the reader: "you won't find out" was a claim
+    # about their life, and a false one — they can ask either of these people
+    # over coffee. What is actually being promised is narrower and entirely
+    # keepable: this bot will not be the one to tell them.
     "intro_sent": {
-        "en": "🫂 Suggested to {a} and {b}.\n\n"
-              "It's theirs now — you won't hear what they decide.",
-        "uk": "🫂 Пропозицію надіслано: {a} і {b}.\n"
-              "\n"
-              "Далі це їхня справа — ти не дізнаєшся, що вони вирішать.",
-        "de": "🫂 {a} und {b} vorgeschlagen.\n\n"
-              "Jetzt liegt es bei ihnen — du erfährst nicht, wie sie entscheiden.",
+        "en": "🫂 Suggested to {a} and {b}.\n\nIt's theirs now — Move won't tell you what they decide.",
+        "uk": "🫂 Пропозицію надіслано: {a} і {b}.\n\nДалі це їхня справа — Move тобі не повідомить, що вони вирішать.",
+        "de": "🫂 {a} und {b} vorgeschlagen.\n\nJetzt liegt es bei ihnen — Move sagt dir nicht, wie sie entscheiden.",
     },
     "intro_already": {
         "en": "Those two have been introduced once already.",

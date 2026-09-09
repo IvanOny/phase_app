@@ -2805,6 +2805,89 @@ def _tell_about_circles(cur, conn, tg_id: int, chat_id: int, lang: str) -> bool:
     return True
 
 
+# What the beta hears about on 10 September, and the key that stops it being
+# said twice. Only what somebody would notice using the bot: the 45-second
+# wait, the button that names its audience, an undo that finally works, and
+# radar no longer being offered to people with nobody to be seen by. The
+# fixes underneath — a crash on a held move, registration being impossible in
+# Ukrainian — are ours to be embarrassed about, not theirs to read about.
+_NEWS_KEY = "2026-09-10-beta"
+_NEWS = {
+    "uk": "✨ Що нового в Move"
+          "\n\n"
+          "• Рух тепер чекає 45 секунд, "
+          "перш ніж піти. Хочеш скасувати — натисни 🗑, "
+          "і його ніхто не побачить."
+          "\n"
+          "• Кнопка «Надіслати» показує, кому саме "
+          "піде рух — «→ Надіслати · всім» чи назва кола."
+          "\n"
+          "• 🗑 Скасувати працює. Раніше ця кнопка не "
+          "робила нічого — вибачте."
+          "\n"
+          "• Радар пропонуємо тільки тим, у кого "
+          "вже є люди в Move."
+          "\n\n"
+          "Дякую, що тестуєш. Якщо щось поводиться дивно — "
+          "напиши /feedback.",
+    "en": "✨ What's new in Move"
+          "\n\n"
+          "• A move now waits 45 seconds before it goes out. Changed your "
+          "mind? Tap 🗑 and nobody sees it."
+          "\n"
+          "• The Send button says who it will go to — '→ Send · everyone', "
+          "or the name of a circle."
+          "\n"
+          "• 🗑 Undo works. It did nothing at all before — sorry."
+          "\n"
+          "• Radar is only offered once you have people in Move."
+          "\n\n"
+          "Thanks for testing. If anything behaves oddly, send /feedback.",
+    "de": "✨ Neu in Move"
+          "\n\n"
+          "• Eine Bewegung wartet jetzt 45 Sekunden, bevor sie rausgeht. "
+          "Anders überlegt? Tipp 🗑 und niemand sieht sie."
+          "\n"
+          "• Der Senden-Knopf sagt, an wen sie geht."
+          "\n"
+          "• 🗑 Rückgängig funktioniert. Vorher tat der Knopf nichts — sorry."
+          "\n"
+          "• Radar gibt es erst, wenn du Leute in Move hast."
+          "\n\n"
+          "Danke fürs Testen. Wenn etwas komisch ist: /feedback.",
+}
+
+
+def announce_update(conn) -> None:
+    """Tell the beta what changed, once each.
+
+    Only the beta: they are the people who met the half-built versions of all
+    of this, and the only ones for whom "🗑 Undo works now" answers a question
+    they actually had.
+    """
+    cur = conn.cursor()
+    beta = _beta_ids()
+    if not beta:
+        return
+    cur.execute("SELECT telegram_user_id, chat_id, language_code FROM move_users "
+                "WHERE telegram_user_id = ANY(%s) AND banned_at IS NULL "
+                "  AND NOT EXISTS (SELECT 1 FROM move_news_sent n "
+                "                  WHERE n.news_key = %s "
+                "                    AND n.telegram_user_id = move_users.telegram_user_id)",
+                (list(beta), _NEWS_KEY))
+    for u in cur.fetchall():
+        tg_id = u["telegram_user_id"]
+        lang = _norm_lang(u["language_code"])
+        # Marked before the send, like the circles notice: a Telegram failure
+        # must not turn into the same announcement every morning.
+        cur.execute("INSERT INTO move_news_sent (news_key, telegram_user_id) VALUES (%s, %s) "
+                    "ON CONFLICT DO NOTHING", (_NEWS_KEY, tg_id))
+        conn.commit()
+        # Not swept. It is said once and worth keeping.
+        _send(u["chat_id"] or tg_id, _NEWS.get(lang, _NEWS["en"]),
+              reply_markup=_main_kb(lang, tg_id, cur))
+
+
 def announce_circles(conn) -> None:
     """The same notice, swept for daily, so nobody has to open the bot to learn.
 

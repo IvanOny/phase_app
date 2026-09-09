@@ -2731,7 +2731,12 @@ def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
         rows.append([{"text": f"{'✅' if on else '⬜'} {c['name']} · {c['members']}",
                       "callback_data": f"mv:pk:c:{entry_id}:{c['id']}"}])
     if not crew_used:
-        rows.append([{"text": f"{'⬜' if picked else '✅'} {_t('btn_pick_all', lang)}",
+        # A round marker, not a checkbox, because this row cannot be unticked.
+        # "Everyone" is what an empty selection means, so tapping it when it is
+        # already on has nothing to do — and wearing the same ⬜/✅ as the
+        # circles above it, it promised a toggle it could never perform. Round
+        # says: pick one of these, and this is the one you get by default.
+        rows.append([{"text": f"{'🔘' if not picked else '⚪'} {_t('btn_pick_all', lang)}",
                       "callback_data": f"mv:pk:all:{entry_id}"}])
     # Always shown. It used to appear only alongside the crew-wide move, on the
     # argument that "fewer of my own people, plus every stranger" is not a thing

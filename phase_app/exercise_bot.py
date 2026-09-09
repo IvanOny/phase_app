@@ -580,15 +580,45 @@ def _cmd_exapp(cur, conn, user_id: int, chat_id: int) -> None:
 
 
 def _cmd_help(chat_id: int) -> None:
+    """What the thing is, then what you can type at it.
+
+    It was only ever the second half: a list of commands that said what to
+    type and never what the numbers meant. Someone reading it for the first
+    time could work out how to add a snack and still have no idea why one at
+    six days sits above one at nine.
+    """
     _send(chat_id,
-        "🍎 Movement Snacks — commands:\n\n"
+        "🍎 Movement Snacks\n\n"
+        "A snack is a small exercise you want to keep doing — a wall sit, a "
+        "shoulder rotation, thirty seconds on one leg. Something you can do in a "
+        "doorway while the kettle boils.\n\n"
+        "Each one has a tier, which is just how often you want it to come round:\n"
+        "  tier 1 — every day\n"
+        "  tier 2 — every 2 days\n"
+        "  tier 3 — every 4 days\n"
+        "  tier 4 — every 6 days\n"
+        "  tier 5 — every 8 days\n\n"
+        "Every morning you get the list, most overdue first. Tap ✓ on what you "
+        "did. That is the whole loop.\n\n"
+        "Overdue is measured against each snack's own tier, not by how long it "
+        "has been. The button shows both:\n"
+        "  ✓ Knee s · 9d · 150%\n"
+        "  ✓ wall s · 6d · 150%\n"
+        "Nine days and six days, equally overdue — Knee s is tier 4 (wanted every "
+        "6) and wall s is tier 3 (every 4). So read the percentage:\n"
+        "  100% — due today\n"
+        "  300% — three cycles behind\n"
+        "  0% — done today, drops to the bottom\n\n"
+        "Nothing is owed. No streak, no score, no penalty for a bad week. The list "
+        "only answers: if I do one thing now, which one?\n\n"
+        "— commands —\n"
         "/add — register a new exercise\n"
         "exapp — open the web planner (calendar / log / stats)\n"
         "next [filters] — serve the next queue item (e.g. next knee barrack)\n"
         "done [actual] — mark the served item done\n"
         "<name> done — log an exercise by name (e.g. squats done)\n"
-        "skip — skip the served item for 1h\n"
-        "overview — today's plan with ✓/⏭ buttons (same as the 19:00 report)\n"
+        "skip — park the served item for 1h\n"
+        "overview — today's list with ✓/⏭ buttons (same as the morning report)\n"
         "list — all exercises\n"
         "edit <name> — change a field\n"
         "tier <name> [1|2|3|4|5] — how often it comes up (1 = most often)\n"
@@ -596,7 +626,6 @@ def _cmd_help(chat_id: int) -> None:
         "remove <name> — delete\n"
         "stats <name> / history — logs\n"
         "undo — revert last done")
-
 
 def _cmd_next(cur, conn, user_id: int, chat_id: int, filters: dict) -> None:
     # Re-send an already-pending item rather than advancing past it.

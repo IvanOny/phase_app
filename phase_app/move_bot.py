@@ -1071,6 +1071,14 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Not the same as undoing a delivered move: nothing left this chat, so
     # "removed from your people's chats" would be describing a delivery that
     # never happened.
+    # After _HOLD_HINTS holds, this replaces the sentence. Not nothing: the
+    # message carries the 🗑, and during the 45 seconds when nothing else
+    # happens it is the only sign the video arrived.
+    "holding_short": {
+        "en": "📹 {secs} s",
+        "uk": "📹 {secs} с",
+        "de": "📹 {secs} s",
+    },
     "holding": {
         "en": "📹 Sending in {secs} s — time to change your mind.",
         "uk": "📹 Надсилаю через {secs} с — є час передумати.",
@@ -1745,6 +1753,7 @@ _PICK_WINDOW_MINUTES = 30             # after this an unaddressed move goes to e
 _HOLD_SECONDS = 45
 _HOLD_POLL_SECONDS = 3                # how often the wait checks for a cancel
 _STRANDED_HOLD_MINUTES = 2            # a hold still pending after this lost its function
+_HOLD_HINTS = 10                      # holds that explain themselves before going quiet
 _PICK_HINTS = 3                       # how many times the picker explains itself
 
 
@@ -2833,7 +2842,14 @@ def _hold_then_send(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: st
     """
     cur.execute("UPDATE move_entries SET pending_since = NOW() WHERE id = %s", (entry_id,))
     conn.commit()
-    res = _send_t(cur, conn, chat_id, _t("holding", lang, secs=_HOLD_SECONDS),
+    cur.execute("SELECT hold_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+    row = cur.fetchone()
+    explain = (row or {}).get("hold_hints", 0) < _HOLD_HINTS
+    if explain:
+        cur.execute("UPDATE move_users SET hold_hints = hold_hints + 1 "
+                    "WHERE telegram_user_id = %s", (tg_id,))
+    res = _send_t(cur, conn, chat_id,
+                  _t("holding" if explain else "holding_short", lang, secs=_HOLD_SECONDS),
                   reply_markup={"inline_keyboard": [[
                       {"text": _t("btn_pick_cancel", lang),
                        "callback_data": f"mv:pk:x:{entry_id}"}]]})

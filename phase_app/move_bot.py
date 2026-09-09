@@ -849,17 +849,23 @@ _STRINGS: dict[str, dict[str, str]] = {
     # "only your crew can see this" two lines below it — to somebody who hasn't
     # got a crew. Radar is the one route out, so it is named here rather than
     # left as an unexplained button.
+    "radar_needs_crew": {
+        "en": "📡 Radar comes later — it shows your move to people you don't "
+              "know. First add someone you do: tap 🤝 and send them the link.",
+        "uk": "Радар — потім. Він показує твій рух "
+              "незнайомим людям. Спочатку додай того, кого знаєш: "
+              "натисни 🤝 і надішли йому посилання.",
+        "de": "📡 Radar kommt später — es zeigt deine Bewegung Leuten, die du "
+              "nicht kennst. Füg erst jemanden hinzu, den du kennst: tipp 🤝 an.",
+    },
     "own_state_alone": {
-        "en": "🔒 Nobody can see this move yet. Radar below is the only way it "
-              "reaches anyone before you invite someone.",
-        # Present tense throughout: "поки ти нікого не запросив" needs a gender
-        # the bot may not have been told, and "запросила" for a man is worse
-        # than a sentence that never asks.
-        "uk": "Зараз цей рух ніхто не бачить. "
-              "Поки в тебе нікого немає в Move, "
-              "радар нижче — єдиний шлях, яким він когось досягне.",
-        "de": "🔒 Diese Bewegung sieht noch niemand. Bis du jemanden einlädst, "
-              "ist das Radar unten der einzige Weg nach draußen.",
+        "en": "🔒 Nobody can see this move — there is no one in your Move yet.",
+        # Present tense: "поки ти нікого не запросив" needs a gender the bot may
+        # not have been told, and "запросила" for a man is worse than a sentence
+        # that never asks.
+        "uk": "Цей рух ніхто не бачить — у тебе ще "
+              "нікого немає в Move.",
+        "de": "🔒 Diese Bewegung sieht niemand — in deinem Move ist noch niemand.",
     },
     "btn_caption": {
         "en": "💬 Add a caption", "uk": "💬 Додати коментар",
@@ -1692,6 +1698,17 @@ def _streak(cur, tg_id: int, as_of: date | None = None) -> int:
 
 # ── crew helpers ─────────────────────────────────────────────────────────────
 
+def _has_crew(cur, tg_id: int) -> bool:
+    """Is there anyone in this person's Move at all?
+
+    The gate on radar. Sharing a video with strangers is a reasonable thing to
+    offer someone who already has people and wants more reach; offered as the
+    first thing that happens to someone with nobody, it is the bot asking a
+    stranger to broadcast to strangers. Invite first.
+    """
+    return bool(_crew_names(cur, tg_id))
+
+
 def _crew_names(cur, tg_id: int) -> list[str]:
     cur.execute("SELECT crew_name FROM move_crew WHERE telegram_user_id = %s ORDER BY crew_name", (tg_id,))
     return [r["crew_name"] for r in cur.fetchall()]
@@ -1840,10 +1857,11 @@ def _logged_kb(cur, entry_id: int, lang: str, tg_id: int | None = None) -> dict:
     # it. A label stating the current state has to be read twice — once to learn
     # where you are, once to work out what pressing it would do.
     radar_key = "btn_radar_leave" if on else "btn_radar_join"
-    rows = [
-        [{"text": _t("btn_undo", lang), "callback_data": f"mv:undo:{entry_id}"}],
-        [{"text": _t(radar_key, lang), "callback_data": f"mv:rok:{entry_id}"}],
-    ]
+    rows = [[{"text": _t("btn_undo", lang), "callback_data": f"mv:undo:{entry_id}"}]]
+    # No radar until there is a crew. It stays visible for a move already shared
+    # to it, because taking away the way back off is worse than never offering.
+    if on or tg_id is None or _has_crew(cur, tg_id):
+        rows.append([{"text": _t(radar_key, lang), "callback_data": f"mv:rok:{entry_id}"}])
     if tg_id is not None:
         rows.append([{"text": _t("btn_caption", lang),
                       "callback_data": f"mv:cmt:{entry_id}"}])
@@ -3733,9 +3751,13 @@ def _settings_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     u = _user(cur, tg_id)
     freq = (u["radar_freq"] if u else "never") or "never"
     paused = u and u["paused_until"] and u["paused_until"] > datetime.now(timezone.utc)
-    return _t("settings_title", lang), {"inline_keyboard": [
-        [{"text": _t("set_radar", lang, value=_radar_label(freq, lang)),
-          "callback_data": "mv:set:radar"}],
+    rows = []
+    # Same gate as the per-move button: radar is not the first thing Move should
+    # offer someone who has nobody in it.
+    if _has_crew(cur, tg_id) or freq != "never":
+        rows.append([{"text": _t("set_radar", lang, value=_radar_label(freq, lang)),
+                      "callback_data": "mv:set:radar"}])
+    return _t("settings_title", lang), {"inline_keyboard": rows + [
         [{"text": _t("set_pause", lang,
                      value=(_t("pause_until", lang, until=_short_date(u["paused_until"]))
                             if paused else _t("pause_off", lang))),
@@ -3756,6 +3778,12 @@ def _cmd_radar(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     # tell "chose off" from "never found it" — and only the second deserves a hint.
     cur.execute("UPDATE move_users SET radar_seen_at = COALESCE(radar_seen_at, NOW()) "
                 "WHERE telegram_user_id = %s", (tg_id,))
+    u = _user(cur, tg_id)
+    already_on = ((u["radar_freq"] if u else "never") or "never") != "never"
+    if not (_has_crew(cur, tg_id) or already_on):
+        _send_t(cur, conn, chat_id, _t("radar_needs_crew", lang),
+                reply_markup=_main_kb(lang, tg_id, cur))
+        return
     text, kb = _radar_freq_view(cur, tg_id, lang)
     _send_t(cur, conn, chat_id, text, reply_markup=kb)
 

@@ -242,6 +242,7 @@ def _next_due_date(ex, tz, as_of=None):
 # serve query multiplies seconds by this, so integers are the point.
 # How often a tier is meant to come round. This is what a tier always meant —
 # "most often" through "hardly ever" — said in days so it can be computed with.
+_TIER_DAYS = {1: 1, 2: 2, 3: 4, 4: 6, 5: 8}
 _TIER_DAYS_SQL = ("CASE tier WHEN 1 THEN 1 WHEN 2 THEN 2 WHEN 3 THEN 4 "
                   "WHEN 4 THEN 6 WHEN 5 THEN 8 ELSE 6 END")
 
@@ -1354,14 +1355,18 @@ def _collect_day(cur, user_id: int, tz, day):
     progress (✓ / ⏭ / pending)."""
     cur.execute(
         "SELECT s.exercise_id AS id, s.status, e.name, e.tier, "
-        "       (CURRENT_DATE - COALESCE(e.last_done_at, e.created_at)::date) AS days_since "
+        "       (CURRENT_DATE - COALESCE(e.last_done_at, e.created_at)::date) AS days_since, "
+        "       (100 * (CURRENT_DATE - COALESCE(e.last_done_at, e.created_at)::date) / "
+        "        CASE e.tier WHEN 1 THEN 1 WHEN 2 THEN 2 WHEN 3 THEN 4 "
+        "                    WHEN 4 THEN 6 WHEN 5 THEN 8 ELSE 6 END) AS overdue "
         "FROM exercise_schedule s "
         "JOIN exercise_items e ON e.id = s.exercise_id "
         "WHERE s.user_id = %s AND s.scheduled_date = %s",
         (user_id, day),
     )
     items = {r["id"]: {"id": r["id"], "name": r["name"], "status": r["status"],
-                       "tier": r["tier"], "days_since": r["days_since"]}
+                       "tier": r["tier"], "days_since": r["days_since"],
+                       "overdue": r["overdue"]}
              for r in cur.fetchall()}
 
     cur.execute(
@@ -1373,15 +1378,17 @@ def _collect_day(cur, user_id: int, tz, day):
         if e["id"] in items:
             continue  # a committed row wins over its own suggestion
         if _next_due_date(e, tz, day) == day:
+            since = (day - (e["last_done_at"] or e["created_at"]).date()).days
             items[e["id"]] = {"id": e["id"], "name": e["name"], "status": "planned",
-                              "tier": e["tier"],
-                              "days_since": (day - (e["last_done_at"] or e["created_at"]).date()).days}
+                              "tier": e["tier"], "days_since": since,
+                              "overdue": round(100 * since / _TIER_DAYS.get(e["tier"], 6))}
     return sorted(items.values(), key=lambda x: x["name"].lower())
 
 
 def _queue_items(cur, user_id: int, handled_ids: set):
     cur.execute(
-        "SELECT id, name, load_tag, tier, " + _DAYS_SINCE_SQL + " AS days_since "
+        "SELECT id, name, load_tag, tier, " + _DAYS_SINCE_SQL + " AS days_since, "
+        "       " + _OVERDUE_SQL + " AS overdue "
         "FROM exercise_items "
         "WHERE user_id = %s AND schedule_type = 'queue' AND status = 'active' "
         "  AND (skipped_until IS NULL OR skipped_until <= NOW()) "
@@ -1415,11 +1422,30 @@ def _daily_report(cur, user_id: int, tz, day):
     pending = [i for i in today_items if i["status"] == "planned"]
 
     lines = ["Your exercise snacks:"]
-    if today_items:
+
+    # The day's log, from exercise_history rather than from the calendar rows:
+    # history is what actually happened and carries the time, which is the part
+    # worth having when you are trying to remember whether you did a thing this
+    # morning or yesterday.
+    cur.execute(
+        "SELECT h.done_at, COALESCE(e.name, '(removed)') AS name "
+        "FROM exercise_history h "
+        "LEFT JOIN exercise_items e ON e.id = h.exercise_id "
+        "WHERE h.user_id = %s "
+        "  AND (h.done_at AT TIME ZONE 'UTC' AT TIME ZONE %s)::date = %s "
+        "ORDER BY h.done_at", (user_id, str(tz), day))
+    done_today = cur.fetchall()
+    if done_today:
         lines.append("")
-        for i in today_items:
-            mark = {"done": "✓", "skipped": "⏭"}.get(i["status"], "•")
-            lines.append(f"{mark} {i['name']}")
+        lines.append(f"Done today ({len(done_today)}):")
+        for r in done_today:
+            when = r["done_at"].astimezone(tz).strftime("%H:%M")
+            lines.append(f"✓ {when}  {r['name']}")
+
+    skipped = [i["name"] for i in today_items if i["status"] == "skipped"]
+    if skipped:
+        lines.append("")
+        lines.append("⏭ Skipped: " + " · ".join(skipped))
 
     if today_items and not pending:
         # A day finished doesn't need congratulating; the point of snacks is
@@ -1429,11 +1455,16 @@ def _daily_report(cur, user_id: int, tz, day):
         lines.append("Every day we breathe.")
         lines.append("Every day we move.")
 
-    # Days since it was last done — the thing the order is computed from, so
-    # the list can be read rather than trusted. A snack never done says "new".
+    # Days since, and what that is as a fraction of the interval this tier asks
+    # for. The days alone cannot be compared between tiers — 6d is late for a
+    # daily snack and early for a weekly one — and the percentage is what the
+    # order is actually computed from, so showing only the days meant showing
+    # a list sorted by a number that wasn't on it.
     def _label(item):
         d = item.get("days_since")
-        return f"✓ {item['name']} · {d}d" if d is not None else f"✓ {item['name']} · new"
+        if d is None:
+            return f"✓ {item['name']} · new"
+        return f"✓ {item['name']} · {d}d · {item.get('overdue', 0)}%"
 
     rows = []
     for i in pending:                                    # ✓ / ⏭ per pending item

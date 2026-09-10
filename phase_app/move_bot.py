@@ -3726,6 +3726,14 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
         "ON CONFLICT (telegram_user_id) DO UPDATE SET chat_id = EXCLUDED.chat_id",
         (tg_id, chat_id, lang),
     )
+    # Who invited them goes on the person, not on the question they are about
+    # to be asked. move_state is a ten-minute scratchpad and forgetting is its
+    # job; registration is three steps, one of them a name somebody has to
+    # think of, and it gets abandoned and resumed a day later. Carried in the
+    # state, the invite died with it and they arrived a stranger.
+    if inviter_id is not None and inviter_id != tg_id:
+        cur.execute("UPDATE move_users SET pending_inviter_id = %s "
+                    "WHERE telegram_user_id = %s", (inviter_id, tg_id))
 
     # /start can arrive again in the middle of onboarding — Telegram's own START
     # button, or the invite link tapped a second time. Resetting to the language
@@ -4341,6 +4349,22 @@ def _cmd_invite(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     _send_t(cur, conn, chat_id, _t("invite_text", lang, link=link), reply_markup=_invite_kb(lang))
 
 
+def _spend_pending_invite(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
+    """Honour the link this person arrived through, once they have a name.
+
+    Cleared before the request goes out, not after: a Telegram failure must not
+    leave a live invite that fires again on the next rename.
+    """
+    u = _user(cur, tg_id)
+    inviter_id = u["pending_inviter_id"] if u else None
+    if not inviter_id:
+        return
+    cur.execute("UPDATE move_users SET pending_inviter_id = NULL WHERE telegram_user_id = %s",
+                (tg_id,))
+    conn.commit()
+    _apply_invite(cur, conn, tg_id, chat_id, lang, inviter_id)
+
+
 def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: int) -> None:
     """A deep-link invite was opened: ask the link's owner to approve.
 
@@ -4873,12 +4897,11 @@ def _handle_move_webhook(body: dict, conn) -> None:
         _send(chat_id, body, reply_markup=_main_kb(lang, tg_id, cur))
         _log(("👋 Move: registered\n• " if base_state == "await_name" else "✏️ Move: renamed\n• ")
              + text.strip())
-        # A deep-link invite waited for the name; connect them now.
-        if base_state == "await_name" and ":" in (state or ""):
-            try:
-                _apply_invite(cur, conn, tg_id, chat_id, lang, int(state.split(":", 1)[1]))
-            except ValueError:
-                pass
+        # A deep-link invite waited for the name; connect them now. Read from
+        # the person rather than from the state that asked the question, so a
+        # registration finished tomorrow still honours the link that started it.
+        if base_state == "await_name":
+            _spend_pending_invite(cur, conn, tg_id, chat_id, lang)
         return
 
     # Naming a circle sits up here with the other name entry, and above the

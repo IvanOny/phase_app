@@ -3124,15 +3124,22 @@ _STRINGS.update(_NEWS_STRINGS)
 def _news_for(cur, tg_id: int, lang: str) -> str:
     """The note this particular person should get, or "" for nothing at all.
 
-    Only people who can already use the thing. For everyone else this release
-    reduced to "you can introduce two people" plus "the button will appear
-    later" — an announcement of something they cannot do, about people they
-    do not have.
+    Two conditions, and between them exactly one message reaches each person.
 
-    They lose nothing by the silence: intro_hint says the same thing at the
-    moment it becomes true for them, which is the better moment for it, and
-    is why this can stay quiet rather than settle for a worse version.
+    Nobody without a pair: for them this release reduced to "you can introduce
+    two people" plus "the button appears later" — an announcement of something
+    they cannot do, about people they do not have. intro_hint says it properly
+    at the moment it becomes true for them.
+
+    And nobody who has not been hinted yet, because the hint is the better of
+    the two messages — it carries the button, this only names the menu — and
+    it is going out on the same cron run, three jobs later. Whoever is already
+    hinted gets this instead: they know what the feature is, so what is left to
+    tell them is that it is new, which is what a release note is for.
     """
+    u = _user(cur, tg_id)
+    if not u or not u["intro_hinted_at"]:
+        return ""
     if not _intro_pairs(cur, tg_id):
         return ""
     bullets = [_t("news_intros", lang), _t("news_intros_where", lang)]

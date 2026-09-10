@@ -3107,13 +3107,6 @@ _NEWS_STRINGS = {
         "en": "• The button is in the «🤝 Move together» menu.",
         "de": "• Der Knopf steht im Menü «🤝 Zusammen bewegen».",
     },
-    # And whoever cannot yet, who would otherwise go looking for a
-    # button that is deliberately hidden from them.
-    "news_intros_soon": {
-        "uk": "• Кнопка з’явиться, щойно в твоєму колі буде двоє людей, які ще не рухаються разом.",
-        "en": "• The button appears as soon as your crew holds two people who aren't moving together yet.",
-        "de": "• Der Knopf erscheint, sobald in deiner Crew zwei Leute sind, die sich noch nicht zusammen bewegen.",
-    },
     "news_foot": {
         "uk": "Якщо щось поводиться дивно — напиши /feedback.",
         "en": "If anything behaves oddly, send /feedback.",
@@ -3129,16 +3122,20 @@ _STRINGS.update(_NEWS_STRINGS)
 
 
 def _news_for(cur, tg_id: int, lang: str) -> str:
-    """The note this particular person should get.
+    """The note this particular person should get, or "" for nothing at all.
 
-    Two bullets, and the second depends on whether they can use the thing yet.
-    The button only exists for someone with two people in their crew who aren't
-    already connected, so telling everyone "it's in the crew menu" would send
-    most of them looking for something deliberately hidden from them.
+    Only people who can already use the thing. For everyone else this release
+    reduced to "you can introduce two people" plus "the button will appear
+    later" — an announcement of something they cannot do, about people they
+    do not have.
+
+    They lose nothing by the silence: intro_hint says the same thing at the
+    moment it becomes true for them, which is the better moment for it, and
+    is why this can stay quiet rather than settle for a worse version.
     """
-    bullets = [_t("news_intros", lang),
-               _t("news_intros_where" if _intro_pairs(cur, tg_id)
-                  else "news_intros_soon", lang)]
+    if not _intro_pairs(cur, tg_id):
+        return ""
+    bullets = [_t("news_intros", lang), _t("news_intros_where", lang)]
     foot = _t("news_foot_beta" if tg_id in _beta_ids() else "news_foot", lang)
     return "\n".join([_t("news_head", lang), ""] + bullets + ["", foot])
 
@@ -3165,8 +3162,15 @@ def announce_update(conn) -> None:
         cur.execute("INSERT INTO move_news_sent (news_key, telegram_user_id) VALUES (%s, %s) "
                     "ON CONFLICT DO NOTHING", (_NEWS_KEY, tg_id))
         conn.commit()
+        # Marked either way, including for the people who get nothing. The row
+        # means "this release was dealt with for this person", not "a message
+        # went out" — without that, anyone who qualifies later would receive
+        # the note then, on top of the hint that already tells them.
+        text = _news_for(cur, tg_id, lang)
+        if not text:
+            continue
         # Not swept. It is said once and worth keeping.
-        _send(u["chat_id"] or tg_id, _news_for(cur, tg_id, lang),
+        _send(u["chat_id"] or tg_id, text,
               reply_markup=_main_kb(lang, tg_id, cur))
 
 

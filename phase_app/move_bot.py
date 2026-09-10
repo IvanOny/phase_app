@@ -1369,6 +1369,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "🫂 У твоєму колі є люди, які ще не рухаються разом.\n\nЯкщо ти гадаєш, що обом буде цікаво бачити рухи одне одного — можеш їм запропонувати рух разом. Вирішать вони.",
         "de": "🫂 In deiner Crew gibt es Leute, die sich noch nicht zusammen bewegen.\n\nWenn du denkst, dass die beiden gern die Bewegungen des anderen sehen würden, kannst du es ihnen vorschlagen. Sie entscheiden.",
     },
+    # The second and last one, for somebody who was told and did nothing.
+    # "Move noticed" rather than the plain statement of the first: this one
+    # is an observation made later, about a crew that has grown since, and
+    # saying so is what stops it reading as the same message twice.
+    "intro_hint2": {
+        "uk": "🫂 Move помітив, що у твоєму колі є люди, які ще не рухаються разом.\n\nЯкщо ти гадаєш, що обом буде цікаво бачити рухи одне одного — можеш їм запропонувати рух разом. Вирішать вони.",
+        "en": "🫂 Move has noticed there are people in your crew who aren't moving together yet.\n\nIf you think the two of them would like seeing each other's moves, you can suggest it. They decide.",
+        "de": "🫂 Move hat bemerkt, dass es in deiner Crew Leute gibt, die sich noch nicht zusammen bewegen.\n\nWenn du denkst, dass die beiden gern die Bewegungen des anderen sehen würden, kannst du es ihnen vorschlagen. Sie entscheiden.",
+    },
     "intro_pick_a": {
         "en": "🫂 Pick two people we'll send the suggestion to.",
         "uk": "🫂 Обери двох людей, яким ми надішлемо пропозицію.",
@@ -4129,23 +4138,98 @@ def _intro_make(cur, conn, tg_id: int, a_id: int, b_id: int) -> int | None:
     return row["id"]
 
 
-def _intro_hint(cur, conn, tg_id: int, lang: str) -> None:
-    """Once, the first time this person has two people worth introducing.
+_INTRO_SETTLE_HOURS = 24        # a pair must have existed this long before we say so
+_INTRO_POOL_AGAIN = 4           # people in play before the one reminder goes out
 
-    Introductions live inside the crew menu, and nobody opens a menu looking for
-    a feature they have never heard of. The condition is the point: told before
-    there is a pair it is an abstraction, and told every time it is nagging — so
-    it waits for the first real pair and then never speaks again.
+
+def _intro_pool(cur, tg_id: int) -> int:
+    """How many people in my crew could still be introduced to somebody.
+
+    Not the number of pairs. Six pairs among four people is the same four
+    people, and it is the people that make the feature worth mentioning —
+    counting pairs would make one new arrival look like a crowd, since joining
+    a crew of four adds four pairs at once.
+    """
+    return len({m["telegram_user_id"] for pair in _intro_pairs(cur, tg_id)
+                for m in pair})
+
+
+def _has_suggested(cur, tg_id: int) -> bool:
+    """Have they ever introduced anyone? One is enough — they know it exists."""
+    cur.execute("SELECT 1 FROM move_intros WHERE suggested_by = %s LIMIT 1", (tg_id,))
+    return cur.fetchone() is not None
+
+
+def _intro_note_eligible(cur, conn, tg_id: int) -> None:
+    """Start the clock the first moment there is a pair. Sends nothing.
+
+    Called from the webhook, where a crew link is made — the only place the
+    condition can turn true between two cron runs, and the place it used to
+    send from. It doesn't any more: becoming able to introduce two people
+    happens as a side effect of a third person joining, and a message about a
+    new feature arriving in the same second as that is a message about the
+    wrong thing.
     """
     u = _user(cur, tg_id)
-    if not u or u["intro_hinted_at"]:
+    if not u or u["intro_eligible_since"] or not _intro_pairs(cur, tg_id):
         return
-    if not _intro_pairs(cur, tg_id):
-        return
-    cur.execute("UPDATE move_users SET intro_hinted_at = NOW() WHERE telegram_user_id = %s",
+    cur.execute("UPDATE move_users SET intro_eligible_since = NOW() "
+                "WHERE telegram_user_id = %s AND intro_eligible_since IS NULL",
                 (tg_id,))
     conn.commit()
-    _send(u["chat_id"] or tg_id, _t("intro_hint", lang),
+
+
+def _intro_hint(cur, conn, tg_id: int, lang: str) -> None:
+    """The two hints, in order, at most one per person per run.
+
+    First: a day after the first pair appeared. The delay is the whole point —
+    it lets the message arrive on its own, rather than underneath the crew
+    notification that caused it.
+
+    Second: once, for somebody who was told and never suggested anybody. A
+    higher bar rather than a repeat — four people in play instead of two — so
+    it fires when there is visibly more to do than there was the first time.
+    Anyone who has actually used it is done being reminded, forever.
+    """
+    u = _user(cur, tg_id)
+    if not u:
+        return
+    pool = _intro_pool(cur, tg_id)
+    if not pool:
+        return
+    now = datetime.now(timezone.utc)
+    settled = timedelta(hours=_INTRO_SETTLE_HOURS)
+
+    if not u["intro_hinted_at"]:
+        since = u["intro_eligible_since"]
+        if not since:
+            # First sighting: start the clock, say nothing until tomorrow.
+            cur.execute("UPDATE move_users SET intro_eligible_since = NOW() "
+                        "WHERE telegram_user_id = %s", (tg_id,))
+            conn.commit()
+            return
+        if now - since < settled:
+            return
+        cur.execute("UPDATE move_users SET intro_hinted_at = NOW() "
+                    "WHERE telegram_user_id = %s", (tg_id,))
+        conn.commit()
+        _send(u["chat_id"] or tg_id, _t("intro_hint", lang),
+              reply_markup={"inline_keyboard": [
+                  [{"text": _t("btn_intro", lang), "callback_data": "mv:intro:a"}]]})
+        return
+
+    # Told already. One more, and only one, and only if it went unused.
+    if u["intro_hinted2_at"] or pool < _INTRO_POOL_AGAIN:
+        return
+    if _has_suggested(cur, tg_id):
+        return
+    # Never in the same breath as the first: that one may have gone out today.
+    if now - u["intro_hinted_at"] < settled:
+        return
+    cur.execute("UPDATE move_users SET intro_hinted2_at = NOW() "
+                "WHERE telegram_user_id = %s", (tg_id,))
+    conn.commit()
+    _send(u["chat_id"] or tg_id, _t("intro_hint2", lang),
           reply_markup={"inline_keyboard": [
               [{"text": _t("btn_intro", lang), "callback_data": "mv:intro:a"}]]})
 
@@ -5610,8 +5694,8 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                  + f"\n• {me['participant_name'] if me else tg_id} + {oname}"
                  + f"\n• suggested by {(_user(cur, intro['suggested_by']) or {}).get('participant_name')}")
             # A new link can be the first pair either of them has ever had.
-            _intro_hint(cur, conn, tg_id, lang)
-            _intro_hint(cur, conn, other_id, olang)
+            _intro_note_eligible(cur, conn, tg_id)
+            _intro_note_eligible(cur, conn, other_id)
             _answer(cq["id"])
             return
         _answer(cq["id"])
@@ -5661,9 +5745,10 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 note += "\n\n" + _tgen("crew_first_note", rlang, me["gender"], name=me["participant_name"])
             _send(requester["chat_id"] or requester["telegram_user_id"], note)
             # A new link is the one moment a first introducible pair can appear,
-            # and it appears for both sides at once.
-            _intro_hint(cur, conn, tg_id, lang)
-            _intro_hint(cur, conn, requester["telegram_user_id"], rlang)
+            # and it appears for both sides at once. Only the clock starts here;
+            # the hint itself goes out a day later, from the cron.
+            _intro_note_eligible(cur, conn, tg_id)
+            _intro_note_eligible(cur, conn, requester["telegram_user_id"])
             return
         if action == "addback":
             cur.execute(
@@ -5946,7 +6031,7 @@ def offer_intros(conn) -> None:
     cur = conn.cursor()
     cur.execute("SELECT telegram_user_id, language_code FROM move_users "
                 "WHERE banned_at IS NULL AND participant_name IS NOT NULL "
-                "  AND intro_hinted_at IS NULL")
+                "  AND (intro_hinted_at IS NULL OR intro_hinted2_at IS NULL)")
     for u in cur.fetchall():
         _intro_hint(cur, conn, u["telegram_user_id"], _norm_lang(u["language_code"]))
 

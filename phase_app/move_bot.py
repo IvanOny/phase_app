@@ -1355,28 +1355,31 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_intro": {"en": "🫂 Suggest two friends move together",
                   "uk": "🫂 Запропонувати друзям рухатись разом",
                   "de": "🫂 Zwei Freunden vorschlagen, zusammen zu trainieren"},
-    # Fired once, the first time two people in the crew could be connected.
+    # The first of two, a day after the first pair appears.
     #
-    # It says they are not moving together — not that they don't know each
-    # other, which was the first wording and which Move is in no position to
-    # claim. Two people can be old friends and still be strangers in here;
-    # the only thing the crew table knows is whether there is a link.
+    # It says they are not moving together — not that they don't know
+    # each other, which was the first wording and which Move is in no
+    # position to claim. Two people can be old friends and still be
+    # strangers in here; the crew table knows about links, not lives.
     #
-    # No names either: naming them would be the disclosure the suggestion
-    # asks about, made before anyone agreed to make it.
+    # "Move noticed" names who is speaking and why now, which a bare
+    # statement of fact does not. No names in it: naming them would be
+    # the disclosure the suggestion asks about, made before anyone
+    # agreed to make it.
     "intro_hint": {
-        "en": "🫂 There are people in your crew who aren't moving together yet.\n\nIf you think the two of them would like seeing each other's moves, you can suggest it. They decide.",
-        "uk": "🫂 У твоєму колі є люди, які ще не рухаються разом.\n\nЯкщо ти гадаєш, що обом буде цікаво бачити рухи одне одного — можеш їм запропонувати рух разом. Вирішать вони.",
-        "de": "🫂 In deiner Crew gibt es Leute, die sich noch nicht zusammen bewegen.\n\nWenn du denkst, dass die beiden gern die Bewegungen des anderen sehen würden, kannst du es ihnen vorschlagen. Sie entscheiden.",
+        "uk": "🫂 Move помітив, що у твоєму колі є люди, які ще не рухаються разом.\n\nЯкщо ти гадаєш, що їм може бути цікаво бачити рухи одне одного — можеш їм запропонувати рух разом. Вирішать вони.",
+        "en": "🫂 Move has noticed there are people in your crew who aren't moving together yet.\n\nIf you think they might like seeing each other's moves, you can suggest it. They decide.",
+        "de": "🫂 Move hat bemerkt, dass es in deiner Crew Leute gibt, die sich noch nicht zusammen bewegen.\n\nWenn du denkst, dass es sie interessieren könnte, die Bewegungen des anderen zu sehen, kannst du es ihnen vorschlagen. Sie entscheiden.",
     },
-    # The second and last one, for somebody who was told and did nothing.
-    # "Move noticed" rather than the plain statement of the first: this one
-    # is an observation made later, about a crew that has grown since, and
-    # saying so is what stops it reading as the same message twice.
+    # The second and last, for somebody who was told and did nothing.
+    # «Побільшало» is the only word that differs, and it is
+    # true by construction: this one waits for the pool to reach four,
+    # so by the time it is sent there really are more of them than
+    # there were. Without that word it would be the same message twice.
     "intro_hint2": {
-        "uk": "🫂 Move помітив, що у твоєму колі є люди, які ще не рухаються разом.\n\nЯкщо ти гадаєш, що обом буде цікаво бачити рухи одне одного — можеш їм запропонувати рух разом. Вирішать вони.",
-        "en": "🫂 Move has noticed there are people in your crew who aren't moving together yet.\n\nIf you think the two of them would like seeing each other's moves, you can suggest it. They decide.",
-        "de": "🫂 Move hat bemerkt, dass es in deiner Crew Leute gibt, die sich noch nicht zusammen bewegen.\n\nWenn du denkst, dass die beiden gern die Bewegungen des anderen sehen würden, kannst du es ihnen vorschlagen. Sie entscheiden.",
+        "uk": "🫂 Move помітив, що у твоєму колі побільшало людей, які ще не рухаються разом.\n\nЯкщо ти гадаєш, що їм може бути цікаво бачити рухи одне одного — можеш їм запропонувати рух разом. Вирішать вони.",
+        "en": "🫂 Move has noticed there are now more people in your crew who aren't moving together yet.\n\nIf you think they might like seeing each other's moves, you can suggest it. They decide.",
+        "de": "🫂 Move hat bemerkt, dass es in deiner Crew jetzt mehr Leute gibt, die sich noch nicht zusammen bewegen.\n\nWenn du denkst, dass es sie interessieren könnte, die Bewegungen des anderen zu sehen, kannst du es ihnen vorschlagen. Sie entscheiden.",
     },
     "intro_pick_a": {
         "en": "🫂 Pick two people we'll send the suggestion to.",

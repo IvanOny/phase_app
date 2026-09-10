@@ -3053,7 +3053,7 @@ def _tell_about_circles(cur, conn, tg_id: int, chat_id: int, lang: str) -> bool:
 # instead — and it explained radar needing a crew to ten people who all have
 # one. What applies depends on the account, so the note is assembled per
 # person.
-_NEWS_KEY = "2026-09-10-update"
+_NEWS_KEY = "2026-09-11-intros"
 _NEWS_STRINGS = {
     "news_head": {
         "uk": "✨ Що нового в Move",
@@ -3093,6 +3093,27 @@ _NEWS_STRINGS = {
         "en": "• Radar comes back once you have at least one person in Move.",
         "de": "• Radar kommt wieder, sobald jemand in deinem Move ist.",
     },
+    # Everyone: the one thing that shipped this time.
+    "news_intros": {
+        "uk": "• Тепер можна познайомити двох людей зі свого кола: обом прийде пропозиція рухатися разом. Вирішать вони — Move тобі не повідомить, що саме.",
+        "en": "• You can now introduce two people from your crew: both get the suggestion to move together. They decide — Move won't tell you what they chose.",
+        "de": "• Du kannst jetzt zwei Leute aus deiner Crew vorstellen: beide bekommen den Vorschlag, sich zusammen zu bewegen. Sie entscheiden — Move sagt dir nicht, wie.",
+    },
+    # Whoever can already use it — two or more in the crew who are
+    # not connected. Telling them where the button is is the whole
+    # difference between an announcement and a feature.
+    "news_intros_where": {
+        "uk": "• Кнопка — у меню «🤝 Рух разом».",
+        "en": "• The button is in the «🤝 Move together» menu.",
+        "de": "• Der Knopf steht im Menü «🤝 Zusammen bewegen».",
+    },
+    # And whoever cannot yet, who would otherwise go looking for a
+    # button that is deliberately hidden from them.
+    "news_intros_soon": {
+        "uk": "• Кнопка з’явиться, щойно в твоєму колі буде двоє людей, які ще не рухаються разом.",
+        "en": "• The button appears as soon as your crew holds two people who aren't moving together yet.",
+        "de": "• Der Knopf erscheint, sobald in deiner Crew zwei Leute sind, die sich noch nicht zusammen bewegen.",
+    },
     "news_foot": {
         "uk": "Якщо щось поводиться дивно — напиши /feedback.",
         "en": "If anything behaves oddly, send /feedback.",
@@ -3108,12 +3129,16 @@ _STRINGS.update(_NEWS_STRINGS)
 
 
 def _news_for(cur, tg_id: int, lang: str) -> str:
-    """The note this particular person should get."""
-    has_circles = _circles_enabled(cur, tg_id) and _circles(cur, tg_id)
-    bullets = [_t("news_audience" if has_circles else "news_hold", lang),
-               _t("news_undo", lang)]
-    if not _has_crew(cur, tg_id):
-        bullets.append(_t("news_radar", lang))
+    """The note this particular person should get.
+
+    Two bullets, and the second depends on whether they can use the thing yet.
+    The button only exists for someone with two people in their crew who aren't
+    already connected, so telling everyone "it's in the crew menu" would send
+    most of them looking for something deliberately hidden from them.
+    """
+    bullets = [_t("news_intros", lang),
+               _t("news_intros_where" if _intro_pairs(cur, tg_id)
+                  else "news_intros_soon", lang)]
     foot = _t("news_foot_beta" if tg_id in _beta_ids() else "news_foot", lang)
     return "\n".join([_t("news_head", lang), ""] + bullets + ["", foot])
 

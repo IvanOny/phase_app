@@ -6338,19 +6338,28 @@ def purge_move_transient(conn) -> None:
         cur.execute("DELETE FROM move_forwards WHERE id = ANY(%s)",
                     ([r["id"] for r in prompts],))
 
-    # Yesterday's crew copies keep the move and lose the buttons. A sent-⚡
-    # tick and a comment button are answers to a move that was happening
-    # then; a day later they're dead controls under a video you scroll past.
+    # Crew copies keep the move and lose the buttons, once they are a day old.
+    # A ⚡ and a comment button are answers to a move that was happening
+    # then; much later they're dead controls under a video you scroll past.
     #
-    # Only yesterday's, so each copy is edited once and stays inside
-    # Telegram's 48-hour edit window. Radar copies are left alone: their
-    # buttons are block and report, which don't go stale the way cheering does.
-    # Comments delivered under a move ('note') lose their Reply button the same
-    # morning: the comment window has closed, so the button only leads to a no.
+    # A rolling day, not "yesterday's". The calendar rule stripped a 16:47
+    # move at 06:45 the next morning — fourteen hours — and a 23:00 move after
+    # seven. People found them under the Unread divider with the controls
+    # already gone: not a video they had scrolled past, one they had not yet
+    # seen. Neither handler has a time limit of its own; the buttons were
+    # being taken away from under moves they would still have worked on.
+    #
+    # Twenty-two to forty-seven hours: a full night's sleep and a morning at
+    # the near end, an hour of slack under Telegram's 48-hour edit limit at
+    # the far end, and a window wider than a day so a late cron cannot let a
+    # copy fall between two runs. Each copy passes through it exactly once.
+    #
+    # Radar copies are left alone: their buttons are block and report, which
+    # don't go stale the way cheering does.
     cur.execute("SELECT chat_id, message_id FROM move_forwards "
                 "WHERE kind IN ('move', 'note', 'talk', 'pick') "
-                "AND created_at >= %s AND created_at < %s",
-                (today - timedelta(days=1), today))
+                "AND created_at >= NOW() - INTERVAL '47 hours' "
+                "AND created_at <  NOW() - INTERVAL '22 hours'")
     stripped = cur.fetchall()
     for r in stripped:
         _api_call("editMessageReplyMarkup",

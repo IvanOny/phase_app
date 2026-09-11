@@ -925,7 +925,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     # day" stops being true once each circle has a day of its own.
     "already_logged_circles": {
         "en": "✓ Every circle has had a move today.",
-        "uk": "✓ Сьогодні кожне коло вже отримало рух.",
+        "uk": "✓ Сьогодні кожна група вже отримала рух.",
         "de": "✓ Jeder Kreis hat heute schon eine Bewegung bekommen.",
     },
     "comment_added": {
@@ -1229,15 +1229,22 @@ _STRINGS: dict[str, dict[str, str]] = {
     # ── circles ──
     "circles_offer": {
         "en": "👥 You can group your people into circles — gym, family, whoever — and send each move only to the ones you choose.\n\nNobody sees your circles but you.",
-        "uk": "👥 Можеш згрупувати своїх людей у кола — зал, родина, будь-хто — і надсилати кожен рух лише тим, кому захочеш.\n\nКола бачиш тільки ти.",
+        "uk": "👥 Можеш згрупувати своїх людей у групи — зал, родина, будь-хто — і надсилати кожен рух лише тим, кому захочеш.\n\nГрупи бачиш тільки ти.",
         "de": "👥 Du kannst deine Leute in Kreise gruppieren — Gym, Familie, wen auch immer — und jede Bewegung nur an die schicken, die du wählst.\n\nDeine Kreise sieht nur du.",
     },
     "circles_title": {
         "en": "👥 Your circles. Each move can go to the ones you choose.",
-        "uk": "👥 Твої кола. Кожен рух може йти тим, кого обереш.",
+        "uk": "👥 Твої групи. Кожен рух може йти тим, кого обереш.",
         "de": "👥 Deine Kreise. Jede Bewegung kann an die gehen, die du wählst.",
     },
-    "btn_circles": {"en": "👥 Circles · {n}", "uk": "👥 Кола · {n}",
+    # Its own message on the crew screen, above the link. Plural, so it never
+    # reads as «коло», which is what the bot calls the crew itself.
+    "circles_line": {
+        "uk": "Групи — ти можеш створити тематичні групи, яким будеш надсилати певний тип своїх рухів.",
+        "en": "Groups — you can make themed groups and send each a certain kind of your moves.",
+        "de": "Gruppen — du kannst thematische Gruppen anlegen und jeder eine bestimmte Art deiner Bewegungen schicken.",
+    },
+    "btn_circles": {"en": "👥 Circles · {n}", "uk": "👥 Групи · {n}",
                     "de": "👥 Kreise · {n}"},
     "btn_circles_offer": {
         "en": "👥 Send different moves to different people?",
@@ -1254,12 +1261,12 @@ _STRINGS: dict[str, dict[str, str]] = {
               "person. Each move can go to everyone, or to the circles you pick."
               "\n\n"
               "Someone can only be in one of your circles.",
-        "uk": "✨ У тебе тепер є кола."
+        "uk": "✨ У тебе тепер є групи."
               "\n\n"
-              "Коло — це частина твоїх людей: зал, родина, хтось один. "
-              "Кожен рух може йти всім або тільки тим колам, які ти обереш."
+              "Група — це частина твоїх людей: зал, родина, хтось один. "
+              "Кожен рух може йти всім або тільки тим групам, які ти обереш."
               "\n\n"
-              "Одна людина може бути тільки в одному твоєму колі.",
+              "Одна людина може бути тільки в одній твоїй групі.",
         "de": "✨ Du hast jetzt Kreise."
               "\n\n"
               "Ein Kreis ist ein Teil deiner Crew — das Gym, die Familie, eine "
@@ -1268,18 +1275,18 @@ _STRINGS: dict[str, dict[str, str]] = {
               "\n\n"
               "Jemand kann nur in einem deiner Kreise sein.",
     },
-    "btn_circle_new": {"en": "➕ New circle", "uk": "➕ Нове коло", "de": "➕ Neuer Kreis"},
+    "btn_circle_new": {"en": "➕ New circle", "uk": "➕ Нова група", "de": "➕ Neuer Kreis"},
     "btn_circle_rename": {"en": "✏️ Rename", "uk": "✏️ Перейменувати", "de": "✏️ Umbenennen"},
-    "btn_circle_delete": {"en": "🗑 Delete circle", "uk": "🗑 Видалити коло", "de": "🗑 Kreis löschen"},
+    "btn_circle_delete": {"en": "🗑 Delete circle", "uk": "🗑 Видалити групу", "de": "🗑 Kreis löschen"},
     "btn_back": {"en": "‹ Back", "uk": "‹ Назад", "de": "‹ Zurück"},
     "circle_ask_name": {
         "en": "What should this circle be called?",
-        "uk": "Як назвемо це коло?",
+        "uk": "Як назвемо цю групу?",
         "de": "Wie soll dieser Kreis heißen?",
     },
     "circle_name_taken": {
         "en": "You already have a circle called {name}.",
-        "uk": "У тебе вже є коло «{name}».",
+        "uk": "У тебе вже є група «{name}».",
         "de": "Du hast schon einen Kreis namens {name}.",
     },
     "circle_name_too_long": {
@@ -1294,7 +1301,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "circle_deleted": {
         "en": "🗑 Circle {name} deleted.",
-        "uk": "🗑 Коло «{name}» видалено.",
+        "uk": "🗑 Групу «{name}» видалено.",
         "de": "🗑 Kreis {name} gelöscht.",
     },
     # ── addressing a held move ──
@@ -1350,7 +1357,7 @@ _STRINGS: dict[str, dict[str, str]] = {
                         "de": "🗑 Löschen"},
     "pick_none": {
         "en": "Choose at least one circle first.",
-        "uk": "Спершу обери хоча б одне коло.",
+        "uk": "Спершу обери хоча б одну групу.",
         "de": "Wähl zuerst mindestens einen Kreis.",
     },
     "pick_expired": {
@@ -1363,7 +1370,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "pick_expired_left": {
         "en": "📹 Nothing was chosen, so your move went to every circle that "
               "hadn't had one today.",
-        "uk": "📹 Вибору не було, тому рух пішов усім колам, які сьогодні ще "
+        "uk": "📹 Вибору не було, тому рух пішов усім групам, які сьогодні ще "
               "нічого не отримали.",
         "de": "📹 Nichts gewählt, also ging deine Bewegung an jeden Kreis, der "
               "heute noch nichts bekommen hat.",
@@ -3177,7 +3184,7 @@ _NEWS_STRINGS = {
     # The two people with circles, who get the picker instead of the wait.
     "news_audience": {
         "uk": "• Кнопка «Надіслати» тепер показує, кому саме піде рух — "
-              "«→ Надіслати · всім» чи назва кола. Так видно одразу, якщо "
+              "«→ Надіслати · всім» чи назва групи. Так видно одразу, якщо "
               "відмітка не спрацювала.",
         "en": "• The Send button now says who the move will go to — "
               "'→ Send · everyone', or the name of a circle. A tick that "
@@ -3987,9 +3994,10 @@ def _cmd_info(cur, conn, tg_id: int, chat_id: int, lang: str, name: str | None =
 
 
 def _cmd_move(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
-    """The crew screen: your people, your link, and — three times — how it works.
+    """The crew screen: your people, your groups, your link, and — three
+    times — how it works.
 
-    Three messages, because a message holds one keyboard. The people are
+    One message each, because a message holds one keyboard. The people are
     inline buttons; the link carries the 🔄 row from the third visit on; and
     the explainer, while it is still shown, is the one that can carry the main
     keyboard — after that the keyboard simply isn't re-sent from here, which
@@ -4002,6 +4010,15 @@ def _cmd_move(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     name = me["participant_name"] if me else None
     text, kb = _crew_pick_view(cur, tg_id, lang)
     _send_t(cur, conn, chat_id, text, reply_markup=kb)
+
+    # Groups, between your people and the link: they are about the people you
+    # already have, the link is about people you don't yet. Beta only, and
+    # only once there is more than one person to divide.
+    if _circles_enabled(cur, tg_id):
+        made = _circles(cur, tg_id)
+        _send_t(cur, conn, chat_id, _t("circles_line", lang), reply_markup={"inline_keyboard": [
+            [{"text": _t("btn_circles", lang, n=len(made)) if made
+              else _t("btn_circles_offer", lang), "callback_data": "mv:cr:list:0"}]]})
 
     cur.execute("SELECT invite_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
     shown = ((cur.fetchone() or {}).get("invite_hints") or 0)
@@ -4044,13 +4061,6 @@ def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     kb = [[{"text": r["participant_name"],
             "callback_data": f"mv:crew:open:{r['telegram_user_id']}"}]
           for r in rows[:_CREW_BUTTON_LIMIT]]
-    # Circles hang off this menu, and only once there is more than one person to
-    # divide. With a crew of one the whole idea is noise, so it isn't mentioned.
-    if _circles_enabled(cur, tg_id):
-        made = _circles(cur, tg_id)
-        kb.append([{"text": _t("btn_circles", lang, n=len(made)) if made
-                    else _t("btn_circles_offer", lang),
-                    "callback_data": "mv:cr:list:0"}])
     return _t("crew_title", lang), {"inline_keyboard": kb}
 
 

@@ -423,7 +423,7 @@ def _describe_callback(cur, data: str) -> str:
     if head == "intro":
         act, _, tail = rest.partition(":")
         if act == "a":
-            return "🫂 introduce: pick the first"
+            return "🫂 introduce: open the crew"
         if act == "b":
             return f"🫂 introduce: {who(tail)} — and who else?"
         if act == "go":
@@ -1371,25 +1371,23 @@ _STRINGS: dict[str, dict[str, str]] = {
     # "All" is doing real work here. Once a crew can be divided into named
     # circles, "коло твоїх людей" and "коло" mean two different things one line
     # apart; "коло всіх твоїх людей" is the whole of it, and a circle is a part.
-    "crew_prompt": {
-        "en": "🤝 The circle of all your people. You can set it so you don't get "
-              "someone's moves for a while, or remove a person from the circle",
-        "uk": "🤝 Коло всіх твоїх людей. Ти можеш налаштувати, щоб певний час не "
-              "отримувати від когось рухи, або ж видалити людину з кола",
-        "de": "🤝 Der Kreis all deiner Leute. Du kannst einstellen, eine Weile keine "
-              "Bewegungen von jemandem zu bekommen, oder die Person entfernen",
+    "crew_title": {
+        "uk": "🤝 Ти рухаєшся разом з:",
+        "en": "🤝 You're moving together with:",
+        "de": "🤝 Du bewegst dich zusammen mit:",
     },
-    # Impersonal in Ukrainian and German: "прихований" and "ausgeblendet" would
-    # both have to agree with a gender the bot often doesn't know.
-    "crew_hidden_line": {
-        "en": "{name} is 🙈 hidden until {until}",
-        "uk": "{name} — 🙈 сховано до {until}",
-        "de": "{name} — 🙈 ausgeblendet bis {until}",
+    "crew_empty": {
+        "uk": "🤝 Поки що в тебе нікого немає в Move.",
+        "en": "🤝 Nobody in your Move yet.",
+        "de": "🤝 In deinem Move ist noch niemand.",
     },
-    "crew_prompt_empty": {
-        "en": "Share the link above, or type a name if they're already on Move:",
-        "uk": "Надішли посилання вище, або напиши ім'я, якщо людина вже в Move:",
-        "de": "Teile den Link oben, oder gib einen Namen ein, wenn die Person schon dabei ist:",
+    # On a person's screen, only when there is somebody left to suggest
+    # them to. Introductions start from a person now — «Данило and Ярина
+    # would get on» — not from an abstract «pick two».
+    "btn_intro_person": {
+        "uk": "🫂 Запропонувати рух з кимось іншим з твоїх людей",
+        "en": "🫂 Suggest moving with someone else of yours",
+        "de": "🫂 Bewegung mit jemand anderem von dir vorschlagen",
     },
     "btn_back": {"en": "← Back", "uk": "← Назад", "de": "← Zurück"},
     # No "or send /move": the prompt is still armed, so retyping is the answer,
@@ -1840,18 +1838,23 @@ _STRINGS: dict[str, dict[str, str]] = {
     # invitation into a community that everyone already in it belongs to.
     # Addressed to one person, which is what the link actually does.
     "invite_line": {
-        "en": "Send 🔗 your link to someone you want to move with:\n{link}",
-        "uk": "Надішли 🔗 своє посилання тому, з ким хочеш рухатись разом:\n"
-              "{link}",
-        "de": "Schick 🔗 deinen Link an jemanden, mit dem du dich bewegen willst:\n{link}",
+        "uk": "Надішли 🔗 своє посилання для руху з новими людьми:\n{link}",
+        "en": "Send 🔗 your link to move with new people:\n{link}",
+        "de": "Schick 🔗 deinen Link, um dich mit neuen Leuten zu bewegen:\n{link}",
     },
-    # Said while the idea is still forming, then not again. The 🤝 screen is
-    # the most-tapped in the bot, so a permanent paragraph there is a
-    # permanent tax on the thing people use most.
+    # Said the first few times the screen opens, then not again. The name
+    # is in the nominative, as an aside: the bot cannot decline a stored
+    # string, and «з Данилом … Данила» would come out as «з Данило …
+    # Данило» — wrong for him, and worse for Oleh or Máster Yu.
     "invite_rule": {
-        "en": "They'll exchange moves with you only — everyone has their own circle.",
-        "uk": "Ця людина обмінюватиметься рухами лише з тобою — у кожного своє коло.",
-        "de": "Sie tauschen Bewegungen nur mit dir — jeder hat seinen eigenen Kreis.",
+        "uk": "Для того, щоб нова людина рухалася не тільки разом з тобою, а й з кимось із твого кола — скажімо, {name}, — їй потрібно активувати не лише твоє посилання, а й посилання цієї людини.",
+        "en": "For a new person to move not only with you but also with someone in your crew — say, {name} — they need to open not just your link but that person's too.",
+        "de": "Damit sich jemand Neues nicht nur mit dir bewegt, sondern auch mit jemandem aus deiner Crew — sagen wir {name} — muss die Person nicht nur deinen Link öffnen, sondern auch den dieser Person.",
+    },
+    "invite_rule_alone": {
+        "uk": "Для того, щоб нова людина рухалася не тільки разом з тобою, а й з кимось іншим із твого кола, їй потрібно активувати не лише твоє посилання, а й посилання тієї людини.",
+        "en": "For a new person to move not only with you but also with someone else in your crew, they need to open not just your link but that person's too.",
+        "de": "Damit sich jemand Neues nicht nur mit dir bewegt, sondern auch mit jemand anderem aus deiner Crew, muss die Person nicht nur deinen Link öffnen, sondern auch den dieser Person.",
     },
     # For the person who just joined, at the one moment "what is my circle"
     # is a live question for them. The second sentence is the part that
@@ -3964,23 +3967,8 @@ _INVITE_HINTS = 3                     # showings of the rule on the 🤝 screen
 
 def _invite_line(cur, tg_id: int, lang: str, name: str | None = None,
                  hint: bool = False) -> str:
-    """The link, and for the first few showings what sending it actually does.
-
-    hint is only passed by the 🤝 screen. /info renders the same line and does
-    not count: the rule belongs where someone is about to invite, and counting
-    a screen they opened to read something else would spend the three showings
-    without ever teaching anything.
-    """
-    line = _t("invite_line", lang, link=_invite_link(cur, tg_id, name))
-    if not hint:
-        return line
-    cur.execute("SELECT invite_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
-    shown = ((cur.fetchone() or {}).get("invite_hints") or 0)
-    if shown >= _INVITE_HINTS:
-        return line
-    cur.execute("UPDATE move_users SET invite_hints = invite_hints + 1 "
-                "WHERE telegram_user_id = %s", (tg_id,))
-    return line + "\n\n" + _t("invite_rule", lang)
+    """The link line. The explainer that used to ride here is _cmd_move's now."""
+    return _t("invite_line", lang, link=_invite_link(cur, tg_id, name))
 
 
 def _cmd_info(cur, conn, tg_id: int, chat_id: int, lang: str, name: str | None = None) -> None:
@@ -3999,29 +3987,42 @@ def _cmd_info(cur, conn, tg_id: int, chat_id: int, lang: str, name: str | None =
 
 
 def _cmd_move(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
-    """The invite link, then the crew as buttons.
+    """The crew screen: your people, your link, and — three times — how it works.
 
-    The crew used to be spelled out as a sentence above the link, with a second
-    line naming the hidden people. Both are now the buttons themselves — the
-    list, and a 🙈 on whoever is hidden — so printing the names as well said
-    everything twice.
+    Three messages, because a message holds one keyboard. The people are
+    inline buttons; the link carries the 🔄 row from the third visit on; and
+    the explainer, while it is still shown, is the one that can carry the main
+    keyboard — after that the keyboard simply isn't re-sent from here, which
+    is fine: it lives in the client, and every confirmation carries it.
+
+    Opened 23 times in its first twelve days, 17 of them by Iv, and never
+    twice by anyone else. Whatever is here has to make sense on one viewing.
     """
     me = _user(cur, tg_id)
-    # Resend the main keyboard here: it lives in the client until a message
-    # carries a new one, so a renamed button stays stale otherwise. /info can't
-    # do it (it uses an inline keyboard), and the old label still routes here via
-    # _LEGACY_BUTTONS — so tapping the stale button upgrades it.
-    #
-    # Both messages are scaffolding, so both are recorded for the morning
-    # sweep. Deleting the first one doesn't take the keyboard with it — a reply
-    # keyboard lives in the client, not in the message that delivered it.
-    _send_t(cur, conn, chat_id,
-            _invite_line(cur, tg_id, lang, me["participant_name"] if me else None, hint=True),
-            reply_markup=_main_kb(lang, tg_id, cur))
-    # The crew goes in its own message: one message can hold either the main
-    # keyboard or an inline one, and the buttons need the inline slot.
+    name = me["participant_name"] if me else None
     text, kb = _crew_pick_view(cur, tg_id, lang)
     _send_t(cur, conn, chat_id, text, reply_markup=kb)
+
+    cur.execute("SELECT invite_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+    shown = ((cur.fetchone() or {}).get("invite_hints") or 0)
+    rows = []
+    # shown counts previous openings, so this one is shown + 1.
+    if shown + 1 >= _INVITE_HINTS:
+        # A new link, for one that went somewhere it shouldn't — not a
+        # first-week problem, and a newcomer's first sight of this screen
+        # should be people, not plumbing.
+        rows.append([{"text": _t("btn_new_link", lang), "callback_data": "mv:invite:rotate"}])
+    _send_t(cur, conn, chat_id, _t("invite_line", lang, link=_invite_link(cur, tg_id, name)),
+            reply_markup={"inline_keyboard": rows} if rows else _main_kb(lang, tg_id, cur))
+
+    if shown < _INVITE_HINTS:
+        cur.execute("UPDATE move_users SET invite_hints = invite_hints + 1 "
+                    "WHERE telegram_user_id = %s", (tg_id,))
+        conn.commit()
+        first = next((n for n in _crew_names(cur, tg_id) if n != "__all__"), None)
+        _send_t(cur, conn, chat_id,
+                _t("invite_rule", lang, name=first) if first else _t("invite_rule_alone", lang),
+                reply_markup=_main_kb(lang, tg_id, cur))
 
 
 # Telegram takes far more, but a wall of buttons stops being a shortcut. Beyond
@@ -4030,62 +4031,27 @@ _CREW_BUTTON_LIMIT = 20
 
 
 def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
-    """The "type a name" prompt, with everyone already in the crew as a button.
-
-    Typing still works and is still the only way to reach someone new; the
-    buttons just remove the need to retype a name the bot already knows —
-    including ones with characters that are awkward to enter.
-    """
+    """Your people, as buttons. The first of the crew screen's messages, and the
+    one the per-person screens come back to."""
     names = [n for n in _crew_names(cur, tg_id) if n != "__all__"]
     if not names:
         # An empty keyboard, not no keyboard: editMessageText without reply_markup
         # leaves the old buttons in place, which would strand names that are gone.
-        cur.execute("SELECT invite_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
-        rows = []
-        if ((cur.fetchone() or {}).get("invite_hints") or 0) >= _INVITE_HINTS:
-            rows.append([{"text": _t("btn_new_link", lang), "callback_data": "mv:invite:rotate"}])
-        return _t("crew_prompt_empty", lang), {"inline_keyboard": rows}
-    cur.execute(
-        "SELECT LOWER(muted_name) AS n, muted_until FROM move_mute "
-        "WHERE telegram_user_id = %s AND muted_until > NOW()",
-        (tg_id,),
-    )
-    hidden = {r["n"]: r["muted_until"] for r in cur.fetchall()}
+        return _t("crew_empty", lang), {"inline_keyboard": []}
     cur.execute("SELECT telegram_user_id, participant_name FROM move_users "
                 "WHERE participant_name = ANY(%s)", (names,))
     rows = sorted(cur.fetchall(), key=lambda r: (r["participant_name"] or "").casefold())
-    kb = [[{"text": ("🙈 " if (r["participant_name"] or "").lower() in hidden else "")
-                    + r["participant_name"],
+    kb = [[{"text": r["participant_name"],
             "callback_data": f"mv:crew:open:{r['telegram_user_id']}"}]
           for r in rows[:_CREW_BUTTON_LIMIT]]
-    # Spell out the hidden ones with their dates. A 🙈 on the button says someone
-    # is hidden but not until when, and "until when" is the thing you come back
-    # to check — hiding is temporary by design.
-    lines = [_t("crew_prompt", lang)]
-    lines += [_t("crew_hidden_line", lang, name=r["participant_name"],
-                 until=_short_date(hidden[(r["participant_name"] or "").lower()]))
-              for r in rows if (r["participant_name"] or "").lower() in hidden]
     # Circles hang off this menu, and only once there is more than one person to
     # divide. With a crew of one the whole idea is noise, so it isn't mentioned.
-    # Introductions sit above circles: both divide the crew, but this one is
-    # about people who aren't in it yet, which is the same question the menu is
-    # already open to answer. Hidden when there is no pair left to suggest,
-    # rather than shown and then apologising.
-    if _intro_pairs(cur, tg_id):
-        kb.append([{"text": _t("btn_intro", lang), "callback_data": "mv:intro:a"}])
-    # A new link, from the third visit on. It is for a link that went somewhere
-    # it shouldn't — a group, a screenshot — which is not a first-week problem,
-    # and a newcomer's first sight of this menu should be people, not plumbing.
-    # invite_hints already counts openings of exactly this screen.
-    cur.execute("SELECT invite_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
-    if ((cur.fetchone() or {}).get("invite_hints") or 0) >= _INVITE_HINTS:
-        kb.append([{"text": _t("btn_new_link", lang), "callback_data": "mv:invite:rotate"}])
     if _circles_enabled(cur, tg_id):
         made = _circles(cur, tg_id)
         kb.append([{"text": _t("btn_circles", lang, n=len(made)) if made
                     else _t("btn_circles_offer", lang),
                     "callback_data": "mv:cr:list:0"}])
-    return "\n".join(lines), {"inline_keyboard": kb}
+    return _t("crew_title", lang), {"inline_keyboard": kb}
 
 
 def _handle_crew_name(cur, conn, tg_id: int, chat_id: int, lang: str, name: str) -> None:
@@ -4222,32 +4188,17 @@ def _intro_partners(cur, tg_id: int, a_id: int) -> list:
     return out
 
 
-def _intro_pick_a_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
-    """Who does the asking. Only people who still have somebody to be asked to."""
-    pairs = _intro_pairs(cur, tg_id)
-    firsts = sorted({(p["telegram_user_id"], p["participant_name"])
-                     for pair in pairs for p in pair},
-                    key=lambda r: (r[1] or "").casefold())
-    if not firsts:
-        return _t("intro_none", lang), {"inline_keyboard": [
-            [{"text": _t("btn_back", lang), "callback_data": "mv:crew:list"}]]}
-    rows = [[{"text": name, "callback_data": f"mv:intro:b:{aid}"}]
-            for aid, name in firsts[:_CREW_BUTTON_LIMIT]]
-    rows.append([{"text": _t("btn_back", lang), "callback_data": "mv:crew:list"}])
-    return _t("intro_pick_a", lang), {"inline_keyboard": rows}
-
-
 def _intro_pick_b_view(cur, tg_id: int, a_id: int, lang: str) -> tuple[str, dict]:
     a = _user(cur, a_id)
     others = _intro_partners(cur, tg_id, a_id)
     if not a or not others:
         return _t("intro_none", lang), {"inline_keyboard": [
-            [{"text": _t("btn_back", lang), "callback_data": "mv:intro:a"}]]}
+            [{"text": _t("btn_back", lang), "callback_data": "mv:crew:list"}]]}
     rows = [[{"text": b["participant_name"],
               "callback_data": f"mv:intro:go:{a_id}:{b['telegram_user_id']}"}]
             for b in sorted(others, key=lambda r: (r["participant_name"] or "").casefold())
             [:_CREW_BUTTON_LIMIT]]
-    rows.append([{"text": _t("btn_back", lang), "callback_data": "mv:intro:a"}])
+    rows.append([{"text": _t("btn_back", lang), "callback_data": f"mv:crew:open:{a_id}"}])
     return _t("intro_pick_b", lang, name=a["participant_name"]), {"inline_keyboard": rows}
 
 
@@ -4402,33 +4353,22 @@ def _crew_target(cur, token: str):
 
 
 def _crew_member_view(cur, tg_id: int, target, lang: str) -> tuple[str, dict]:
-    """What you can do with someone already in your crew, rendered from state.
+    """One person: suggest them to somebody else of yours, or remove them.
 
-    Carries a hidden-until date, so it has to be redrawn after every action —
-    same reason the radar and pause menus are views rather than one-shot sends.
+    The two rows of hide-for-a-day / hide-for-a-week that used to lead this
+    screen are gone. They were the most prominent thing on it and nobody ever
+    pressed them; the mute table keeps working for the rows already in it and
+    they expire on their own.
     """
     tname, tid = target["participant_name"], target["telegram_user_id"]
-    cur.execute(
-        "SELECT muted_until FROM move_mute WHERE telegram_user_id = %s "
-        "AND LOWER(muted_name) = LOWER(%s) AND muted_until > NOW()",
-        (tg_id, tname),
-    )
-    m = cur.fetchone()
-    status = _t("crew_muted_until", lang, until=_short_date(m["muted_until"])) if m else ""
     rows = []
-    if m:
-        rows.append([{"text": _t("btn_unmute", lang), "callback_data": f"mv:crew:unmute:{tid}"}])
-    rows.append([
-        {"text": _t("btn_mute_1d", lang), "callback_data": f"mv:crew:mute1d:{tid}"},
-        {"text": _t("btn_mute_1w", lang), "callback_data": f"mv:crew:mute1w:{tid}"},
-    ])
+    # Only when there is somebody left to suggest them to. Shown and then
+    # apologising is worse than not shown.
+    if _intro_partners(cur, tg_id, tid):
+        rows.append([{"text": _t("btn_intro_person", lang), "callback_data": f"mv:intro:b:{tid}"}])
     rows.append([{"text": _t("btn_remove", lang), "callback_data": f"mv:crew:remove:{tid}"}])
-    # Back, not cancel. This menu asks nothing, so doing nothing was always a way
-    # out — but opening it from the crew list replaces that list in place, and
-    # this puts it back. (An earlier cancel button also cleared await_crew, which
-    # quietly stopped you typing another name; this one leaves the state alone.)
     rows.append([{"text": _t("btn_back", lang), "callback_data": "mv:crew:list"}])
-    return _t("crew_in_list", lang, name=tname, status=status), {"inline_keyboard": rows}
+    return _t("crew_in_list", lang, name=tname, status=""), {"inline_keyboard": rows}
 
 
 def _crew_remove_confirm_view(target, lang: str) -> tuple[str, dict]:
@@ -5865,8 +5805,11 @@ def _handle_callback(cur, conn, cq: dict) -> None:
     if body.startswith("intro:"):
         sub = body[len("intro:"):]
         if sub == "a":
-            _redraw(chat_id, msg_id, *_intro_pick_a_view(cur, tg_id, lang))
+            # The hint's button. It used to open a "pick the first person"
+            # screen; introductions start from a person's own screen now, so
+            # this opens the crew and lets them tap one.
             _answer(cq["id"])
+            _cmd_move(cur, conn, tg_id, chat_id, lang)
             return
         if sub.startswith("b:"):
             _redraw(chat_id, msg_id, *_intro_pick_b_view(cur, tg_id, int(sub[2:]), lang))
@@ -5884,7 +5827,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 _send_t(cur, conn, chat_id, _t("intro_already", lang))
                 _answer(cq["id"])
                 return
-            _redraw_markup(chat_id, msg_id, {})
+            _redraw(chat_id, msg_id, *_crew_pick_view(cur, tg_id, lang))
             _send_t(cur, conn, chat_id,
                     _t("intro_sent", lang, a=a["participant_name"] if a else a_s,
                        b=b["participant_name"] if b else b_s))

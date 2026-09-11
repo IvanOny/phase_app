@@ -412,6 +412,12 @@ def _describe_callback(cur, data: str) -> str:
         return f"🌍 language → {rest}"
     if head == "gender":
         return f"🌍 gender → {rest}"
+    if head == "onb":
+        labels = {"q1:y": "yes to more movement", "q1:n": "NO to more movement",
+                  "q2:y": "yes to moving with people", "q2:n": "NO to moving with people",
+                  "bye": "BYE — left at the door", "back:1": "back to question 1",
+                  "back:2": "back to question 2"}
+        return "🚪 onboarding: " + labels.get(rest, rest)
     if head == "langmenu":
         return "🌍 language menu"
     if head == "intro":
@@ -435,7 +441,7 @@ def _describe_callback(cur, data: str) -> str:
         action, _, target = rest.partition(":")
         labels = {"open": "open", "remove": "remove?", "removeok": "REMOVE",
                   "back": "back", "list": "back to list", "accept": "accept invite",
-                  "decline": "decline invite", "cancel": "cancel",
+                  "decline": "DECLINE invite", "cancel": "cancel",
                   "mute1d": "hide 1 day", "mute1w": "hide 1 week", "unmute": "show again",
                   "addback": "add back"}
         label = labels.get(action, action)
@@ -719,6 +725,56 @@ _STRINGS: dict[str, dict[str, str]] = {
               "{tagline}\n"
               "Machen wir das zusammen.",
     },
+    # ── onboarding: two questions before a name ──────────────────────
+    #
+    # Iv's design. The first message names who sent the link, because that
+    # is the reason the person is here and the only trust available; then
+    # two yes/no questions about what Move is for, then the name, then
+    # (Ukrainian only) the pronoun. Somebody who arrives with no link gets
+    # the same thing minus the first clause.
+    "onb_hello_by": {
+        "uk": "👋 Привіт!\nЛаскаво просимо до Move за запрошенням від {by}.\n\nДавай з'ясуємо, наскільки Move може бути для тебе корисний.\n\nMove спонукає додати більше фізичного руху у твоє життя. Тобі це доречно?",
+        "en": "👋 Hi!\nWelcome to Move — {by} invited you.\n\nLet's see whether Move is something for you.\n\nMove nudges you to put more physical movement into your life. Is that something you want?",
+        "de": "👋 Hallo!\nWillkommen bei Move — {by} hat dich eingeladen.\n\nSchauen wir, ob Move etwas für dich ist.\n\nMove bringt dich dazu, mehr Bewegung in dein Leben zu holen. Willst du das?",
+    },
+    "onb_hello": {
+        "uk": "👋 Привіт!\nЛаскаво просимо до Move.\n\nДавай з'ясуємо, наскільки Move може бути для тебе корисний.\n\nMove спонукає додати більше фізичного руху у твоє життя. Тобі це доречно?",
+        "en": "👋 Hi!\nWelcome to Move.\n\nLet's see whether Move is something for you.\n\nMove nudges you to put more physical movement into your life. Is that something you want?",
+        "de": "👋 Hallo!\nWillkommen bei Move.\n\nSchauen wir, ob Move etwas für dich ist.\n\nMove bringt dich dazu, mehr Bewegung in dein Leben zu holen. Willst du das?",
+    },
+    "onb_q2": {
+        "uk": "Move допомагає бути на зв'язку з близькими людьми і обмінюватись з ними рухами. Хочеш так?",
+        "en": "Move keeps you in touch with the people close to you by trading moves with them. Want that?",
+        "de": "Move hält dich mit den Menschen in Kontakt, die dir nahe sind — ihr tauscht Bewegungen aus. Willst du das?",
+    },
+    # The exit. «Бувай!» is the last thing said; the person is not
+    # registered, not in anyone's crew, and nobody is told. The other
+    # button is a way back for the mis-tap, which is most of them.
+    "onb_bye": {
+        "uk": "Шкода, що нам не по дорозі. На цьому обриваємо реєстрацію...",
+        "en": "Sorry we're not a match. Stopping the registration here...",
+        "de": "Schade, dass es nicht passt. Die Registrierung endet hier...",
+    },
+    "btn_yes": {
+        "uk": "Так",
+        "en": "Yes",
+        "de": "Ja",
+    },
+    "btn_no": {
+        "uk": "Ні",
+        "en": "No",
+        "de": "Nein",
+    },
+    "btn_bye": {
+        "uk": "Бувай!",
+        "en": "Bye!",
+        "de": "Tschüss!",
+    },
+    "btn_back_step": {
+        "uk": "Почекай... Повернутись на крок назад",
+        "en": "Wait... Go back a step",
+        "de": "Moment... Einen Schritt zurück",
+    },
     "ask_name": {"en": "What would you like to be called?", "uk": "Як тебе називати?", "de": "Wie möchtest du genannt werden?"},
     # The one gesture the whole product depends on, and the one nobody is born
     # knowing. Both ways of doing it, because holding through a long take is the
@@ -779,13 +835,31 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Bewegung von außerhalb deiner Crew, so oft du willst — und kann "
               "deine anonym zeigen. Tippe 📡 Radar.",
     },
-    "welcome": {
-        "en": "Welcome, {name}! 👋\n\nNext: add your crew with 🤝 Move with.\nThey'll see every move you log — and you'll see theirs.",
-        "uk": "Вітаємо, {name}! 👋\n"
-              "\n"
-              "Далі: додай своє коло через 🤝 Рух разом.\n"
-              "Вони бачитимуть кожен твій рух — а ти їхні.",
-        "de": "Willkommen, {name}! 👋\n\nAls Nächstes: Füge deine Crew über 🤝 Bewegen mit hinzu.\nSie sehen jede deiner Bewegungen — und du ihre.",
+    # Step five, for somebody who arrived through a link. Told to record,
+    # because somebody is about to be there to see it. The sentence about
+    # {by} is exactly true: the video is held and delivered on approval.
+    "welcome_linked": {
+        "uk": "Вітаємо, {name}! 👋\n\nТепер запиши на відео будь-який рух: присяди, плавання, штанга, розтяжка, танці. {by} побачить твоє відео, щойно підтвердить, що ви рухаєтесь разом.\n\nТи можеш записати лише один рух на день.",
+        "en": "Welcome, {name}! 👋\n\nNow record any move on video: squats, a swim, the barbell, stretching, dancing. {by} will see it as soon as they confirm you're moving together.\n\nYou can record one move a day.",
+        "de": "Willkommen, {name}! 👋\n\nNimm jetzt irgendeine Bewegung auf Video auf: Kniebeugen, Schwimmen, Langhantel, Dehnen, Tanzen. {by} sieht es, sobald bestätigt ist, dass ihr euch zusammen bewegt.\n\nDu kannst eine Bewegung pro Tag aufnehmen.",
+    },
+    # Step five, for somebody who arrived alone. Told to invite, not to
+    # record: recording into an empty crew is the thing the confirmation
+    # then has to apologise for. The recording instruction arrives with
+    # their first connection instead — the moment there is someone to
+    # record for.
+    "welcome_solo": {
+        "uk": "Вітаємо, {name}! 👋\n\nMove — це рухи, якими ти ділишся з близькими людьми. Спершу поклич когось: надішли це посилання тому, з ким хочеш рухатись разом:\n\n{link}\n\nКоли вони його відкриють, ти отримаєш запит. Підтверди — і бачитимете рухи одне одного.",
+        "en": "Welcome, {name}! 👋\n\nMove is moves you share with the people close to you. First, bring someone in: send this link to whoever you want to move with:\n\n{link}\n\nWhen they open it you'll get a request. Confirm it and you'll each see the other's moves.",
+        "de": "Willkommen, {name}! 👋\n\nMove sind Bewegungen, die du mit den Menschen teilst, die dir nahe sind. Hol zuerst jemanden dazu: schick diesen Link, wem du willst:\n\n{link}\n\nWenn sie ihn öffnen, bekommst du eine Anfrage. Bestätige sie, und ihr seht gegenseitig eure Bewegungen.",
+    },
+    # Appended to «тепер рухаєтесь разом» for whichever side of a new
+    # connection has never recorded a move. Data, not path: right for the
+    # solo arrival on their first link, silent for anyone with moves.
+    "first_move_hint": {
+        "uk": "Тепер запиши на відео будь-який рух: присяди, плавання, штанга, розтяжка, танці. {name} його побачить.\n\nТи можеш записати лише один рух на день.",
+        "en": "Now record any move on video: squats, a swim, the barbell, stretching, dancing. {name} will see it.\n\nYou can record one move a day.",
+        "de": "Nimm jetzt irgendeine Bewegung auf Video auf: Kniebeugen, Schwimmen, Langhantel, Dehnen, Tanzen. {name} sieht sie.\n\nDu kannst eine Bewegung pro Tag aufnehmen.",
     },
     "already_registered": {"en": "You're already registered as {name}.", "uk": "Ти вже в Move як {name}.", "de": "Du bist bereits als {name} registriert."},
     "renamed": {"en": "Done! You're now {name}.", "uk": "Готово! Тепер ти {name}.", "de": "Fertig! Du bist jetzt {name}."},
@@ -821,6 +895,14 @@ _STRINGS: dict[str, dict[str, str]] = {
     # moment on navigation — this one can be forwarded where it stands. The
     # confirmation carries the reply keyboard, so an inline button was never
     # available here anyway: one reply_markup per message.
+    # Recorded while a crew request is still open. «Надішли це комусь»
+    # would be wrong for them — they did, and they are waiting. The move is
+    # held and delivered when the other side accepts.
+    "logged_pending": {
+        "uk": "✓ Рух записано{streak}\n\n{name} побачить його, щойно підтвердить.",
+        "en": "✓ Move logged{streak}\n\n{name} will see it as soon as they confirm.",
+        "de": "✓ Bewegung erfasst{streak}\n\n{name} sieht sie, sobald bestätigt ist.",
+    },
     "logged_alone": {
         "en": "✓ Move logged{streak}\n\n"
               "Nobody saw it — there is no one in your Move yet. Send this "
@@ -1027,6 +1109,11 @@ _STRINGS: dict[str, dict[str, str]] = {
               "натисни 🤝 і надішли йому посилання.",
         "de": "📡 Radar kommt später — es zeigt deine Bewegung Leuten, die du "
               "nicht kennst. Füg erst jemanden hinzu, den du kennst: tipp 🤝 an.",
+    },
+    "own_state_pending": {
+        "uk": "{name} побачить цей рух, щойно підтвердить.",
+        "en": "🔒 {name} will see this move as soon as they confirm.",
+        "de": "🔒 {name} sieht diese Bewegung, sobald bestätigt ist.",
     },
     "own_state_alone": {
         "en": "🔒 Nobody can see this move — there is no one in your Move yet.",
@@ -1448,7 +1535,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "Dieser Vorschlag gilt nicht mehr.",
     },
     "btn_accept": {"en": "🤝 Accept", "uk": "🤝 Погодитись", "de": "🤝 Annehmen"},
-    "btn_decline": {"en": "Not now", "uk": "Не зараз", "de": "Nicht jetzt"},
+    # «Відхилити», not «Не зараз»: a decline is final now. It clears the
+    # requester's pending state so their confirmations stop promising this
+    # person will see anything. Nothing is said to them — a decline stays with
+    # whoever pressed it.
+    "btn_decline": {"en": "Decline", "uk": "Відхилити", "de": "Ablehnen"},
     "crew_added_back": {
         "en": "🤝 Added {name} — you're now moving together.",
         "uk": "🤝 {name} додано — тепер рухаєтесь разом.",
@@ -1712,7 +1803,7 @@ _STRINGS: dict[str, dict[str, str]] = {
     "day_word_many": {"en": "days", "uk": "днів", "de": "Tage"},
     "summary_zaps": {"en": "⚡ Lightnings received: {n}", "uk": "⚡ Отримано блискавок: {n}", "de": "⚡ Erhaltene Blitze: {n}"},
     "btn_new_link": {
-        "en": "🔄 New link", "uk": "🔄 Нове посилання", "de": "🔄 Neuer Link",
+        "en": "🔄 Refresh link", "uk": "🔄 Оновити посилання", "de": "🔄 Link erneuern",
     },
     "invite_rotated": {
         "en": "🔄 Done — here's your new link. The old one no longer works.\n\n{link}",
@@ -1721,18 +1812,12 @@ _STRINGS: dict[str, dict[str, str]] = {
               "{link}",
         "de": "🔄 Fertig — hier ist dein neuer Link. Der alte funktioniert nicht mehr.\n\n{link}",
     },
+    # «автоматично» described the bot before approval existed. Nothing is
+    # automatic: they get a request, and answer it.
     "invite_text": {
-        "en": "🔗 Share this link with anyone you'd like to move with:\n\n{link}\n\n"
-              "When they tap it, you'll be added to each other's crew automatically — "
-              "whether they're new here or already registered.",
-        "uk": "🔗 Надішли це посилання тому, з ким хочеш рухатись разом:\n"
-              "\n"
-              "{link}\n"
-              "\n"
-              "Коли вони його відкриють, ти автоматично потрапиш у їхнє коло, а вони — у твоє. Неважливо, нові вони тут чи вже зареєстровані.",
-        "de": "🔗 Teile diesen Link mit allen, mit denen du dich bewegen möchtest:\n\n{link}\n\n"
-              "Wenn sie ihn antippen, landet ihr automatisch in der Crew des anderen — "
-              "egal ob neu hier oder schon registriert.",
+        "uk": "🔗 Надішли це посилання тому, з ким хочеш рухатись разом:\n\n{link}\n\nКоли вони його відкриють, ти отримаєш запит. Підтверди — і бачитимете рухи одне одного. Неважливо, нові вони тут чи вже зареєстровані.",
+        "en": "🔗 Share this link with anyone you'd like to move with:\n\n{link}\n\nWhen they open it you'll get a request. Confirm it and you'll each see the other's moves — whether they're new here or already registered.",
+        "de": "🔗 Teile diesen Link mit allen, mit denen du dich bewegen möchtest:\n\n{link}\n\nWenn sie ihn öffnen, bekommst du eine Anfrage. Bestätige sie, und ihr seht gegenseitig eure Bewegungen — egal ob neu hier oder schon registriert.",
     },
     # Only asked of Ukrainian speakers — the other two languages don't inflect here.
     "ask_gender": {"uk": "Як про тебе писати?", "en": "How should we refer to you?",
@@ -2237,6 +2322,11 @@ def _own_view(cur, entry_id: int, lang: str, tg_id: int) -> tuple[str, dict]:
     elif _crew_names(cur, tg_id):
         key = "own_state_crew"
     else:
+        u = _user(cur, tg_id)
+        waiting = _user(cur, u["pending_inviter_id"]) if u and u["pending_inviter_id"] else None
+        if waiting and waiting["participant_name"]:
+            return (_t("own_state_pending", lang, name=waiting["participant_name"]),
+                    _logged_kb(cur, entry_id, lang, tg_id))
         key = "own_state_alone"
     return _t(key, lang), _logged_kb(cur, entry_id, lang, tg_id)
 
@@ -3427,8 +3517,16 @@ def _finish_move(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str,
         # using it here made the no-crew case unreachable.
         body = _t("logged", lang, streak=suffix)
     else:
-        body = _t("logged_alone", lang, streak=suffix,
-                  link=_invite_link(cur, tg_id))
+        # Alone, but maybe not for long: a request they sent is still open, and
+        # "send this to somebody" would be wrong — they did, and are waiting.
+        # The move is held and goes to that person on approval.
+        u = _user(cur, tg_id)
+        waiting = _user(cur, u["pending_inviter_id"]) if u and u["pending_inviter_id"] else None
+        if waiting and waiting["participant_name"]:
+            body = _t("logged_pending", lang, streak=suffix, name=waiting["participant_name"])
+        else:
+            body = _t("logged_alone", lang, streak=suffix,
+                      link=_invite_link(cur, tg_id))
 
     # Uploaded a file rather than recording a bubble? Show the gesture — but as
     # part of this confirmation, never as a message of its own.
@@ -3682,26 +3780,70 @@ def _check_milestone(cur, conn, user, streak: int) -> None:
 
 # ── commands ─────────────────────────────────────────────────────────────────
 
+def _gender_kb(lang: str) -> dict:
+    return {"inline_keyboard": [[
+        {"text": _t("gender_m", lang), "callback_data": "mv:gender:m"},
+        {"text": _t("gender_f", lang), "callback_data": "mv:gender:f"},
+    ]]}
+
+
+def _onb_kb(step: int, lang: str) -> dict:
+    return {"inline_keyboard": [[
+        {"text": _t("btn_yes", lang), "callback_data": f"mv:onb:q{step}:y"},
+        {"text": _t("btn_no", lang), "callback_data": f"mv:onb:q{step}:n"},
+    ]]}
+
+
+def _onb_q1_text(cur, tg_id: int, lang: str) -> str:
+    """The first message: hello, who sent the link if anyone did, question one."""
+    u = _user(cur, tg_id)
+    by = _user(cur, u["pending_inviter_id"]) if u and u["pending_inviter_id"] else None
+    if by and by["participant_name"]:
+        return _t("onb_hello_by", lang, by=by["participant_name"])
+    return _t("onb_hello", lang)
+
+
 def _ask_first_question(cur, conn, tg_id: int, chat_id: int, code: str,
                         pending: str | None = None) -> None:
-    """Start (or resume) registration at the first question that still matters.
+    """Start (or resume) registration at the first question.
 
-    Ukrainian inflects past-tense verbs, so it needs to know before it can say
-    "X рухався" — that question earns its place. English and German don't, so
-    they go straight to the name.
+    Two yes/no questions come before the name now, and the pronoun question
+    Ukrainian needs comes after it: opening a conversation with a stranger by
+    asking their gender was the worst possible first screen, and the name is
+    the thing people are actually here to give.
     """
-    if code == "uk":
-        _set_state(cur, tg_id, f"await_gender:{pending}" if pending else "await_gender")
-        conn.commit()
-        _send(chat_id, _t("ask_gender", code), reply_markup={"inline_keyboard": [[
-            {"text": _t("gender_m", code), "callback_data": "mv:gender:m"},
-            {"text": _t("gender_f", code), "callback_data": "mv:gender:f"},
-        ]]})
-        return
-    _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
+    _set_state(cur, tg_id, "await_q1")
     conn.commit()
-    _send(chat_id, _t("start_body", code, tagline=_t("tagline", code)),
-          reply_markup=_force_reply(tg_id, code, "name_placeholder"))
+    _send(chat_id, _onb_q1_text(cur, tg_id, code), reply_markup=_onb_kb(1, code))
+
+
+def _finish_registration(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
+    """The last step, once the name (and, for Ukrainian, the pronoun) is in.
+
+    Two endings. Somebody who came through a link is told to record, because
+    somebody is about to be there to see it, and the request goes to that
+    person now. Somebody who came alone is told to invite, with their link in
+    the message — recording into an empty crew is the thing the confirmation
+    would otherwise have to apologise for.
+    """
+    _clear_state(cur, tg_id)
+    conn.commit()
+    u = _user(cur, tg_id)
+    if not u or not u["participant_name"]:
+        return
+    name = u["participant_name"]
+    inviter = _user(cur, u["pending_inviter_id"]) if u["pending_inviter_id"] else None
+    if inviter and inviter["participant_name"]:
+        body = (_t("welcome_linked", lang, name=name, by=inviter["participant_name"])
+                + "\n\n" + _t("how_to_record", lang))
+        _send(chat_id, body, reply_markup=_main_kb(lang, tg_id, cur))
+        _log("👋 Move: registered\n• " + name
+             + f"\n• via {inviter['participant_name']}'s link")
+        _apply_invite(cur, conn, tg_id, chat_id, lang, inviter["telegram_user_id"])
+        return
+    _send(chat_id, _t("welcome_solo", lang, name=name, link=_invite_link(cur, tg_id, name)),
+          reply_markup=_main_kb(lang, tg_id, cur))
+    _log("👋 Move: registered\n• " + name)
 
 
 def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = "") -> None:
@@ -3735,34 +3877,23 @@ def _cmd_start(cur, conn, tg_id: int, chat_id: int, lang: str, payload: str = ""
         cur.execute("UPDATE move_users SET pending_inviter_id = %s "
                     "WHERE telegram_user_id = %s", (inviter_id, tg_id))
 
-    # /start can arrive again in the middle of onboarding — Telegram's own START
-    # button, or the invite link tapped a second time. Resetting to the language
-    # question threw away both the step they'd reached and, when the second
-    # /start carried no payload, the inviter waiting in the state key. Keep both:
-    # the step they're on, and whichever inviter we know about.
-    state = _get_state(cur, tg_id) or ""
-    step = state.split(":")[0] if state else ""
-    pending = state.split(":", 1)[1] if ":" in state else None
-    if inviter_id is not None:
-        pending = str(inviter_id)
+    # /start can arrive again in the middle of onboarding — Telegram's own
+    # START button, or the invite link tapped a second time. Re-ask the step
+    # they are actually on rather than starting over. The inviter is already
+    # on the row, so nothing here has to carry it.
     code = _norm_lang((_user(cur, tg_id) or {}).get("language_code")) or lang
-
-    # Re-ask the question they're actually on. /start arrives again mid-flow all
-    # the time — Telegram's own START button, or the invite link tapped twice.
+    step = (_get_state(cur, tg_id) or "").split(":")[0]
+    if step == "await_q2":
+        _send(chat_id, _t("onb_q2", code), reply_markup=_onb_kb(2, code))
+        return
     if step == "await_name":
-        _set_state(cur, tg_id, f"{step}:{pending}" if pending else step)
-        conn.commit()
         _send(chat_id, _t("ask_name", code),
               reply_markup=_force_reply(tg_id, code, "name_placeholder"))
         return
-
-    # Nobody is asked to choose a language any more. Telegram sends one with
-    # every update and it was already the default here, so the first thing a new
-    # person saw was a question about the bot instead of anything about Move —
-    # and two of the first ten stopped there and were never heard from again,
-    # because every nudge needs a name and they never got as far as giving one.
-    # It stays changeable in Settings, where someone who wants it will look.
-    _ask_first_question(cur, conn, tg_id, chat_id, code, pending)
+    if step == "await_gender":
+        _send(chat_id, _t("ask_gender", code), reply_markup=_gender_kb(code))
+        return
+    _ask_first_question(cur, conn, tg_id, chat_id, code)
 
 
 def _invite_code(cur, tg_id: int) -> str:
@@ -3909,7 +4040,11 @@ def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     if not names:
         # An empty keyboard, not no keyboard: editMessageText without reply_markup
         # leaves the old buttons in place, which would strand names that are gone.
-        return _t("crew_prompt_empty", lang), {"inline_keyboard": []}
+        cur.execute("SELECT invite_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+        rows = []
+        if ((cur.fetchone() or {}).get("invite_hints") or 0) >= _INVITE_HINTS:
+            rows.append([{"text": _t("btn_new_link", lang), "callback_data": "mv:invite:rotate"}])
+        return _t("crew_prompt_empty", lang), {"inline_keyboard": rows}
     cur.execute(
         "SELECT LOWER(muted_name) AS n, muted_until FROM move_mute "
         "WHERE telegram_user_id = %s AND muted_until > NOW()",
@@ -3938,6 +4073,13 @@ def _crew_pick_view(cur, tg_id: int, lang: str) -> tuple[str, dict]:
     # rather than shown and then apologising.
     if _intro_pairs(cur, tg_id):
         kb.append([{"text": _t("btn_intro", lang), "callback_data": "mv:intro:a"}])
+    # A new link, from the third visit on. It is for a link that went somewhere
+    # it shouldn't — a group, a screenshot — which is not a first-week problem,
+    # and a newcomer's first sight of this menu should be people, not plumbing.
+    # invite_hints already counts openings of exactly this screen.
+    cur.execute("SELECT invite_hints FROM move_users WHERE telegram_user_id = %s", (tg_id,))
+    if ((cur.fetchone() or {}).get("invite_hints") or 0) >= _INVITE_HINTS:
+        kb.append([{"text": _t("btn_new_link", lang), "callback_data": "mv:invite:rotate"}])
     if _circles_enabled(cur, tg_id):
         made = _circles(cur, tg_id)
         kb.append([{"text": _t("btn_circles", lang, n=len(made)) if made
@@ -4349,20 +4491,55 @@ def _cmd_invite(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     _send_t(cur, conn, chat_id, _t("invite_text", lang, link=link), reply_markup=_invite_kb(lang))
 
 
-def _spend_pending_invite(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
-    """Honour the link this person arrived through, once they have a name.
+def _catch_up(cur, conn, from_id: int, to_id: int, crew_wide_only: bool) -> int:
+    """Deliver from_id's recent moves to to_id, now that they are crew.
 
-    Cleared before the request goes out, not after: a Telegram failure must not
-    leave a live invite that fires again on the next rename.
+    A move is a pointer to its original message, and _deliver re-sends from
+    there — it is how circles and radar already show the same video to
+    different people at different times. So a move recorded while a request
+    was open is not lost; it simply had nobody to go to yet.
+
+    Bounded to a day: older than that it arrives as history, under a date
+    divider, with buttons the sweep is about to take. Returns how many went.
+
+    crew_wide_only is for the other direction — the approver's own move going
+    to the newcomer. A move addressed to a circle stays with that circle.
     """
-    u = _user(cur, tg_id)
-    inviter_id = u["pending_inviter_id"] if u else None
-    if not inviter_id:
-        return
-    cur.execute("UPDATE move_users SET pending_inviter_id = NULL WHERE telegram_user_id = %s",
-                (tg_id,))
-    conn.commit()
-    _apply_invite(cur, conn, tg_id, chat_id, lang, inviter_id)
+    u = _user(cur, from_id)
+    if not u or not u["participant_name"]:
+        return 0
+    cur.execute(
+        "SELECT e.id, e.chat_id AS src_chat, e.message_id AS src_msg, e.text_body "
+        "FROM move_entries e "
+        "WHERE e.telegram_user_id = %s "
+        "  AND e.created_at > NOW() - INTERVAL '24 hours' "
+        "  AND e.pending_since IS NULL "
+        "  AND (%s = FALSE OR e.is_crew_wide) "
+        "  AND NOT EXISTS (SELECT 1 FROM move_forwards f "
+        "                  WHERE f.entry_id = e.id AND f.recipient_tg_id = %s "
+        "                    AND f.kind = 'move') "
+        "ORDER BY e.created_at",
+        (from_id, crew_wide_only, to_id),
+    )
+    sent = 0
+    for e in cur.fetchall():
+        media = (e["src_chat"], e["src_msg"]) if e["src_msg"] is not None else None
+        if _deliver(cur, conn, u, e["id"], media, e["text_body"], only={to_id}):
+            sent += 1
+    return sent
+
+
+def _first_move_hint(cur, tg_id: int, lang: str, other_name: str) -> str:
+    """The recording instruction, for somebody who has never recorded.
+
+    Appended to «тепер рухаєтесь разом» on whichever side of a new link has no
+    moves. Data, not path: right for the solo arrival on their first link,
+    silent for anyone who already knows how.
+    """
+    cur.execute("SELECT 1 FROM move_entries WHERE telegram_user_id = %s LIMIT 1", (tg_id,))
+    if cur.fetchone():
+        return ""
+    return "\n\n" + _t("first_move_hint", lang, name=other_name) + "\n\n" + _t("how_to_record", lang)
 
 
 def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: int) -> None:
@@ -4395,12 +4572,18 @@ def _apply_invite(cur, conn, tg_id: int, chat_id: int, lang: str, inviter_id: in
     if cur.fetchone():
         _send_t(cur, conn, chat_id, _t("invite_already", lang, name=inviter["participant_name"]))
         return
+    # The request is open from here until the owner answers. While it is, the
+    # requester's confirmations say this person will see the move, and the
+    # moves are held for them; an answer either way closes it.
+    cur.execute("UPDATE move_users SET pending_inviter_id = %s WHERE telegram_user_id = %s",
+                (inviter_id, tg_id))
+    conn.commit()
     ilang = _norm_lang(inviter["language_code"])
     _send(inviter["chat_id"] or inviter_id,
           _t("crew_request_link", ilang, name=me["participant_name"]),
           reply_markup={"inline_keyboard": [[
               {"text": _t("btn_accept", ilang), "callback_data": f"mv:crew:accept:{tg_id}"},
-              {"text": _t("btn_decline", ilang), "callback_data": "mv:crew:decline"},
+              {"text": _t("btn_decline", ilang), "callback_data": f"mv:crew:decline:{tg_id}"},
           ]]})
     _send_t(cur, conn, chat_id, _t("crew_request_sent", lang, name=inviter["participant_name"]))
     _log(f"🔗 Move: invite link opened\n• {me['participant_name']} → {inviter['participant_name']}")
@@ -4887,21 +5070,22 @@ def _handle_move_webhook(body: dict, conn) -> None:
             "UPDATE move_users SET participant_name = %s, language_code = %s WHERE telegram_user_id = %s",
             (text.strip(), lang, tg_id),
         )
-        _clear_state(cur, tg_id)
-        conn.commit()
-        key = "welcome" if base_state == "await_name" else "renamed"
-        body = _t(key, lang, name=text.strip())
-        if base_state == "await_name":
-            # Only on the way in. A rename doesn't need to be taught the gesture.
-            body += "\n\n" + _t("how_to_record", lang)
-        _send(chat_id, body, reply_markup=_main_kb(lang, tg_id, cur))
-        _log(("👋 Move: registered\n• " if base_state == "await_name" else "✏️ Move: renamed\n• ")
-             + text.strip())
-        # A deep-link invite waited for the name; connect them now. Read from
-        # the person rather than from the state that asked the question, so a
-        # registration finished tomorrow still honours the link that started it.
-        if base_state == "await_name":
-            _spend_pending_invite(cur, conn, tg_id, chat_id, lang)
+        if base_state == "await_rename":
+            _clear_state(cur, tg_id)
+            conn.commit()
+            _send(chat_id, _t("renamed", lang, name=text.strip()),
+                  reply_markup=_main_kb(lang, tg_id, cur))
+            _log("✏️ Move: renamed\n• " + text.strip())
+            return
+        # Registering. Ukrainian still has one question left — the pronoun its
+        # past tense needs — and it comes here, after the name, not before hello.
+        u = _user(cur, tg_id)
+        if lang == "uk" and not (u and u["gender"]):
+            _set_state(cur, tg_id, "await_gender")
+            conn.commit()
+            _send(chat_id, _t("ask_gender", lang), reply_markup=_gender_kb(lang))
+            return
+        _finish_registration(cur, conn, tg_id, chat_id, lang)
         return
 
     # Naming a circle sits up here with the other name entry, and above the
@@ -5408,6 +5592,60 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         _answer(cq["id"])
         return
 
+    if body.startswith("onb:"):
+        # The two questions before the name, with an exit and a way back.
+        sub = body[len("onb:"):]
+        state = _get_state(cur, tg_id) or ""
+        if sub == "q1:y":
+            _set_state(cur, tg_id, "await_q2")
+            conn.commit()
+            _redraw(chat_id, msg_id, _t("onb_q2", lang), _onb_kb(2, lang))
+            _answer(cq["id"])
+            return
+        if sub == "q2:y":
+            _set_state(cur, tg_id, "await_name")
+            conn.commit()
+            # A ForceReply cannot be an edit, so the question's buttons go and
+            # the name prompt is its own message.
+            _redraw_markup(chat_id, msg_id, {})
+            _send(chat_id, _t("ask_name", lang),
+                  reply_markup=_force_reply(tg_id, lang, "name_placeholder"))
+            _answer(cq["id"])
+            return
+        if sub in ("q1:n", "q2:n"):
+            step = sub[1]
+            _redraw(chat_id, msg_id, _t("onb_bye", lang), {"inline_keyboard": [
+                [{"text": _t("btn_bye", lang), "callback_data": "mv:onb:bye"}],
+                [{"text": _t("btn_back_step", lang), "callback_data": f"mv:onb:back:{step}"}],
+            ]})
+            _answer(cq["id"])
+            return
+        if sub.startswith("back:"):
+            step = sub[len("back:"):]
+            if step == "1":
+                _set_state(cur, tg_id, "await_q1")
+                conn.commit()
+                _redraw(chat_id, msg_id, _onb_q1_text(cur, tg_id, lang), _onb_kb(1, lang))
+            else:
+                _set_state(cur, tg_id, "await_q2")
+                conn.commit()
+                _redraw(chat_id, msg_id, _t("onb_q2", lang), _onb_kb(2, lang))
+            _answer(cq["id"])
+            return
+        if sub == "bye":
+            # As if they had never arrived. Only for somebody without a name —
+            # a registered person tapping a stale button keeps their account.
+            cur.execute("DELETE FROM move_state WHERE telegram_user_id = %s", (tg_id,))
+            cur.execute("DELETE FROM move_users WHERE telegram_user_id = %s "
+                        "AND participant_name IS NULL", (tg_id,))
+            conn.commit()
+            _redraw_markup(chat_id, msg_id, {})
+            _answer(cq["id"])
+            _log("👋 Move: left at the door\n• " + str(tg_id))
+            return
+        _answer(cq["id"])
+        return
+
     if body.startswith("gender:"):
         # Registration's first question for Ukrainian, and nothing has ever
         # caught the answer: the buttons were sent, the tap did nothing, and the
@@ -5420,17 +5658,17 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         if g not in ("m", "f"):
             _answer(cq["id"])
             return
-        state = _get_state(cur, tg_id) or ""
-        pending = state.split(":", 1)[1] if ":" in state else None
         cur.execute("UPDATE move_users SET gender = %s WHERE telegram_user_id = %s", (g, tg_id))
-        _set_state(cur, tg_id, f"await_name:{pending}" if pending else "await_name")
         conn.commit()
         _answer(cq["id"])
         # The question is answered, so its buttons go: left up, they invite a
         # second answer to something already settled.
         _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id})
-        _send(chat_id, _t("start_body", lang, tagline=_t("tagline", lang)),
-              reply_markup=_force_reply(tg_id, lang, "name_placeholder"))
+        # Last question of registration, so this is where registration ends.
+        # A stale button from before the reorder — tapped by someone who is
+        # already registered — has updated the pronoun and has nothing else to do.
+        if (_get_state(cur, tg_id) or "") == "await_gender":
+            _finish_registration(cur, conn, tg_id, chat_id, lang)
         return
 
     if body.startswith("lang:"):
@@ -5741,9 +5979,19 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _redraw(chat_id, msg_id, *_crew_pick_view(cur, tg_id, lang))
             _answer(cq["id"])
             return
-        if sub in ("cancel", "decline"):
+        if sub in ("cancel", "decline") or sub.startswith("decline:"):
             # A decline stays between the button and the person who pressed it —
             # telling the asker they were turned down only invites a second ask.
+            # But it closes the request: the asker's confirmations were saying
+            # this person would see their moves on approval, and that stops
+            # being true now. They are not told; they simply stop being told.
+            if sub.startswith("decline:"):
+                who = sub[len("decline:"):]
+                if who.isdigit():
+                    cur.execute("UPDATE move_users SET pending_inviter_id = NULL "
+                                "WHERE telegram_user_id = %s AND pending_inviter_id = %s",
+                                (int(who), tg_id))
+                    conn.commit()
             _send_t(cur, conn, chat_id, _t("cancelled", lang))
             return
         action, _, name = sub.partition(":")
@@ -5757,9 +6005,18 @@ def _handle_callback(cur, conn, cq: dict) -> None:
                 _send_t(cur, conn, chat_id, _t("crew_request_gone", lang))
                 return
             rname = requester["participant_name"]
-            _send_t(cur, conn, chat_id, _t("crew_added_back", lang, name=rname))
+            rid = requester["telegram_user_id"]
+            # The request is answered. Their confirmations stop saying "X will
+            # see it when they confirm", because X now simply sees it.
+            cur.execute("UPDATE move_users SET pending_inviter_id = NULL "
+                        "WHERE telegram_user_id = %s AND pending_inviter_id = %s", (rid, tg_id))
+            conn.commit()
+            _send_t(cur, conn, chat_id,
+                    _t("crew_added_back", lang, name=rname)
+                    + _first_move_hint(cur, tg_id, lang, rname))
             rlang = _norm_lang(requester["language_code"])
-            note = _t("crew_request_accepted", rlang, name=me["participant_name"])
+            note = (_t("crew_request_accepted", rlang, name=me["participant_name"])
+                    + _first_move_hint(cur, rid, rlang, me["participant_name"]))
             # Only on their very first connection, which is the one moment "what
             # is my circle" is a live question for them — and the only time the
             # sentence is true without qualification. On a second connection
@@ -5770,6 +6027,14 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             if ((cur.fetchone() or {}).get("n") or 0) <= 1:
                 note += "\n\n" + _tgen("crew_first_note", rlang, me["gender"], name=me["participant_name"])
             _send(requester["chat_id"] or requester["telegram_user_id"], note)
+            # What was held while the request was open, both ways. Theirs to me:
+            # everything from the last day. Mine to them: only what went to the
+            # whole crew — a move addressed to a circle stays with its circle.
+            got = _catch_up(cur, conn, rid, tg_id, crew_wide_only=False)
+            gave = _catch_up(cur, conn, tg_id, rid, crew_wide_only=True)
+            if got or gave:
+                _log(f"📦 Move: held moves delivered\n• {rname} → {me['participant_name']}: {got}"
+                     f"\n• {me['participant_name']} → {rname}: {gave}")
             # A new link is the one moment a first introducible pair can appear,
             # and it appears for both sides at once. Only the clock starts here;
             # the hint itself goes out a day later, from the cron.

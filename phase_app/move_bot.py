@@ -364,6 +364,13 @@ def _describe_callback(cur, data: str) -> str:
                   "del": "circles: delete", "tog": "circles: toggle member"}
         label = labels.get(act, f"circles: {act}")
         return f"👥 {label}{name}" + (f" · {who(member)}" if member else "")
+    if head == "cmt":
+        return f"💬 add a caption · move #{rest}"
+    if head == "cundo":
+        return f"💬 undo caption · move #{rest}"
+    if head == "note":
+        entry, _, to = rest.partition(":")
+        return f"💬 write to {who(to)} · move #{entry}"
     if head == "zap":
         # Names the author: the standalone "X → Y" log this replaced is gone, and
         # who you cheered is the part worth reading.
@@ -937,6 +944,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "💬 Saved with today's move. Your crew isn't notified again this late.",
         "uk": "💬 Збережено до сьогоднішнього руху. Твоє коло вже не сповіщаємо.",
         "de": "💬 Bei der heutigen Bewegung gespeichert. Deine Crew wird jetzt nicht mehr benachrichtigt.",
+    },
+    # Typed while the picker is still open. The caption is kept on the move
+    # and goes out under it, to whoever the move goes to, when it goes.
+    "comment_saved_pending": {
+        "en": "💬 Added — it goes out with the video.",
+        "uk": "💬 Додано — піде разом із відео.",
+        "de": "💬 Ergänzt — geht mit dem Video raus.",
     },
     "comment_saved_alone": {
         "en": "💬 Saved with today's move. Nobody sees it yet — add someone with 🤝 Move with.",
@@ -3512,6 +3526,26 @@ def _finish_move(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str,
 
     names = _deliver(cur, conn, user, entry_id,
                      (src_chat, src_msg) if media else None, text_body, only=only)
+    # A caption typed while the move was still in the picker was kept on the
+    # row with nowhere to go. Now there is somewhere: under each copy that just
+    # went out, as the author's first line, the way a caption always lands.
+    cur.execute("SELECT comment FROM move_entries WHERE id = %s", (entry_id,))
+    held = (cur.fetchone() or {}).get("comment")
+    if held:
+        cur.execute("SELECT recipient_tg_id FROM move_forwards "
+                    "WHERE entry_id = %s AND kind = 'move'", (entry_id,))
+        for f in cur.fetchall():
+            rid = f["recipient_tg_id"]
+            cur.execute(
+                "INSERT INTO move_comments (entry_id, from_tg_id, to_tg_id, body) "
+                "SELECT %s, %s, %s, %s WHERE NOT EXISTS "
+                "  (SELECT 1 FROM move_comments WHERE entry_id = %s AND from_tg_id = %s "
+                "     AND to_tg_id = %s)",
+                (entry_id, tg_id, rid, held, entry_id, tg_id, rid),
+            )
+            if cur.rowcount:
+                _talk_deliver(cur, conn, entry_id, tg_id, rid, to_only=rid)
+        conn.commit()
 
     streak = _streak(cur, tg_id, today)
     suffix = _t("streak_suffix", lang, days=streak) if streak > 1 else ""
@@ -3736,10 +3770,14 @@ def _attach_comment(cur, conn, tg_id: int, chat_id: int, text: str,
             delivered += 1
             _talk_deliver(cur, conn, e["id"], tg_id, rid, to_only=rid)
     conn.commit()
+    cur.execute("SELECT pending_since FROM move_entries WHERE id = %s", (e["id"],))
+    pending = (cur.fetchone() or {}).get("pending_since") is not None
     # Say where it went — "added" alone invites the question "added where?"
     lang = _lang(cur, tg_id)
     if delivered:
         key = "comment_added"
+    elif pending:
+        key = "comment_saved_pending"    # still in the picker; goes out with it
     elif fresh:
         key = "comment_saved_alone"      # nobody in the crew yet
     else:
@@ -5273,6 +5311,36 @@ def _handle_move_webhook(body: dict, conn) -> None:
     # 5) a plain text soon after a move is its comment
     if _attach_comment(cur, conn, tg_id, chat_id, text):
         return
+
+    # 5b) Ordering, before rule 6 gets a look. Rule 6 sends plain text to the
+    # author of the newest move you were *shown*, on the argument that this is
+    # what you are talking about — and it is, unless the newest thing in your
+    # chat is your own move. Олександра recorded, the picker asked «Кому
+    # надіслати?», she typed the caption 77 seconds later, and it went to Iv as
+    # a line in a two-hour-old thread about *his* move. She then had to tap 💬
+    # and type it again.
+    #
+    # So: if my own newest move is more recent than the newest copy I received,
+    # AND it is still in the picker or inside the comment window, a plain text
+    # is its caption — stored on a pending move and delivered when the move
+    # goes, delivered at once on one already sent. Outside that, rule 6 has it
+    # as before: once the caption window has closed, the last move you were
+    # shown is again the best guess for what you mean.
+    if not text.startswith("/"):
+        cur.execute("SELECT id, created_at, pending_since FROM move_entries "
+                    "WHERE telegram_user_id = %s ORDER BY created_at DESC, id DESC LIMIT 1",
+                    (tg_id,))
+        mine = cur.fetchone()
+        cur.execute("SELECT f.created_at FROM move_forwards f "
+                    "WHERE f.recipient_tg_id = %s AND f.kind = 'move' "
+                    "ORDER BY f.created_at DESC, f.id DESC LIMIT 1", (tg_id,))
+        got = cur.fetchone()
+        if mine and (not got or mine["created_at"] > got["created_at"]):
+            age = (datetime.now(timezone.utc) - mine["created_at"]).total_seconds() / 60
+            if mine["pending_since"] or age <= _COMMENT_WINDOW_MINUTES:
+                if _attach_comment(cur, conn, tg_id, chat_id, text, forced=True,
+                                   entry_id=mine["id"]):
+                    return
 
     # 6) a plain text soon after someone else's move is a comment on it.
     #

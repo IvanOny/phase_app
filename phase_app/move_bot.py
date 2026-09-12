@@ -5801,14 +5801,33 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         # Armed, not sent: the next text goes to this person and nobody else.
         _set_state(cur, tg_id, f"await_note:{entry_id}:{to_id}")
         conn.commit()
-        # No prompt message. A ForceReply has to be a message, that message
-        # takes the reply keyboard away until something brings it back, and the
-        # confirmation that brought it back said what the thread already showed.
-        # The toast carries the whole instruction instead.
         _clear_prompts(cur, tg_id, entry_id)
         conn.commit()
         _answer(cq["id"], _tgen("note_armed", lang, them["gender"],
                                name=them["participant_name"]))
+        # The toast alone was not enough. On the first day two of the three
+        # people who tried to comment tapped 💬, got a toast that was gone in a
+        # second, saw nothing change in the chat, and never typed -- the trace
+        # shows the tap and then silence. Only the one who swipe-replied got
+        # through.
+        #
+        # So the instruction also lands as a message. A plain one, not a
+        # ForceReply: ForceReply hides the reply keyboard until something brings
+        # it back, which is why the message was dropped in the first place. It
+        # is recorded as an 'ask' prompt, the same way _refuse_long records its
+        # complaint, so the comment landing deletes it -- and the sweep gets
+        # anything abandoned.
+        res = _send_t(cur, conn, chat_id,
+                      _tgen("note_armed", lang, them["gender"], name=them["participant_name"]))
+        if res and res.get("message_id"):
+            cur.execute(
+                "INSERT INTO move_forwards "
+                "  (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+                "SELECT %s, %s, %s, %s, 'ask', %s "
+                "WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+                (entry_id, tg_id, chat_id, res["message_id"], tg_id, entry_id),
+            )
+            conn.commit()
         return
 
     # The suggester's side: pick who asks, pick who they ask, send.

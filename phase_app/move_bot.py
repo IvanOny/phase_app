@@ -2728,6 +2728,20 @@ def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = F
     return {"inline_keyboard": rows}
 
 
+def _delete_source(cur, entry_id: int) -> None:
+    """Delete the video the author recorded — the message every copy was made from.
+
+    Undo and the picker's 🗑 both deleted the copies, the picker and the row,
+    and then said «Видалено» with the video still sitting in the author's
+    chat, looking exactly like a move that had gone out. A bot may delete a
+    person's own message in a private chat; this is the one place it should.
+    """
+    cur.execute("SELECT chat_id, message_id FROM move_entries WHERE id = %s", (entry_id,))
+    e = cur.fetchone()
+    if e and e["message_id"] is not None:
+        _api_call("deleteMessage", {"chat_id": e["chat_id"], "message_id": e["message_id"]})
+
+
 def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None = None) -> bool:
     """Take today's move back — delete every copy the bot placed in other chats,
     then drop the entry. Telegram lets a bot delete its own messages for 48h,
@@ -2781,6 +2795,7 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     cur.execute("SELECT chat_id, message_id FROM move_forwards WHERE entry_id = %s", (e["id"],))
     for f in cur.fetchall():
         _api_call("deleteMessage", {"chat_id": f["chat_id"], "message_id": f["message_id"]})
+    _delete_source(cur, e["id"])
     # move_forwards / move_reactions cascade off the entry.
     cur.execute("DELETE FROM move_entries WHERE id = %s", (e["id"],))
     conn.commit()
@@ -5544,6 +5559,9 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             _api_call("deleteMessage", {"chat_id": chat_id, "message_id": msg_id})
             cur.execute("DELETE FROM move_transient WHERE chat_id = %s AND message_id = %s",
                         (chat_id, msg_id))
+            # And the video itself. «Видалено» with the recording still on
+            # screen read as «not really» — which it was.
+            _delete_source(cur, entry_id)
             cur.execute("DELETE FROM move_entries WHERE id = %s AND telegram_user_id = %s",
                         (entry_id, tg_id))
             conn.commit()

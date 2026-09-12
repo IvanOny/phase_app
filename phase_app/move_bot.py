@@ -1329,13 +1329,21 @@ _STRINGS: dict[str, dict[str, str]] = {
     # Not "your circle" in any form. Once the crew can be divided into named
     # circles, "коло" means a part of it, and using the same word for the whole
     # made the one line that had to be unambiguous the most confusing one.
-    "btn_pick_all": {"en": "Everyone in Move with you",
-                     "uk": "Всі, хто в Move разом з тобою",
-                     "de": "Alle, die mit dir in Move sind"},
+    # 🤝 because that is the crew's symbol everywhere else — the menu button,
+    # «🤝 Ти рухаєшся разом з». Groups carry no icon, radar carries 📡, so the
+    # three kinds of target read differently at a glance.
+    "btn_pick_all": {"en": "🤝 Everyone in Move with you",
+                     "uk": "🤝 Всі, хто в Move разом з тобою",
+                     "de": "🤝 Alle, die mit dir in Move sind"},
     "btn_pick_send": {"en": "→ Send", "uk": "→ Надіслати", "de": "→ Senden"},
-    # The word that stands in for the whole crew on the Send button, where
-    # "Всі, хто в Move разом з тобою" would not fit beside it.
-    "pick_all_short": {"en": "everyone", "uk": "всім", "de": "alle"},
+    # What stands in for each target on the Send button, where the full row
+    # labels would not fit. Icon and word both: «всім + 📡» mixed a word for
+    # one target with an icon for the other.
+    "pick_all_short": {"en": "🤝 everyone", "uk": "🤝 всім", "de": "🤝 alle"},
+    "pick_radar_short": {"en": "📡 radar", "uk": "📡 радар", "de": "📡 Radar"},
+    # Nothing ticked. Possible now that «Всі» can be unticked like any other
+    # row; Send says so rather than sending, and pick_none explains on the tap.
+    "pick_nobody_short": {"en": "choose who", "uk": "обери кому", "de": "wähle wen"},
     # First few times only. The picker looks like a menu where tapping a line
     # does something, and a beta tester tapped a circle and waited: the move
     # sat unaddressed because nothing said the choice needed confirming.
@@ -1370,9 +1378,9 @@ _STRINGS: dict[str, dict[str, str]] = {
     "btn_pick_cancel": {"en": "🗑 Delete", "uk": "🗑 Видалити",
                         "de": "🗑 Löschen"},
     "pick_none": {
-        "en": "Choose at least one circle first.",
-        "uk": "Спершу обери хоча б одну групу.",
-        "de": "Wähl zuerst mindestens einen Kreis.",
+        "en": "Tick who should get it first — a group, or everyone.",
+        "uk": "Спершу відміть, кому піде рух — групу або всіх.",
+        "de": "Hak zuerst an, wer sie bekommt — eine Gruppe oder alle.",
     },
     "pick_expired": {
         "en": "📹 Nothing was chosen, so your move went to everyone in your crew.",
@@ -2992,16 +3000,24 @@ def _picked_circles(cur, entry_id: int) -> set[int]:
     return {r["circle_id"] for r in cur.fetchall()}
 
 
-def _pick_audience(cur, tg_id: int, entry_id: int) -> set | None:
-    """Telegram ids this move was addressed to, or None for the whole crew.
+_NOBODY = frozenset()                 # ticked nothing: not the crew, not a group
 
-    No circle chosen means everyone — the same thing the picker shows as
-    selected when nothing else is, and the same thing an unanswered picker
-    falls back to. One rule, three places.
+
+def _pick_audience(cur, tg_id: int, entry_id: int) -> set | None:
+    """Telegram ids this move was addressed to, None for the whole crew, or
+    _NOBODY when nothing is ticked.
+
+    Groups ticked → their members. None ticked and pick_all on → everyone,
+    which is the default and what an unanswered picker falls back to. None
+    ticked and pick_all off → nobody yet: «Всі» is a checkbox now, and a
+    checkbox that can be unticked has to have an unticked state that means
+    something. It means Send refuses until something is chosen.
     """
     picked = _picked_circles(cur, entry_id)
     if not picked:
-        return None
+        cur.execute("SELECT pick_all FROM move_entries WHERE id = %s", (entry_id,))
+        row = cur.fetchone()
+        return None if (row is None or row["pick_all"]) else _NOBODY
     cur.execute("SELECT DISTINCT member_tg_id FROM move_circle_members "
                 "WHERE circle_id = ANY(%s)", (list(picked),))
     return {r["member_tg_id"] for r in cur.fetchall()}
@@ -3023,13 +3039,16 @@ def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
         on = c["id"] in picked
         rows.append([{"text": f"{'✅' if on else '⬜'} {c['name']} · {c['members']}",
                       "callback_data": f"mv:pk:c:{entry_id}:{c['id']}"}])
+    cur.execute("SELECT pick_all FROM move_entries WHERE id = %s", (entry_id,))
+    all_on = bool(not picked and (cur.fetchone() or {}).get("pick_all"))
     if not crew_used:
-        # A round marker, not a checkbox, because this row cannot be unticked.
-        # "Everyone" is what an empty selection means, so tapping it when it is
-        # already on has nothing to do — and wearing the same ⬜/✅ as the
-        # circles above it, it promised a toggle it could never perform. Round
-        # says: pick one of these, and this is the one you get by default.
-        rows.append([{"text": f"{'🔘' if not picked else '⚪'} {_t('btn_pick_all', lang)}",
+        # A checkbox like the rows above it, and it behaves like one: tapping
+        # ✅ gives ⬜, which is a move addressed to nobody until something else
+        # is ticked. It was a round marker for a while, because a ⬜/✅ that
+        # could not be unticked was a promise the row could not keep; the fix
+        # is to keep the promise. Ticking a group still unticks this, and
+        # unticking the last group still brings it back.
+        rows.append([{"text": f"{'✅' if all_on else '⬜'} {_t('btn_pick_all', lang)}",
                       "callback_data": f"mv:pk:all:{entry_id}"}])
     # Always shown. It used to appear only alongside the crew-wide move, on the
     # argument that "fewer of my own people, plus every stranger" is not a thing
@@ -3048,18 +3067,22 @@ def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
     # otherwise invisible until the move has already gone to the wrong people:
     # on 9 September a circle was ticked, the row never arrived, and the move
     # went to the whole crew with nothing on screen having said it would.
+    # Every target the same way: icon and word. Groups are named, the crew
+    # is «🤝 всім», radar is «📡 радар»; nothing ticked says «обери кому».
+    parts = []
     if picked:
         names = [c["name"] for c in _circles(cur, tg_id) if c["id"] in picked]
         who = ", ".join(names)
-        if len(who) > 24:
-            who = f"{len(names)} × 👥"
-    elif not crew_used:
-        who = _t("pick_all_short", lang)
-    else:
-        who = ""                       # nothing to send to yet; the refusal says so
-    if who and radar:
-        who += " + 📡"
-    label = _t("btn_pick_send", lang) + (f" · {who}" if who else "")
+        parts.append(who if len(who) <= 24 else f"{len(names)} × 👥")
+    elif all_on and not crew_used:
+        parts.append(_t("pick_all_short", lang))
+    if radar and parts:
+        # Radar rides along with a crew audience; on its own there is nothing
+        # to send, and the label should say so rather than name a target the
+        # button is about to refuse.
+        parts.append(_t("pick_radar_short", lang))
+    who = " + ".join(parts) if parts else _t("pick_nobody_short", lang)
+    label = _t("btn_pick_send", lang) + f" · {who}"
     rows.append([{"text": label, "callback_data": f"mv:pk:go:{entry_id}"}])
     # Recording a move used to end in a confirmation carrying 🗑; with circles it
     # ends here instead, so this is where taking it back has to live.
@@ -5486,11 +5509,27 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             if cid in _picked_circles(cur, entry_id):
                 cur.execute("DELETE FROM move_entry_circles WHERE entry_id = %s "
                             "AND circle_id = %s", (entry_id, cid))
+                # Unticking the last group brings «Всі» back, as it always did:
+                # nothing chosen is the default, and the default is everyone.
+                if not _picked_circles(cur, entry_id):
+                    cur.execute("UPDATE move_entries SET pick_all = TRUE WHERE id = %s",
+                                (entry_id,))
             else:
                 cur.execute("INSERT INTO move_entry_circles (entry_id, circle_id) "
                             "VALUES (%s, %s) ON CONFLICT DO NOTHING", (entry_id, cid))
+                # A group and «Всі» are exclusive: a subset was chosen.
+                cur.execute("UPDATE move_entries SET pick_all = FALSE WHERE id = %s",
+                            (entry_id,))
         elif act == "all":
-            cur.execute("DELETE FROM move_entry_circles WHERE entry_id = %s", (entry_id,))
+            # A real toggle now. On → off leaves nothing ticked; off → on
+            # clears any groups, since «Всі» and a group are exclusive.
+            cur.execute("SELECT pick_all FROM move_entries WHERE id = %s", (entry_id,))
+            was_on = (cur.fetchone() or {}).get("pick_all") and not _picked_circles(cur, entry_id)
+            if was_on:
+                cur.execute("UPDATE move_entries SET pick_all = FALSE WHERE id = %s", (entry_id,))
+            else:
+                cur.execute("DELETE FROM move_entry_circles WHERE entry_id = %s", (entry_id,))
+                cur.execute("UPDATE move_entries SET pick_all = TRUE WHERE id = %s", (entry_id,))
         elif act == "r":
             cur.execute("UPDATE move_entries SET radar_ok = NOT COALESCE(radar_ok, FALSE) "
                         "WHERE id = %s", (entry_id,))
@@ -5516,7 +5555,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
             return
         elif act == "go":
             audience = _pick_audience(cur, tg_id, entry_id)
-            if audience is None and _used_today(cur, tg_id)[0]:
+            if audience is _NOBODY or (audience is None and _used_today(cur, tg_id)[0]):
                 # Nothing ticked, and "everyone" is not on the table — either it
                 # already went out today, or a second held move beat this one to
                 # it. Whatever the history, the thing to do now is tick a circle,

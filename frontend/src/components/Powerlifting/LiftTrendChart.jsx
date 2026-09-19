@@ -78,7 +78,14 @@ function bucketChartData(points, lifts) {
   const buckets = Array.from({ length: n }, (_, i) => {
     const start = t0 + i * width;
     const end = i === n - 1 ? t1 + DAY_MS : t0 + (i + 1) * width;
-    const b = { date: isoDay(start), dateEnd: isoDay(Math.min(end, t1 + DAY_MS) - 1) };
+    // Labelled by the middle of the window, not its start: the label sits
+    // under the point and names the middle of what it averaged. Labelled by
+    // start, the chart visibly ended eleven days before the last session.
+    const b = {
+      date: isoDay((start + end) / 2),
+      dateStart: isoDay(start),
+      dateEnd: isoDay(Math.min(end, t1 + DAY_MS) - 1),
+    };
     LIFT_ORDER.forEach(l => { b[l] = null; b[`_${l}`] = null; b[`_${l}Sessions`] = []; });
     b._start = start; b._end = end;
     return b;
@@ -246,6 +253,43 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
     }
   });
 
+  // Where two lines end in the same window at nearly the same height, their
+  // end labels stack into one smear ("Squadlift"). Resolved here, once, because
+  // each dot renders alone and cannot see the others: the labels sharing a last
+  // index are sorted top to bottom and pushed apart to a minimum gap, in
+  // pixels, using the same domain the y-axis draws with. The nudge is the
+  // label's alone -- the dot stays on the line.
+  const labelDy = {};
+  {
+    const shownVals = [];
+    liftsToShow.forEach(l => data.forEach(p => { if (p[l] != null) shownVals.push(p[l]); }));
+    if (shownVals.length) {
+      const lo = Math.min(...shownVals) - 10, hi = Math.max(...shownVals) + 10;
+      const pxPerKg = (260 - 8 - 24 - 30) / Math.max(hi - lo, 1);   // plot height / y-range
+      const MIN_GAP = 13;
+      const byIndex = {};
+      liftsToShow.forEach(l => {
+        const i = lastIndexByLift[l];
+        if (i == null) return;
+        (byIndex[i] ||= []).push({ lift: l, y: (hi - data[i][l]) * pxPerKg });
+      });
+      Object.values(byIndex).forEach(group => {
+        if (group.length < 2) return;
+        group.sort((a, b) => a.y - b.y);
+        let prev = -Infinity;
+        group.forEach(g => {
+          const placed = Math.max(g.y, prev + MIN_GAP);
+          labelDy[g.lift] = placed - g.y;
+          prev = placed;
+        });
+        // Centre the group on where it would have sat, so the top label is
+        // not the only one that keeps its place.
+        const drift = (group.reduce((a, g) => a + labelDy[g.lift], 0)) / group.length;
+        group.forEach(g => { labelDy[g.lift] -= drift; });
+      });
+    }
+  }
+
   function getDotPos(cx, cy) {
     if (!chartRef.current) return null;
     const svgRect = chartRef.current.querySelector('svg')?.getBoundingClientRect();
@@ -302,7 +346,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
           {isLast && (
             <text
               x={cx + dotR + 4}
-              y={cy + 4}
+              y={cy + 4 + (labelDy[lift] || 0)}
               fill={cfg.color}
               fontSize={11}
               fontWeight={600}
@@ -401,7 +445,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                   const val = tooltip.data[lift];
                   const sessions = tooltip.data[`_${lift}Sessions`] || [];
                   if (val == null) return null;
-                  const window = `${formatDate(tooltip.data.date)} – ${formatDate(tooltip.data.dateEnd)}`;
+                  const window = `${formatDate(tooltip.data.dateStart)} – ${formatDate(tooltip.data.dateEnd)}`;
                   const setLabel = set => !set ? '' : set.bodyweight != null
                     ? `${(set.bodyweight * PULLUP_BW_FACTOR).toFixed(1)}${set.load ? ` + ${set.load}` : ''} × ${set.reps}`
                     : `${set.load}×${set.reps}`;

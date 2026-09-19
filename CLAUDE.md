@@ -183,9 +183,10 @@ Move's trace collapses into one message per person per day (`move_log_summary`),
 edited as the day goes on. ⚠️ reports, crashes and moderation still send their own
 messages so they aren't buried.
 
-**There is no ⚡.** A crew copy carries one button, 💬; the acknowledgement is a
-comment. Dropped 19 Sep 2026 — `move_reactions` keeps the history, nothing
-writes to it. The read receipt that the first ⚡ used to provide is
+**No ⚡ on crew copies.** A crew copy carries one button, 💬; the acknowledgement
+is a comment. Dropped 19 Sep 2026. Radar copies keep the ⚡ — a stranger's move
+has no route back to a name, so it is the only positive gesture available —
+and the author is told at once, anonymously; there is no morning report. The read receipt that the first ⚡ used to provide is
 `move_users.last_seen_at`, stamped on every incoming update: a recipient who did
 anything in Move after their copy arrived has seen it, and Undo is refused by
 name («Олександра вже заходила в Move після цього»).

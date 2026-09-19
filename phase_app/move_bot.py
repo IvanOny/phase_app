@@ -1236,6 +1236,28 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "Diese Bewegung gibt es nicht mehr.",
     },
     # For a ⚡ button that was on screen before the change.
+    # Radar copies only. See _copy_kb.
+    "zap_btn": {
+        "uk": "⚡",
+        "en": "⚡",
+        "de": "⚡",
+    },
+    "zap_sent": {
+        "uk": "⚡ надіслано!",
+        "en": "⚡ sent!",
+        "de": "⚡ gesendet!",
+    },
+    "zap_already": {
+        "uk": "⚡ вже надіслано",
+        "en": "You already sent a ⚡",
+        "de": "Du hast schon ein ⚡ gesendet",
+    },
+    # To the author, at once, with no name: radar is anonymous both ways.
+    "radar_zap_received": {
+        "uk": "⚡ Хтось із радару підтримав твій рух.",
+        "en": "⚡ Someone on radar cheered your move.",
+        "de": "⚡ Jemand vom Radar hat deine Bewegung beklatscht.",
+    },
     "zap_gone": {
         "uk": "⚡ більше немає — напиши коментар, це важить більше.",
         "en": "⚡ is gone — write a comment instead, it means more.",
@@ -2697,7 +2719,8 @@ def _refresh_move_kb(cur, entry_id: int, person_id: int, lang: str) -> None:
 
 
 def _copy_kb(entry_id: int, lang: str = "en", radar: bool = False,
-             note_to: int | None = None, note_name: str | None = None) -> dict:
+             note_to: int | None = None, note_name: str | None = None,
+             zapped: bool = False) -> dict:
     """The buttons under somebody's copy of a move.
 
     Crew copies carry one thing: a way to write to the author. The ⚡ that used
@@ -2705,11 +2728,15 @@ def _copy_kb(entry_id: int, lang: str = "en", radar: bool = False,
     and nothing else, but Iv chose words over a tap, and a bot with one button
     under every video is easier to read than one with two.
 
-    A radar copy carries block and report instead: this came from a stranger,
-    there is deliberately no route back to a name, and what the viewer needs
-    is a way to never see them again.
+    A radar copy keeps its ⚡, and is the only copy that does. A stranger's move
+    has deliberately no route back to a name, so a comment is impossible — and
+    without the ⚡ the only things left under it were block and report. One
+    positive gesture stays where it is the only one available. Below it, block
+    and report: what the viewer needs when they never want to see them again.
     """
     rows = []
+    if radar and not zapped:
+        rows.append([{"text": _t("zap_btn", lang), "callback_data": f"mv:zap:{entry_id}"}])
     if note_to:
         rows.append([{"text": _t("btn_note_to", lang, name=note_name) if note_name
                       else _t("btn_note", lang),
@@ -3231,7 +3258,7 @@ def _tell_about_circles(cur, conn, tg_id: int, chat_id: int, lang: str) -> bool:
 # instead — and it explained radar needing a crew to ten people who all have
 # one. What applies depends on the account, so the note is assembled per
 # person.
-_NEWS_KEY = "2026-09-11-intros"
+_NEWS_KEY = "2026-09-20-no-zap"
 _NEWS_STRINGS = {
     "news_head": {
         "uk": "✨ Що нового в Move",
@@ -3272,6 +3299,31 @@ _NEWS_STRINGS = {
         "de": "• Radar kommt wieder, sobald jemand in deinem Move ist.",
     },
     # Everyone: the one thing that shipped this time.
+    # 20 September: the ⚡ is gone from crew copies. Everyone gets this one —
+    # every button under every move changed, and a change nobody is told
+    # about reads as breakage.
+    "news_nozap": {
+        "uk": "• ⚡ більше немає. Замість блискавки — коментар: натисни 💬 під рухом або просто напиши у відповідь. Слово важить більше за тап.",
+        "en": "• The ⚡ is gone. Instead of a tap, a comment: 💬 under the move, or just reply to it. A word means more than a tap.",
+        "de": "• Das ⚡ ist weg. Statt eines Tipps ein Kommentar: 💬 unter der Bewegung, oder einfach darauf antworten. Ein Wort zählt mehr als ein Tipp.",
+    },
+    "news_nozap_report": {
+        "uk": "• Ранкового звіту про ⚡ теж більше не буде.",
+        "en": "• The morning ⚡ report is gone with it.",
+        "de": "• Den morgendlichen ⚡-Bericht gibt es auch nicht mehr.",
+    },
+    "news_nozap_undo": {
+        "uk": "• «Скасувати» тепер знає, хто вже заходив у Move після твого руху — і скаже, хто саме.",
+        "en": "• Undo now knows who has been in Move since your move arrived — and says who.",
+        "de": "• Rückgängig weiß jetzt, wer seit deiner Bewegung in Move war — und sagt wer.",
+    },
+    # Only for somebody with radar on: to everyone else it is a paragraph
+    # about a screen they do not have.
+    "news_nozap_radar": {
+        "uk": "• У радарі ⚡ лишається — це єдиний спосіб підтримати незнайомця. Коли хтось із радару підтримає твій рух, ти дізнаєшся одразу.",
+        "en": "• On radar the ⚡ stays — it's the only way to cheer a stranger. When someone on radar cheers yours, you hear right away.",
+        "de": "• Im Radar bleibt das ⚡ — es ist der einzige Weg, einen Fremden anzufeuern. Wenn jemand vom Radar deine Bewegung anfeuert, erfährst du es sofort.",
+    },
     "news_intros": {
         "uk": "• Тепер можна познайомити двох людей зі свого кола: обом прийде пропозиція рухатися разом. Вирішать вони — Move тобі не повідомить, що саме.",
         "en": "• You can now introduce two people from your crew: both get the suggestion to move together. They decide — Move won't tell you what they chose.",
@@ -3302,25 +3354,16 @@ _STRINGS.update(_NEWS_STRINGS)
 def _news_for(cur, tg_id: int, lang: str) -> str:
     """The note this particular person should get, or "" for nothing at all.
 
-    Two conditions, and between them exactly one message reaches each person.
-
-    Nobody without a pair: for them this release reduced to "you can introduce
-    two people" plus "the button appears later" — an announcement of something
-    they cannot do, about people they do not have. intro_hint says it properly
-    at the moment it becomes true for them.
-
-    And nobody who has not been hinted yet, because the hint is the better of
-    the two messages — it carries the button, this only names the menu — and
-    it is going out on the same cron run, three jobs later. Whoever is already
-    hinted gets this instead: they know what the feature is, so what is left to
-    tell them is that it is new, which is what a release note is for.
+    This release goes to everyone: every button under every move changed. One
+    bullet is conditional — the radar ⚡ only means something to somebody who
+    has radar on.
     """
     u = _user(cur, tg_id)
-    if not u or not u["intro_hinted_at"]:
+    if not u:
         return ""
-    if not _intro_pairs(cur, tg_id):
-        return ""
-    bullets = [_t("news_intros", lang), _t("news_intros_where", lang)]
+    bullets = [_t("news_nozap", lang), _t("news_nozap_report", lang), _t("news_nozap_undo", lang)]
+    if (u["radar_freq"] or "never") != "never":
+        bullets.append(_t("news_nozap_radar", lang))
     foot = _t("news_foot_beta" if tg_id in _beta_ids() else "news_foot", lang)
     return "\n".join([_t("news_head", lang), ""] + bullets + ["", foot])
 
@@ -5484,12 +5527,45 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         return
 
     if body.startswith("zap:"):
-        # Buttons sent before the ⚡ was dropped are still on people's screens.
-        # A tap says where the acknowledgement lives now, and the keyboard is
-        # redrawn without the button so it is not asked twice.
         entry_id = int(body[4:])
-        _answer(cq["id"], _t("zap_gone", lang), alert=True)
-        _refresh_move_kb(cur, entry_id, tg_id, lang)
+        # Radar copy or crew copy? Only the radar one still has a ⚡ that means
+        # anything; a crew ⚡ left on screen from before the change is told where
+        # the acknowledgement lives now and redrawn without it.
+        cur.execute("SELECT chat_id, message_id FROM move_forwards "
+                    "WHERE entry_id = %s AND recipient_tg_id = %s AND kind = 'radar'",
+                    (entry_id, tg_id))
+        radar_copy = cur.fetchone()
+        if not radar_copy:
+            _answer(cq["id"], _t("zap_gone", lang), alert=True)
+            _refresh_move_kb(cur, entry_id, tg_id, lang)
+            return
+        cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
+        owner = cur.fetchone()
+        if not owner:
+            _answer(cq["id"], _t("note_gone", lang))
+            _api_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": msg_id})
+            return
+        cur.execute(
+            "INSERT INTO move_reactions (entry_id, reactor_tg_id) VALUES (%s, %s) "
+            "ON CONFLICT DO NOTHING RETURNING entry_id",
+            (entry_id, tg_id),
+        )
+        fresh = cur.fetchone() is not None
+        conn.commit()
+        _answer(cq["id"], _t("zap_sent" if fresh else "zap_already", lang))
+        # The ⚡ goes; block and report stay.
+        _api_call("editMessageReplyMarkup", {
+            "chat_id": chat_id, "message_id": msg_id,
+            "reply_markup": _copy_kb(entry_id, lang=lang, radar=True, zapped=True),
+        })
+        # The author hears now, anonymously. There is no morning report any
+        # more, and a radar ⚡ is the only evidence that sharing to strangers
+        # did anything at all — kept from them it would be a gesture into a void.
+        if fresh:
+            a = _user(cur, owner["telegram_user_id"])
+            if a:
+                _send(a["chat_id"] or a["telegram_user_id"],
+                      _t("radar_zap_received", _norm_lang(a["language_code"])))
         return
 
     if body.startswith("pk:"):

@@ -3303,22 +3303,15 @@ _NEWS_STRINGS = {
     # every button under every move changed, and a change nobody is told
     # about reads as breakage.
     "news_nozap": {
-        "uk": "• ⚡ більше немає. Замість блискавки — коментар: натисни 💬 під рухом або просто напиши у відповідь. Слово важить більше за тап.",
-        "en": "• The ⚡ is gone. Instead of a tap, a comment: 💬 under the move, or just reply to it. A word means more than a tap.",
-        "de": "• Das ⚡ ist weg. Statt eines Tipps ein Kommentar: 💬 unter der Bewegung, oder einfach darauf antworten. Ein Wort zählt mehr als ein Tipp.",
+        "uk": "• Під записаним відео надалі не буде «блискавки» ⚡. Залишиться лише коментар. Слово важить більше за тап.",
+        "en": "• There's no more ⚡ under a recorded video. Only the comment stays. A word means more than a tap.",
+        "de": "• Unter einem aufgenommenen Video gibt es kein ⚡ mehr. Nur der Kommentar bleibt. Ein Wort zählt mehr als ein Tipp.",
     },
     "news_nozap_report": {
         "uk": "• Ранкового звіту про ⚡ теж більше не буде.",
         "en": "• The morning ⚡ report is gone with it.",
         "de": "• Den morgendlichen ⚡-Bericht gibt es auch nicht mehr.",
     },
-    "news_nozap_undo": {
-        "uk": "• «Скасувати» тепер знає, хто вже заходив у Move після твого руху — і скаже, хто саме.",
-        "en": "• Undo now knows who has been in Move since your move arrived — and says who.",
-        "de": "• Rückgängig weiß jetzt, wer seit deiner Bewegung in Move war — und sagt wer.",
-    },
-    # Only for somebody with radar on: to everyone else it is a paragraph
-    # about a screen they do not have.
     "news_nozap_radar": {
         "uk": "• У радарі ⚡ лишається — це єдиний спосіб підтримати незнайомця. Коли хтось із радару підтримає твій рух, ти дізнаєшся одразу.",
         "en": "• On radar the ⚡ stays — it's the only way to cheer a stranger. When someone on radar cheers yours, you hear right away.",
@@ -3361,7 +3354,7 @@ def _news_for(cur, tg_id: int, lang: str) -> str:
     u = _user(cur, tg_id)
     if not u:
         return ""
-    bullets = [_t("news_nozap", lang), _t("news_nozap_report", lang), _t("news_nozap_undo", lang)]
+    bullets = [_t("news_nozap", lang), _t("news_nozap_report", lang)]
     if (u["radar_freq"] or "never") != "never":
         bullets.append(_t("news_nozap_radar", lang))
     foot = _t("news_foot_beta" if tg_id in _beta_ids() else "news_foot", lang)

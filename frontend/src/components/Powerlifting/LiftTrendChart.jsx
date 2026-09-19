@@ -33,6 +33,86 @@ const LIFT_CONFIG = {
 // Squat, bench, deadlift, pull-up, then Total — the order they are read in.
 const LIFT_ORDER = ['squat', 'bench', 'deadlift', 'pullup', 'total'];
 
+// How many points a line has, however many sessions are behind it. The span
+// of the lifts on screen is cut into this many equal windows, and each point
+// is the average e1RM of the sessions that fell in its window — so the chart
+// reads the trend at one fixed density and the x-axis is proportional to
+// time, which a point-per-session axis never was: a two-day gap and a
+// sixteen-day gap used to get the same width. A window with no session stays
+// empty; the line bridges it rather than inventing a value. What each point
+// stands for is one tap away — the tooltip lists the sessions it averaged.
+const BUCKETS = 10;
+const DAY_MS = 86400000;
+
+function isoDay(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+/**
+ * Averages per-session points into BUCKETS equal time windows.
+ *
+ * points: output of buildChartData, one per session, date-ascending.
+ * lifts:  the lifts on screen — the span is theirs, so switching pills
+ *         re-cuts the windows around what is actually shown.
+ *
+ * Each bucket carries, per lift: the average e1RM (or null), and the sessions
+ * behind it for the tooltip. Total is a running best rather than a
+ * measurement, so its bucket value is the last one in the window, not a mean
+ * of running bests.
+ */
+function bucketChartData(points, lifts) {
+  const has = p => lifts.some(l => (l === 'total' ? p.total : p[`_${l}`]) != null);
+  const used = points.filter(has);
+  if (used.length === 0) return [];
+
+  const t0 = Date.parse(used[0].date.split('T')[0]);
+  const t1 = Date.parse(used[used.length - 1].date.split('T')[0]);
+  const span = Math.max(t1 - t0, DAY_MS);          // one session → one day, not zero
+  const n = t1 === t0 ? 1 : BUCKETS;
+  const width = span / n;
+
+  const buckets = Array.from({ length: n }, (_, i) => {
+    const start = t0 + i * width;
+    const end = i === n - 1 ? t1 + DAY_MS : t0 + (i + 1) * width;
+    const b = { date: isoDay(start), dateEnd: isoDay(Math.min(end, t1 + DAY_MS) - 1) };
+    LIFT_ORDER.forEach(l => { b[l] = null; b[`_${l}`] = null; b[`_${l}Sessions`] = []; });
+    b._start = start; b._end = end;
+    return b;
+  });
+
+  for (const p of used) {
+    const t = Date.parse(p.date.split('T')[0]);
+    let i = Math.min(Math.floor((t - t0) / width), n - 1);
+    // Float edges: a session on a boundary belongs to the later window, but
+    // never past the last one.
+    while (i < n - 1 && t >= buckets[i]._end) i++;
+    const b = buckets[i];
+    for (const l of LIFT_ORDER) {
+      const v = l === 'total' ? p.total : p[`_${l}`];
+      if (v == null) continue;
+      b[`_${l}Sessions`].push({ date: p.date, value: v, set: p[`_${l}Set`] ?? null });
+    }
+  }
+
+  for (const b of buckets) {
+    for (const l of LIFT_ORDER) {
+      const ss = b[`_${l}Sessions`];
+      if (ss.length === 0) continue;
+      const v = l === 'total'
+        ? ss[ss.length - 1].value
+        : round1(ss.reduce((a, s) => a + s.value, 0) / ss.length);
+      b[l] = v;
+      b[`_${l}`] = v;
+    }
+    delete b._start; delete b._end;
+  }
+  return buckets;
+}
+
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const [, mm, dd] = (dateStr.split('T')[0] || dateStr).split('-');
@@ -150,15 +230,16 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   // describing something invisible.
   useEffect(() => { openTooltip(null); setHovered(null); }, [selected]);
 
-  const data = buildChartData(sessions, plMetrics);
+  // Only what the pills have on. The y-axis reads dataMin/dataMax off the
+  // series actually rendered, so hiding the rest re-scales the chart around
+  // what is left — which is most of the reason to hide them. The windows are
+  // cut over these lifts' span too, so the ten points cover what is shown.
+  const liftsToShow = selected.filter(l => l !== 'total' || showTotal);
+  const data = bucketChartData(buildChartData(sessions, plMetrics), liftsToShow);
   const hasData = data.length > 0;
 
   // Last index in data where each lift has a non-null value (for inline label placement)
   const lastIndexByLift = {};
-  // Only what the pills have on. The y-axis reads dataMin/dataMax off the
-  // series actually rendered, so hiding the rest re-scales the chart around
-  // what is left — which is most of the reason to hide them.
-  const liftsToShow = selected.filter(l => l !== 'total' || showTotal);
   liftsToShow.forEach(lift => {
     for (let i = data.length - 1; i >= 0; i--) {
       if (data[i][lift] != null) { lastIndexByLift[lift] = i; break; }
@@ -310,47 +391,48 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                 }}
                 onClick={isTouch ? () => openTooltip(null) : undefined}
               >
-                {tooltip.lift === 'total' ? (
-                  <>
-                    <div className="tooltip-row">
-                      <span style={{ color: LIFT_CONFIG.total.color, fontWeight: 600 }}>Total</span>
-                      <strong>{tooltip.data.total}</strong>
-                    </div>
-                    <div className="tooltip-row" style={{ opacity: 0.6 }}>
-                      <span>date</span>
-                      <span>{formatDate(tooltip.data.date)}</span>
-                    </div>
-                  </>
-                ) : (
-                  (() => {
-                    const val = tooltip.data[tooltip.lift];
-                    const topSet = tooltip.data[`_${tooltip.lift}Set`];
-                    const cfg = LIFT_CONFIG[tooltip.lift];
-                    if (val == null) return null;
-                    return (
-                      <>
-                        <div className="tooltip-row">
-                          <span style={{ color: cfg.color, fontWeight: 600 }}>e1RM</span>
-                          <strong>{val}</strong>
+                {(() => {
+                  // A point is a window now, not a session: the average on top,
+                  // the sessions it averaged underneath. The window itself is
+                  // the second line, because "which ten days" is the first
+                  // question a bucket raises.
+                  const lift = tooltip.lift;
+                  const cfg = LIFT_CONFIG[lift];
+                  const val = tooltip.data[lift];
+                  const sessions = tooltip.data[`_${lift}Sessions`] || [];
+                  if (val == null) return null;
+                  const window = `${formatDate(tooltip.data.date)} – ${formatDate(tooltip.data.dateEnd)}`;
+                  const setLabel = set => !set ? '' : set.bodyweight != null
+                    ? `${(set.bodyweight * PULLUP_BW_FACTOR).toFixed(1)}${set.load ? ` + ${set.load}` : ''} × ${set.reps}`
+                    : `${set.load}×${set.reps}`;
+                  return (
+                    <>
+                      <div className="tooltip-row">
+                        <span style={{ color: cfg.color, fontWeight: 600 }}>
+                          {lift === 'total' ? 'Total' : sessions.length > 1 ? 'avg e1RM' : 'e1RM'}
+                        </span>
+                        <strong>{val}</strong>
+                      </div>
+                      <div className="tooltip-row" style={{ opacity: 0.6 }}>
+                        <span>{window}</span>
+                        <span>{sessions.length} {sessions.length === 1 ? 'session' : 'sessions'}</span>
+                      </div>
+                      {lift !== 'total' && sessions.length > 0 && (
+                        <div style={{ borderTop: `1px solid ${colors.border}`, marginTop: 4, paddingTop: 4 }}>
+                          {sessions.map(s => (
+                            <div key={s.date} className="tooltip-row" style={{ opacity: 0.8, gap: 10 }}>
+                              <span>
+                                {formatDate(s.date)}
+                                {s.set && <span style={{ opacity: 0.6 }}> · {setLabel(s.set)}</span>}
+                              </span>
+                              <span>{s.value}</span>
+                            </div>
+                          ))}
                         </div>
-                        {topSet && (
-                          <div className="tooltip-row" style={{ opacity: 0.75 }}>
-                            <span>top set</span>
-                            <span>
-                              {topSet.bodyweight != null
-                                ? `${(topSet.bodyweight * PULLUP_BW_FACTOR).toFixed(1)}${topSet.load ? ` + ${topSet.load}` : ''} × ${topSet.reps}`
-                                : `${topSet.load}×${topSet.reps}`}
-                            </span>
-                          </div>
-                        )}
-                        <div className="tooltip-row" style={{ opacity: 0.6 }}>
-                          <span>date</span>
-                          <span>{formatDate(tooltip.data.date)}</span>
-                        </div>
-                      </>
-                    );
-                  })()
-                )}
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
           </div>

@@ -138,7 +138,7 @@ def _run_daily_jobs(conn) -> dict:
     )
     from phase_app.exercise_bot import send_exercise_overview
     from phase_app.move_bot import (
-        send_move_zap_reports, process_move_radar, send_move_monthly_summaries,
+        process_move_radar, send_move_monthly_summaries,
         send_move_nudges, purge_move_transient, flush_pending_moves,
         send_snack_reports, announce_circles, announce_update, offer_intros,
     )
@@ -168,7 +168,6 @@ def _run_daily_jobs(conn) -> dict:
         # can afford to be last.
         ("move_flush", flush_pending_moves),
         ("move_sweep", purge_move_transient),
-        ("move_zaps", send_move_zap_reports),
         ("move_monthly", send_move_monthly_summaries),
         ("move_radar", process_move_radar),
         ("move_nudges", send_move_nudges),

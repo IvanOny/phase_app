@@ -5,7 +5,7 @@
 
 Same skeleton as the burpee bot, but the unit of logging is a MOVE, not a rep
 count: everyone does their own activity, so there is nothing to compare. What
-counts is showing up (streaks) and ⚡ from your crew.
+counts is showing up (streaks) and a word from your crew.
 
 Deliberate differences from phase_app.bot:
   - Own token (MOVE_BOT_TOKEN) and its own _api helper that RETURNS the API
@@ -678,7 +678,7 @@ _STRINGS: dict[str, dict[str, str]] = {
               "How it works:\n"
               "• Record a round video bubble (or a photo) and send it here\n"
               "• Add a comment right after if you want to say something\n"
-              "• Your crew sees it and can send you a ⚡\n\n"
+              "• Your crew sees it and can write back\n\n"
               "First, what would you like to be called?",
         "uk": "👋 Ласкаво просимо до Move!\n"
               "\n"
@@ -689,7 +689,7 @@ _STRINGS: dict[str, dict[str, str]] = {
               "Як це працює:\n"
               "• Запиши кругле відео (або фото) і надішли сюди\n"
               "• Одразу після цього можеш додати коментар\n"
-              "• Твоє коло бачить це і може надіслати тобі ⚡\n"
+              "• Твоє коло бачить це і може написати тобі\n"
               "\n"
               "Спершу: як тебе називати?",
         "de": "👋 Willkommen bei Move!\n\n{tagline}\n\n"
@@ -697,7 +697,7 @@ _STRINGS: dict[str, dict[str, str]] = {
               "So funktioniert's:\n"
               "• Nimm ein rundes Video (oder ein Foto) auf und schick es hierher\n"
               "• Direkt danach kannst du einen Kommentar hinzufügen\n"
-              "• Deine Crew sieht es und kann dir ein ⚡ schicken\n\n"
+              "• Deine Crew sieht es und kann dir schreiben\n\n"
               "Zuerst: Wie möchtest du genannt werden?",
     },
     "info_body": {
@@ -1012,11 +1012,30 @@ _STRINGS: dict[str, dict[str, str]] = {
         "de": "🗑 Kommentar entfernt — auch aus den Chats deiner Crew.",
     },
     "btn_undo": {"en": "🗑 Undo", "uk": "🗑 Скасувати", "de": "🗑 Rückgängig"},
-    "undo_seen": {
-        "en": "⚡ Someone has already cheered this move, so it stays.",
-        "uk": "⚡ Цей рух уже підтримали — він лишається.",
-        "de": "⚡ Diese Bewegung wurde schon beklatscht — sie bleibt.",
+    # Names who, and says exactly what the bot knows: they were in Move after
+    # the move arrived. Not «bачив» — that would be a claim about their eyes.
+    # Ukrainian inflects the verb, so a gendered pair with a neutral fallback.
+    "undo_seen_by": {
+        "uk": "{name} вже заходив(ла) в Move після цього — рух лишається.",
+        "en": "{name} has been in Move since it arrived — it stays.",
+        "de": "{name} war seitdem in Move — sie bleibt.",
     },
+    "undo_seen_by_m": {
+        "uk": "{name} вже заходив у Move після цього — рух лишається.",
+        "en": "{name} has been in Move since it arrived — it stays.",
+        "de": "{name} war seitdem in Move — sie bleibt.",
+    },
+    "undo_seen_by_f": {
+        "uk": "{name} вже заходила в Move після цього — рух лишається.",
+        "en": "{name} has been in Move since it arrived — it stays.",
+        "de": "{name} war seitdem in Move — sie bleibt.",
+    },
+    "undo_seen_more": {
+        "uk": "І ще {n}.",
+        "en": "And {n} more.",
+        "de": "Und {n} weitere.",
+    },
+
     "undo_too_old": {
         "en": "Older than {hours}h — Telegram no longer lets the bot take it back.",
         "uk": "Старше за {hours} год — Telegram уже не дозволяє боту це прибрати.",
@@ -1216,11 +1235,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "Цей рух уже недоступний.",
         "de": "Diese Bewegung gibt es nicht mehr.",
     },
-    "zap_btn": {"en": "⚡", "uk": "⚡", "de": "⚡"},
-    "zap_btn_sent": {"en": "⚡ sent ✓", "uk": "⚡ надіслано ✓", "de": "⚡ gesendet ✓"},
-    "zap_sent": {"en": "⚡ sent!", "uk": "⚡ надіслано!", "de": "⚡ gesendet!"},
-    "zap_already": {"en": "You already sent a ⚡", "uk": "⚡ вже надіслано", "de": "Du hast schon ein ⚡ gesendet"},
-    "zap_own": {"en": "That's your own move 🙂", "uk": "Це твій власний рух 🙂", "de": "Das ist deine eigene Bewegung 🙂"},
+    # For a ⚡ button that was on screen before the change.
+    "zap_gone": {
+        "uk": "⚡ більше немає — напиши коментар, це важить більше.",
+        "en": "⚡ is gone — write a comment instead, it means more.",
+        "de": "⚡ gibt es nicht mehr — schreib lieber einen Kommentar.",
+    },
+
+    "own_move": {"en": "That's your own move 🙂", "uk": "Це твій власний рух 🙂", "de": "Das ist deine eigene Bewegung 🙂"},
     # ── crew ──
     # Three parts, with the invite link between them: the prompt goes last so it
     # sits right above the input box, next to where you'd act on it. The
@@ -1799,23 +1821,6 @@ _STRINGS: dict[str, dict[str, str]] = {
     "pause_set": {"en": "⏸️ Paused until {until}.", "uk": "⏸️ Призупинено до {until}.", "de": "⏸️ Pausiert bis {until}."},
     "pause_resumed": {"en": "▶️ Resumed.", "uk": "▶️ Відновлено.", "de": "▶️ Fortgesetzt."},
     # ── reports ──
-    "zap_report": {"en": "⚡ Yesterday your move got {n} {word}.", "uk": "⚡ Вчора твій рух отримав {n} {word}.", "de": "⚡ Gestern hat deine Bewegung {n} {word} bekommen."},
-    # Counts only — no names, from either side. Which crew member cheered stays
-    # as private as which stranger did.
-    "zap_report_split": {
-        "en": "{crew} from your crew · {radar} from strangers on radar",
-        "uk": "{crew} від твого кола · {radar} від незнайомців з радару",
-        "de": "{crew} aus deiner Crew · {radar} von Fremden im Radar",
-    },
-    # "0 from your crew" is a worse way to say this.
-    "zap_report_all_radar": {
-        "en": "all of them from strangers on radar",
-        "uk": "усі — від незнайомців з радару",
-        "de": "alle von Fremden im Radar",
-    },
-    "zap_word_one":  {"en": "lightning", "uk": "блискавку", "de": "Blitz"},
-    "zap_word_few":  {"en": "lightnings", "uk": "блискавки", "de": "Blitze"},
-    "zap_word_many": {"en": "lightnings", "uk": "блискавок", "de": "Blitze"},
     "milestone": {"en": "🎉 {name}, {days} days in a row! Keep moving 💪", "uk": "🎉 {name}, {days} днів поспіль! Так тримати 💪", "de": "🎉 {name}, {days} Tage in Folge! Weiter so 💪"},
     "summary_header": {"en": "📅 {month} — {name}", "uk": "📅 {month} — {name}", "de": "📅 {month} — {name}"},
     "summary_days": {"en": "🏃 Days moved: {count} of {total} ({pct}%)", "uk": "🏃 Днів у русі: {count} з {total} ({pct}%)", "de": "🏃 Bewegte Tage: {count} von {total} ({pct}%)"},
@@ -1828,7 +1833,6 @@ _STRINGS: dict[str, dict[str, str]] = {
     "day_word_one": {"en": "day", "uk": "день", "de": "Tag"},
     "day_word_few": {"en": "days", "uk": "дні", "de": "Tage"},
     "day_word_many": {"en": "days", "uk": "днів", "de": "Tage"},
-    "summary_zaps": {"en": "⚡ Lightnings received: {n}", "uk": "⚡ Отримано блискавок: {n}", "de": "⚡ Erhaltene Blitze: {n}"},
     "btn_new_link": {
         "en": "🔄 Refresh link", "uk": "🔄 Оновити посилання", "de": "🔄 Link erneuern",
     },
@@ -2295,12 +2299,7 @@ def _recipients(cur, tg_id: int, sender_name: str) -> list[tuple[int, int, str]]
     return out
 
 
-# ── ⚡ ───────────────────────────────────────────────────────────────────────
-
-def _zap_count(cur, entry_id: int) -> int:
-    cur.execute("SELECT COUNT(*) AS n FROM move_reactions WHERE entry_id = %s", (entry_id,))
-    return cur.fetchone()["n"] or 0
-
+# ── radar ───────────────────────────────────────────────────────────────────────
 
 def _radar_ok(cur, entry_id: int) -> bool:
     """Whether this move may be shown to strangers.
@@ -2682,15 +2681,10 @@ def _refresh_move_kb(cur, entry_id: int, person_id: int, lang: str) -> None:
     if not owner:
         return
     author = owner["telegram_user_id"]
-    cur.execute("SELECT 1 FROM move_reactions WHERE entry_id = %s AND reactor_tg_id = %s",
-                (entry_id, person_id))
-    zapped = cur.fetchone() is not None
     cur.execute("SELECT 1 FROM move_forwards WHERE entry_id = %s AND recipient_tg_id = %s "
                 "AND kind = 'talk'", (entry_id, person_id))
     talking = cur.fetchone() is not None
     rows = []
-    if not zapped:
-        rows.append([{"text": _t("zap_btn", lang), "callback_data": f"mv:zap:{entry_id}"}])
     if not talking and author != person_id:
         them = _user(cur, author)
         rows.append([{"text": _t("btn_note_to", lang,
@@ -2702,24 +2696,25 @@ def _refresh_move_kb(cur, entry_id: int, person_id: int, lang: str) -> None:
     })
 
 
-def _zap_kb(entry_id: int, sent: bool = False, lang: str = "en", radar: bool = False,
-            note_to: int | None = None, note_name: str | None = None) -> dict:
-    """No running total — a move isn't a popularity contest. You only see whether
-    *you* cheered; the author gets the tally next morning.
+def _copy_kb(entry_id: int, lang: str = "en", radar: bool = False,
+             note_to: int | None = None, note_name: str | None = None) -> dict:
+    """The buttons under somebody's copy of a move.
 
-    A radar copy carries a second button: this came from a stranger, so the
-    viewer needs a way to never see them again.
+    Crew copies carry one thing: a way to write to the author. The ⚡ that used
+    to sit above it is gone — it was the acknowledgement half of all moves got
+    and nothing else, but Iv chose words over a tap, and a bot with one button
+    under every video is easier to read than one with two.
+
+    A radar copy carries block and report instead: this came from a stranger,
+    there is deliberately no route back to a name, and what the viewer needs
+    is a way to never see them again.
     """
-    rows = [[{"text": _t("zap_btn_sent" if sent else "zap_btn", lang),
-              "callback_data": f"mv:zap:{entry_id}"}]]
+    rows = []
     if note_to:
-        # Crew only, and it needs the author's id: the thread routes by id, and
-        # radar copies deliberately have no route back to a name.
         rows.append([{"text": _t("btn_note_to", lang, name=note_name) if note_name
                       else _t("btn_note", lang),
                       "callback_data": f"mv:note:{entry_id}:{note_to}"}])
     if radar:
-        # Block is "stop showing me this"; report is "someone should look at this".
         # One per row — sharing a row clips the block label, which is a sentence.
         rows.append([{"text": _t("radar_block_btn", lang),
                       "callback_data": f"mv:rblock:{entry_id}"}])
@@ -2782,9 +2777,28 @@ def _revoke(cur, conn, tg_id: int, chat_id: int, lang: str, entry_id: int | None
     if not e:
         _send_t(cur, conn, chat_id, _t("undo_none", lang))
         return False
-    cur.execute("SELECT 1 FROM move_reactions WHERE entry_id = %s", (e["id"],))
-    if cur.fetchone():
-        _send_t(cur, conn, chat_id, _t("undo_seen", lang))
+    # Seen by anyone? A comment on it, or — the real read receipt — a recipient
+    # who did anything in Move after their copy arrived. In a private bot chat
+    # the newest message is at the bottom; if the last thing to land was this
+    # move, opening the chat was seeing it. This is what the first ⚡ used to
+    # stand in for, and it covers the people who never reacted to anything.
+    cur.execute(
+        "SELECT u.participant_name, u.gender FROM move_forwards f "
+        "JOIN move_users u ON u.telegram_user_id = f.recipient_tg_id "
+        "WHERE f.entry_id = %s AND f.kind = 'move' "
+        "  AND (u.last_seen_at > f.created_at "
+        "       OR EXISTS (SELECT 1 FROM move_comments c WHERE c.entry_id = f.entry_id "
+        "                    AND c.from_tg_id = f.recipient_tg_id)) "
+        "ORDER BY f.created_at",
+        (e["id"],))
+    seen = cur.fetchall()
+    if seen:
+        first = seen[0]
+        more = len(seen) - 1
+        text = _tgen("undo_seen_by", lang, first["gender"], name=first["participant_name"])
+        if more:
+            text += " " + _t("undo_seen_more", lang, n=more)
+        _send_t(cur, conn, chat_id, text)
         return False
     age = (datetime.now(timezone.utc) - e["created_at"]).total_seconds()
     if age > _DELETE_LIMIT_HOURS * 3600:
@@ -2923,13 +2937,13 @@ def _deliver(cur, conn, user, entry_id: int, media: tuple | None, text_body: str
             # changes, and _LEGACY_BUTTONS already routes taps on an old one.
             track(rid, chat_id,
                   _copy(from_chat, msg_id, chat_id,
-                        reply_markup=_zap_kb(entry_id, lang=rlang, note_to=author_id,
+                        reply_markup=_copy_kb(entry_id, lang=rlang, note_to=author_id,
                                              note_name=sender)),
                   "move")
         else:
             track(rid, chat_id,
                   _send(chat_id, f"{header}\n{text_body or ''}".strip(),
-                        reply_markup=_zap_kb(entry_id, lang=rlang, note_to=author_id)),
+                        reply_markup=_copy_kb(entry_id, lang=rlang, note_to=author_id)),
                   "move")
         names.append(rname)
     conn.commit()
@@ -4639,9 +4653,9 @@ def _summary_periods(first: date, last: date, today: date) -> list:
     return periods
 
 
-def _period_stats(days: list, zaps: dict, start: date, end: date,
+def _period_stats(days: list, start: date, end: date,
                   first: date, today: date) -> dict | None:
-    """Days moved, consistency, longest streak and ⚡ over one span.
+    """Days moved, consistency and longest streak over one span.
 
     Consistency counts only days the person could have moved: a month they
     joined halfway through is measured from the day they arrived, and the
@@ -4658,8 +4672,7 @@ def _period_stats(days: list, zaps: dict, start: date, end: date,
     span_from, span_to = max(start, first), min(end, today)
     total = max((span_to - span_from).days + 1, len(inside))
     return {"count": len(inside), "total": total,
-            "pct": round(len(inside) / total * 100), "longest": longest,
-            "zaps": sum(n for d, n in zaps.items() if start <= d <= end)}
+            "pct": round(len(inside) / total * 100), "longest": longest}
 
 
 def _cmd_summary(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
@@ -4675,18 +4688,10 @@ def _cmd_summary(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
     if not days:
         _send_t(cur, conn, chat_id, _t("summary_none", lang))
         return
-    # Both queries up front: the old version ran two per month inside the loop,
-    # which was 48 round trips for two years of history.
-    cur.execute(
-        "SELECT e.entry_date, COUNT(*) AS n FROM move_reactions r "
-        "JOIN move_entries e ON e.id = r.entry_id "
-        "WHERE e.telegram_user_id = %s GROUP BY e.entry_date", (tg_id,))
-    zaps = {as_date(r["entry_date"]): r["n"] for r in cur.fetchall()}
-
     today = date.today()
     lines = [_t("summary_all_header", lang), ""]
     for kind, start, end in _summary_periods(days[0], days[-1], today):
-        st = _period_stats(days, zaps, start, end, days[0], today)
+        st = _period_stats(days, start, end, days[0], today)
         if not st:
             continue
         label = (f"{_MONTHS.get(lang, _MONTHS['en'])[start.month]} {start.year}"
@@ -4695,8 +4700,6 @@ def _cmd_summary(cur, conn, tg_id: int, chat_id: int, lang: str) -> None:
         lines.append(_t("summary_days", lang, count=st["count"], total=st["total"], pct=st["pct"]))
         lines.append(_t("summary_streak", lang, days=st["longest"],
                         word=_t(f"day_word_{_plural_form(st['longest'], lang)}", lang)))
-        if st["zaps"]:
-            lines.append(_t("summary_zaps", lang, n=st["zaps"]))
         lines.append("")
     _send_t(cur, conn, chat_id, "\n".join(lines).strip(),
             reply_markup=_main_kb(lang, tg_id, cur))
@@ -4771,7 +4774,7 @@ def _radar_deliver(cur, conn, rid: int, chat_id: int, lang: str, cand,
     touch_schedule=False for a pull: asking to see someone now shouldn't push
     back the daily drop they already subscribed to.
     """
-    kb = _zap_kb(cand["id"], lang=lang, radar=True)
+    kb = _copy_kb(cand["id"], lang=lang, radar=True)
     # protect on both branches: a radar move arrives from someone the viewer
     # doesn't know and hasn't been introduced to, and it stops here. Crew copies
     # are deliberately not protected — those people chose each other.
@@ -5014,11 +5017,32 @@ def handle_move_webhook(body: dict, conn) -> None:
         _handle_move_webhook(body, conn)
 
 
+def _touch_seen(cur, conn, body: dict) -> None:
+    """Record that this person had Move open just now.
+
+    The only read receipt available. Telegram tells a bot nothing about what a
+    person has looked at, but it delivers every update they send, and each one
+    means the chat was open at that moment. In a private bot chat the newest
+    message is at the bottom, so if the last thing to arrive was somebody's
+    move, opening the chat is seeing it. Undo reads this.
+    """
+    who = None
+    for k in ("callback_query", "message", "edited_message"):
+        if body.get(k) and body[k].get("from"):
+            who = body[k]["from"].get("id")
+            break
+    if who is None:
+        return
+    cur.execute("UPDATE move_users SET last_seen_at = NOW() WHERE telegram_user_id = %s", (who,))
+    conn.commit()
+
+
 def _handle_move_webhook(body: dict, conn) -> None:
     cur = conn.cursor()
     # Before dispatch, so an update that goes on to crash is still recorded —
     # a silent failure at least leaves a trace of what triggered it.
     _trace(cur, conn, body)
+    _touch_seen(cur, conn, body)
 
     cq = body.get("callback_query")
     if cq:
@@ -5460,50 +5484,12 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         return
 
     if body.startswith("zap:"):
+        # Buttons sent before the ⚡ was dropped are still on people's screens.
+        # A tap says where the acknowledgement lives now, and the keyboard is
+        # redrawn without the button so it is not asked twice.
         entry_id = int(body[4:])
-        cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
-        owner = cur.fetchone()
-        if not owner:
-            # The move was undone after this copy was delivered. The lookup was
-            # already here but only guarded "is it mine"; a missing row fell
-            # through to the insert and hit move_reactions_entry_id_fkey. Take
-            # the buttons away too, so the next tap doesn't ask the same thing.
-            _answer(cq["id"], _t("note_gone", lang))
-            _api_call("editMessageReplyMarkup",
-                      {"chat_id": chat_id, "message_id": msg_id})
-            return
-        if owner["telegram_user_id"] == tg_id:
-            _answer(cq["id"], _t("zap_own", lang))
-            return
-        cur.execute(
-            "INSERT INTO move_reactions (entry_id, reactor_tg_id) VALUES (%s, %s) "
-            "ON CONFLICT DO NOTHING RETURNING entry_id",
-            (entry_id, tg_id),
-        )
-        fresh = cur.fetchone() is not None
-        conn.commit()
-        _answer(cq["id"], _t("zap_sent" if fresh else "zap_already", lang))
-
-        # The ⚡ is taken away rather than ticked. "надіслано ✓" was a button
-        # that could never do anything again, left under the video until the
-        # morning sweep; the toast above has already said it landed.
-        #
-        # Rebuilt rather than edited in place: whether 💬 belongs there too
-        # depends on the thread, and _refresh_move_kb is the one place that
-        # knows the whole rule. Radar copies keep their own keyboard, which is
-        # block and report and has nothing to do with cheering.
-        cur.execute("SELECT 1 FROM move_forwards WHERE entry_id = %s "
-                    "AND recipient_tg_id = %s AND kind = 'move'", (entry_id, tg_id))
-        if cur.fetchone():
-            _refresh_move_kb(cur, entry_id, tg_id, lang)
-        else:
-            _api_call("editMessageReplyMarkup", {
-                "chat_id": chat_id, "message_id": msg_id,
-                "reply_markup": _zap_kb(entry_id, sent=True, lang=lang),
-            })
-        if fresh:
-            # The move has a viewer now, so it can no longer be taken back.
-            _drop_undo(cur, entry_id)
+        _answer(cq["id"], _t("zap_gone", lang), alert=True)
+        _refresh_move_kb(cur, entry_id, tg_id, lang)
         return
 
     if body.startswith("pk:"):
@@ -5915,7 +5901,7 @@ def _handle_callback(cur, conn, cq: dict) -> None:
         except ValueError:
             return
         if to_id == tg_id:
-            _answer(cq["id"], _t("zap_own", lang))     # your own move, or your own words
+            _answer(cq["id"], _t("own_move", lang))    # your own move, or your own words
             return
         them = _user(cur, to_id)
         cur.execute("SELECT telegram_user_id FROM move_entries WHERE id = %s", (entry_id,))
@@ -6424,64 +6410,6 @@ def offer_intros(conn) -> None:
         _intro_hint(cur, conn, u["telegram_user_id"], _norm_lang(u["language_code"]))
 
 
-def send_move_zap_reports(conn) -> None:
-    """Morning: tell each mover how many ⚡ yesterday's move collected."""
-    cur = conn.cursor()
-    today = date.today()
-    if not _claim_job(cur, conn, "move_zap_report", today):
-        return
-    yesterday = today - timedelta(days=1)
-    # Split by where the ⚡ came from. move_forwards already knows: the copy each
-    # reactor was looking at is kind='radar' for a stranger and kind='move' for
-    # crew. A ⚡ from outside your crew is the only sign that sharing to radar did
-    # anything at all, and it used to disappear into one undifferentiated number.
-    # Grouped by person, not by move. A day can now hold a move for the crew and
-    # one for each circle, and three reports in a row saying "your move got 2 ⚡"
-    # would be three messages about the same morning. One line, one total.
-    cur.execute(
-        "SELECT e.telegram_user_id, MAX(u.chat_id) AS chat_id, "
-        "       MAX(u.language_code) AS language_code, "
-        "       (SELECT COUNT(*) FROM move_reactions r "
-        "          JOIN move_entries e2 ON e2.id = r.entry_id "
-        "         WHERE e2.telegram_user_id = e.telegram_user_id "
-        "           AND e2.entry_date = %s) AS zaps, "
-        "       (SELECT COUNT(*) FROM move_reactions r "
-        "          JOIN move_entries e2 ON e2.id = r.entry_id "
-        "          JOIN move_forwards f ON f.entry_id = r.entry_id "
-        "                              AND f.recipient_tg_id = r.reactor_tg_id "
-        "         WHERE e2.telegram_user_id = e.telegram_user_id "
-        "           AND e2.entry_date = %s AND f.kind = 'radar') AS radar_zaps "
-        "FROM move_entries e JOIN move_users u ON u.telegram_user_id = e.telegram_user_id "
-        "WHERE e.entry_date = %s "
-        "GROUP BY e.telegram_user_id",
-        (yesterday, yesterday, yesterday),
-    )
-    rows = cur.fetchall()
-    notified = 0
-    for r in rows:
-        n = r["zaps"] or 0
-        if not n:
-            continue                      # no ⚡ — better silence than "you got 0"
-        lang = _norm_lang(r["language_code"])
-        word = _t(f"zap_word_{_plural_form(n, lang)}", lang)
-        text = _t("zap_report", lang, n=n, word=word)
-        strangers = min(r["radar_zaps"] or 0, n)
-        if strangers:
-            # Only when there were any: someone with radar sharing off would
-            # otherwise get a line about a thing they've switched off.
-            text += "\n" + (_t("zap_report_all_radar", lang) if strangers == n
-                            else _t("zap_report_split", lang,
-                                    crew=n - strangers, radar=strangers))
-        # Same free ride: the morning report reaches everyone who moved
-        # yesterday and carries no markup of its own.
-        _send(r["chat_id"] or r["telegram_user_id"], text,
-              reply_markup=_main_kb(lang, r["telegram_user_id"], cur))
-        notified += 1
-    conn.commit()
-    # Always log, so a missing report can be told apart from a job that never ran.
-    _log(f"⚡ Move: zap report ({yesterday})\n• moves: {len(rows)} · notified: {notified}")
-
-
 def _radar_due(freq: str | None, last) -> bool:
     if not freq or freq == "never":
         return False
@@ -6731,7 +6659,7 @@ def purge_move_transient(conn) -> None:
 
 
 def send_move_monthly_summaries(conn) -> None:
-    """On the 1st: days moved, consistency, longest streak, ⚡ received."""
+    """On the 1st: days moved, consistency, longest streak."""
     import calendar
     cur = conn.cursor()
     today = date.today()
@@ -6761,13 +6689,6 @@ def send_move_monthly_summaries(conn) -> None:
             run = run + 1 if (days[i] - days[i - 1]).days == 1 else 1
             longest = max(longest, run)
 
-        cur.execute(
-            "SELECT COUNT(*) AS n FROM move_reactions r JOIN move_entries e ON e.id = r.entry_id "
-            "WHERE e.telegram_user_id = %s AND e.entry_date >= %s AND e.entry_date <= %s",
-            (tg_id, prev_start, prev_end),
-        )
-        zaps = cur.fetchone()["n"] or 0
-
         lang = _norm_lang(u["language_code"])
         month = _MONTHS.get(lang, _MONTHS["en"])[prev_start.month]
         lines = [
@@ -6778,8 +6699,6 @@ def send_move_monthly_summaries(conn) -> None:
             _t("summary_streak", lang, days=longest,
                word=_t(f"day_word_{_plural_form(longest, lang)}", lang)),
         ]
-        if zaps:
-            lines.append(_t("summary_zaps", lang, n=zaps))
         # The only place /summary is named — it's on no keyboard and in no menu,
         # and a monthly recap is where "there's more of this" belongs. Only for
         # someone with a second month to look at, though: for anyone else

@@ -81,7 +81,7 @@ move_users      — telegram_user_id, participant_name, lang, invite_code
 move_entries    — one row per move: media, entry_date, radar_ok
 move_forwards   — which copy of a move went to whom (message ids, for edits)
 move_crew       — mutual, both sides confirm      move_receive   — radar opt-in
-move_reactions  — ⚡                              move_reports   — → warnings → suspensions
+move_reactions  — ⚡ (history only)               move_reports   — → warnings → suspensions
 move_radar_block / move_radar_history            — never show / cooldown
 move_state      — per-user step, 10-minute timeout
 move_log_summary / move_transient                — the daily log line, the morning sweep
@@ -174,7 +174,7 @@ Locally this needs the Session pooler `DATABASE_URL`, not the direct host — se
 
 ## Move
 
-Every daily job — nudges, the ⚡ report, radar, the sweep — hangs off a single cron
+Every daily job — nudges, radar, the sweep — hangs off a single cron
 trigger (`/api/cron/move`, 06:00 UTC = 08:00 Berlin), because Vercel Hobby caps the
 number of cron jobs. Each job carries its own `cron_log` guard, so re-running the
 trigger is harmless.
@@ -182,6 +182,13 @@ trigger is harmless.
 Move's trace collapses into one message per person per day (`move_log_summary`),
 edited as the day goes on. ⚠️ reports, crashes and moderation still send their own
 messages so they aren't buried.
+
+**There is no ⚡.** A crew copy carries one button, 💬; the acknowledgement is a
+comment. Dropped 19 Sep 2026 — `move_reactions` keeps the history, nothing
+writes to it. The read receipt that the first ⚡ used to provide is
+`move_users.last_seen_at`, stamped on every incoming update: a recipient who did
+anything in Move after their copy arrived has seen it, and Undo is refused by
+name («Олександра вже заходила в Move після цього»).
 
 A recorded move waits 45 seconds before it goes out (`_hold_then_send`), with a
 🗑 live for the whole wait. Undo could already delete every copy from every
@@ -240,5 +247,5 @@ when; that is the record worth keeping.
 
 Bot messages that are scaffolding — menus, prompts, confirmations, the ⚙️ buttons
 under a move — are recorded in `move_transient` and deleted the next morning by
-the `move_sweep` job. Moves, comments and the ⚡ report stay. Answered prompts are
+the `move_sweep` job. Moves and comments stay. Answered prompts are
 deleted immediately.

@@ -137,8 +137,8 @@ function RunningChart({ rows, colors }) {
  * The two history views over the monthly tables, fetched once and shared:
  * the strip reads every column, the chart reads two of them.
  *
- * `reloadKey` changes when a month is saved above, so the history redraws
- * without a page reload.
+ * `reloadKey` is anything that should send it back to the server -- a month
+ * saved elsewhere in the page. It is fetched once otherwise.
  */
 export default function HealthHistory({ reloadKey = 0 }) {
   const colors = useChartColors();

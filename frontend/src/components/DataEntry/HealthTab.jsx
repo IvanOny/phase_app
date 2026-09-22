@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getMonthlyMetrics, saveMonthlyMetrics, getMonthlyRun, saveMonthlyRun } from '../../api/client.js';
 import BodyweightPanel from '../Powerlifting/BodyweightPanel.jsx';
-import HealthHistory from './HealthHistory.jsx';
 import { thisMonth, shiftMonth, monthLabel, clock } from '../../utils/months.js';
 
 // One row per month, typed in at month's end. "Best" is best, not highest:
@@ -43,7 +42,7 @@ const RUN_SUMMARY = [
 // twenty-two: the row is what the browser puts on the clipboard from Garmin
 // Connect's table, and the server parses it -- units, h:m:s, /km and all --
 // or says which cell it could not read.
-function RunSection({ month, isAuthenticated, onSaved }) {
+function RunSection({ month, isAuthenticated }) {
   const [saved, setSaved] = useState(null);      // the stored row for `month`, if any
   const [raw, setRaw] = useState('');
   const [preview, setPreview] = useState(null);  // parsed but not saved
@@ -78,7 +77,6 @@ function RunSection({ month, isAuthenticated, onSaved }) {
     try {
       const r = await saveMonthlyRun({ raw });
       setSaved(r);
-      onSaved?.();
       setPreview(null);
       setRaw('');
     } catch (e) {
@@ -156,8 +154,6 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
   const [month, setMonth] = useState(thisMonth());
   const [values, setValues] = useState(empty());
   const [savedAt, setSavedAt] = useState(null);
-  // Bumped whenever a month is written, so the history below redraws with it.
-  const [reloadKey, setReloadKey] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -190,7 +186,6 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
       const row = await saveMonthlyMetrics({ month, ...values });
       setSavedAt(row.updatedAt);
       setDirty(false);
-      setReloadKey(k => k + 1);
     } catch {
       setError('Failed to save');
     } finally {
@@ -275,13 +270,7 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
         )}
       </div>
 
-      <RunSection month={month} isAuthenticated={isAuthenticated}
-                  onSaved={() => setReloadKey(k => k + 1)} />
-
-      {/* Everything entered above, read back: the month strip and the running
-          chart. Entry and history on one tab, because the reason to look at
-          the history is usually that you are about to add to it. */}
-      <HealthHistory reloadKey={reloadKey} />
+      <RunSection month={month} isAuthenticated={isAuthenticated} />
 
       {/* The old Bodyweight tab, as a section. Its data is per date, not per
           month — the pull-up e1RM leans on that — so nothing about it changed

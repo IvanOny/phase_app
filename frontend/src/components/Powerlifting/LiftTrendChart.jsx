@@ -44,6 +44,19 @@ const LIFT_ORDER = ['squat', 'bench', 'deadlift', 'pullup', 'total'];
 const BUCKETS = 10;
 const DAY_MS = 86400000;
 
+// The span the ten windows are cut over, ending today. A fixed span makes the
+// windows a fixed width — 100 days is ten days each — so the same shape means
+// the same thing from one visit to the next, which a span that stretched to fit
+// the data never did. `null` is everything on record, cut from first session to
+// last as before.
+const SPANS = [
+  { key: '30',  label: '30d', days: 30 },
+  { key: '100', label: '100d', days: 100 },
+  { key: '365', label: '1y',  days: 365 },
+  { key: 'all', label: 'all', days: null },
+];
+const DEFAULT_SPAN = '100';
+
 function isoDay(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
@@ -64,13 +77,26 @@ function round1(n) {
  * measurement, so its bucket value is the last one in the window, not a mean
  * of running bests.
  */
-function bucketChartData(points, lifts) {
+function bucketChartData(points, lifts, spanDays = null) {
   const has = p => lifts.some(l => (l === 'total' ? p.total : p[`_${l}`]) != null);
-  const used = points.filter(has);
-  if (used.length === 0) return [];
+  let used = points.filter(has);
 
-  const t0 = Date.parse(used[0].date.split('T')[0]);
-  const t1 = Date.parse(used[used.length - 1].date.split('T')[0]);
+  // A chosen span is anchored at today, not at the last session: "the last
+  // 100 days" is a question about the calendar, and a window that ends five
+  // days ago because that is when you last trained would answer a different
+  // one. The trailing gap is honest — it shows you haven't trained this week.
+  let t0, t1;
+  if (spanDays) {
+    const today = Date.parse(new Date().toISOString().slice(0, 10));
+    t1 = today;
+    t0 = today - spanDays * DAY_MS;
+    used = used.filter(p => Date.parse(p.date.split('T')[0]) >= t0);
+    if (used.length === 0) return [];
+  } else {
+    if (used.length === 0) return [];
+    t0 = Date.parse(used[0].date.split('T')[0]);
+    t1 = Date.parse(used[used.length - 1].date.split('T')[0]);
+  }
   const span = Math.max(t1 - t0, DAY_MS);          // one session → one day, not zero
   const n = t1 === t0 ? 1 : BUCKETS;
   const width = span / n;
@@ -213,6 +239,8 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   // lift is the question anybody actually opens this chart with, and the rest
   // are one tap away.
   const [selected, setSelected] = useState(['bench']);
+  const [spanKey, setSpanKey] = useState(DEFAULT_SPAN);
+  const spanDays = SPANS.find(s => s.key === spanKey)?.days ?? null;
 
   function toggleLift(lift) {
     setSelected(prev => {
@@ -235,14 +263,14 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
 
   // A tooltip pinned to a line that has just been switched off would hang there
   // describing something invisible.
-  useEffect(() => { openTooltip(null); setHovered(null); }, [selected]);
+  useEffect(() => { openTooltip(null); setHovered(null); }, [selected, spanKey]);
 
   // Only what the pills have on. The y-axis reads dataMin/dataMax off the
   // series actually rendered, so hiding the rest re-scales the chart around
   // what is left — which is most of the reason to hide them. The windows are
   // cut over these lifts' span too, so the ten points cover what is shown.
   const liftsToShow = selected.filter(l => l !== 'total' || showTotal);
-  const data = bucketChartData(buildChartData(sessions, plMetrics), liftsToShow);
+  const data = bucketChartData(buildChartData(sessions, plMetrics), liftsToShow, spanDays);
   const hasData = data.length > 0;
 
   // Last index in data where each lift has a non-null value (for inline label placement)
@@ -367,7 +395,8 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
       </div>
       {/* Each pill wears its own line's colour when it is on, so the chart can
           be read without counting back to a legend. */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap',
+                    alignItems: 'center' }}>
         {LIFT_ORDER.filter(l => l !== 'total' || showTotal).map(lift => {
           const cfg = LIFT_CONFIG[lift];
           const on = selected.includes(lift);
@@ -388,6 +417,26 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
             </button>
           );
         })}
+        {/* The span, on the right of the same row: which lifts, and over how
+            long. One of these is always on, like the lifts — there is no
+            "no span". */}
+        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }} role="group"
+             aria-label="Time span">
+          {SPANS.map(s => {
+            const on = s.key === spanKey;
+            return (
+              <button
+                key={s.key}
+                className={`filter-chip${on ? ' active' : ''}`}
+                onClick={() => setSpanKey(s.key)}
+                aria-pressed={on}
+                style={{ fontSize: 11, padding: '1px 8px' }}
+              >
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
       {hasData ? (
         <>

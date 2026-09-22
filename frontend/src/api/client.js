@@ -341,6 +341,19 @@ export async function saveMonthlyMetrics(payload) {
   return apiFetch('POST', '/v1/monthly-metrics', payload);
 }
 
+// ---- Monthly running summary (a Garmin row, pasted) ----
+
+export async function getMonthlyRun(month) {
+  if (MOCK_MODE) return Promise.resolve(month ? null : []);
+  return apiFetch('GET', `/v1/monthly-run${month ? `?month=${month}` : ''}`);
+}
+
+// { raw, preview? } -> the parsed row; saved unless preview is true.
+export async function saveMonthlyRun(payload) {
+  if (MOCK_MODE) return Promise.resolve({ month: '2026-01', preview: !!payload.preview });
+  return apiFetch('POST', '/v1/monthly-run', payload);
+}
+
 export async function createBodyweightEntry(payload) {
   if (MOCK_MODE) return Promise.resolve({ logId: nextId(), ...payload });
   return apiFetch('POST', '/v1/bodyweight', payload);

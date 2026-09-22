@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from decimal import Decimal
 import urllib.request
 import urllib.error
 from datetime import date as _date, datetime, timezone, timedelta
@@ -165,6 +166,10 @@ class PhaseApi:
             return self.get_classification(int(path.split("/")[4]), qp)
 
         # Bodyweight log
+        if method == "GET" and path == "/v1/monthly-run":
+            return self.get_monthly_run(qp)
+        if method == "POST" and path == "/v1/monthly-run":
+            return self.save_monthly_run(body)
         if method == "GET" and path == "/v1/monthly-metrics":
             return self.get_monthly_metrics(qp)
         if method == "POST" and path == "/v1/monthly-metrics":
@@ -1233,6 +1238,66 @@ class PhaseApi:
             self.conn.rollback()
             return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
         return ApiResponse(200, self._monthly_row(r))
+
+    # ------------------------------------------------------------------ #
+    # Monthly running summary, pasted from Garmin one row at a time.
+    # ------------------------------------------------------------------ #
+    _RUN_COLS = {
+        "activities": "activities", "totalKm": "total_km", "avgKm": "avg_km", "maxKm": "max_km",
+        "totalTimeS": "total_time_s", "calories": "calories", "totalAscentM": "total_ascent_m",
+        "avgAscentM": "avg_ascent_m", "maxAscentM": "max_ascent_m", "totalDescentM": "total_descent_m",
+        "avgDescentM": "avg_descent_m", "maxDescentM": "max_descent_m", "avgPaceS": "avg_pace_s",
+        "gapPaceS": "gap_pace_s", "bestPaceS": "best_pace_s", "avgHr": "avg_hr", "maxHr": "max_hr",
+        "avgCadenceSpm": "avg_cadence_spm", "maxCadenceSpm": "max_cadence_spm",
+        "verticalOscCm": "vertical_osc_cm", "groundContactMs": "ground_contact_ms",
+        "avgStrideM": "avg_stride_m",
+    }
+
+    def _run_row(self, r) -> dict[str, Any]:
+        out = {"month": r["month"], "raw": r["raw"], "updatedAt": str(r["updated_at"])}
+        for k, c in self._RUN_COLS.items():
+            v = r[c]
+            out[k] = (float(v) if isinstance(v, Decimal) else v) if v is not None else None
+        return out
+
+    def get_monthly_run(self, qp: dict[str, str]) -> ApiResponse:
+        month = qp.get("month")
+        if month:
+            r = self._exec("SELECT * FROM monthly_run WHERE month = %s", (month,)).fetchone()
+            return ApiResponse(200, self._run_row(r) if r else None)
+        rows = self._exec("SELECT * FROM monthly_run ORDER BY month").fetchall()
+        return ApiResponse(200, [self._run_row(r) for r in rows])
+
+    def save_monthly_run(self, payload: dict[str, Any]) -> ApiResponse:
+        """Parse a pasted Garmin row; save it unless `preview` is set.
+
+        The parser is the only route in: nothing typed field by field, so the
+        twenty-two columns cannot be entered out of order. A row that does not
+        parse is refused naming the cell, and nothing is written.
+        """
+        from phase_app.garmin_month import parse_row, ParseError
+        raw = payload.get("raw")
+        if not isinstance(raw, str) or not raw.strip():
+            return ApiResponse(400, {"error": "validation_error", "detail": "paste a row"})
+        try:
+            d = parse_row(raw)
+        except ParseError as exc:
+            return ApiResponse(400, {"error": "parse_error", "detail": str(exc)})
+        if payload.get("preview"):
+            return ApiResponse(200, {**d, "preview": True})
+        keys = list(self._RUN_COLS)
+        cols = [self._RUN_COLS[k] for k in keys]
+        sql = ("INSERT INTO monthly_run (month, " + ", ".join(cols) + ", raw) VALUES (%s, "
+               + ", ".join(["%s"] * len(cols)) + ", %s) ON CONFLICT (month) DO UPDATE SET "
+               + ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)
+               + ", raw = EXCLUDED.raw, updated_at = NOW() RETURNING *")
+        try:
+            r = self._exec(sql, [d["month"], *[d[k] for k in keys], d["raw"]]).fetchone()
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(200, self._run_row(r))
 
     def list_bodyweight(self, qp: dict[str, str]) -> ApiResponse:
         if "phaseId" not in qp:

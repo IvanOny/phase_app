@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getMonthlyMetrics, saveMonthlyMetrics } from '../../api/client.js';
+import { getMonthlyMetrics, saveMonthlyMetrics, getMonthlyRun, saveMonthlyRun } from '../../api/client.js';
 import BodyweightPanel from '../Powerlifting/BodyweightPanel.jsx';
 
 // One row per month, typed in at month's end. "Best" is best, not highest:
@@ -40,6 +40,139 @@ function fmtStamp(iso) {
 }
 
 const empty = () => Object.fromEntries(FIELDS.map(f => [f.key, '']));
+
+function clock(sec, pace = false) {
+  if (sec == null) return '';
+  const s = Math.round(sec);
+  if (pace || s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+// What a parsed Garmin row shows as, before and after saving: the numbers
+// that say what kind of month it was, not all twenty-two.
+const RUN_SUMMARY = [
+  ['runs',      r => r.activities],
+  ['distance',  r => `${r.totalKm} km`],
+  ['time',      r => clock(r.totalTimeS)],
+  ['pace',      r => `${clock(r.avgPaceS, true)} /km`],
+  ['GAP',       r => `${clock(r.gapPaceS, true)} /km`],
+  ['avg HR',    r => `${r.avgHr} bpm`],
+  ['ascent',    r => `${r.totalAscentM} m`],
+  ['cadence',   r => `${r.avgCadenceSpm} spm`],
+  ['stride',    r => `${r.avgStrideM} m`],
+];
+
+// The Garmin monthly running row, pasted whole. One field instead of
+// twenty-two: the row is what the browser puts on the clipboard from Garmin
+// Connect's table, and the server parses it -- units, h:m:s, /km and all --
+// or says which cell it could not read.
+function RunSection({ month, isAuthenticated }) {
+  const [saved, setSaved] = useState(null);      // the stored row for `month`, if any
+  const [raw, setRaw] = useState('');
+  const [preview, setPreview] = useState(null);  // parsed but not saved
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    setPreview(null); setError(null); setRaw('');
+    getMonthlyRun(month).then(r => { if (live) setSaved(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [month]);
+
+  async function parse(text) {
+    setRaw(text);
+    setPreview(null);
+    setError(null);
+    if (!text.trim()) return;
+    setBusy(true);
+    try {
+      setPreview(await saveMonthlyRun({ raw: text, preview: true }));
+    } catch (e) {
+      setError(e?.message || 'Could not read that row');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await saveMonthlyRun({ raw });
+      setSaved(r);
+      setPreview(null);
+      setRaw('');
+    } catch (e) {
+      setError(e?.message || 'Failed to save');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const shown = preview || saved;
+  const otherMonth = preview && preview.month !== month;
+
+  return (
+    <div className="chart-wrapper">
+      <div className="chart-title-row">
+        <span className="card-title">Running</span>
+        {saved && !preview && (
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+            saved {fmtStamp(saved.updatedAt)}
+          </span>
+        )}
+      </div>
+
+      {isAuthenticated && (
+        <>
+          <input
+            type="text"
+            className="inline-input"
+            placeholder="Paste the month's row from Garmin here"
+            value={raw}
+            onChange={e => parse(e.target.value)}
+            onPaste={e => { e.preventDefault(); parse(e.clipboardData.getData('text')); }}
+            style={{ width: '100%', fontSize: 12, fontFamily: 'var(--font-mono, monospace)' }}
+          />
+          {error && <div style={{ fontSize: 12, color: 'var(--ready-red)', marginTop: 6 }}>{error}</div>}
+        </>
+      )}
+
+      {shown && (
+        <div style={{ marginTop: 'var(--space-3)' }}>
+          {preview && (
+            <div style={{ fontSize: 12, color: otherMonth ? 'var(--ready-red)' : 'var(--text-muted)', marginBottom: 6 }}>
+              {otherMonth
+                ? `This row is ${monthLabel(preview.month)} — it will be saved there, not in ${monthLabel(month)}.`
+                : `Read as ${monthLabel(preview.month)}. Check, then save.`}
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, auto 1fr)', columnGap: 10, rowGap: 4, fontSize: 13 }}>
+            {RUN_SUMMARY.map(([label, get]) => (
+              <div key={label} style={{ display: 'contents' }}>
+                <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+                <span style={{ fontWeight: 600 }}>{get(shown)}</span>
+              </div>
+            ))}
+          </div>
+          {preview && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 'var(--space-3)' }}>
+              <button className="btn btn-primary btn-xs" onClick={save} disabled={busy}>
+                {busy ? '…' : saved && !otherMonth ? 'Replace month' : 'Save month'}
+              </button>
+              <button className="btn btn-xs" onClick={() => { setPreview(null); setRaw(''); }}>Discard</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!shown && !isAuthenticated && (
+        <div className="chart-empty">No running data for {monthLabel(month)}</div>
+      )}
+    </div>
+  );
+}
 
 export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved }) {
   const [month, setMonth] = useState(thisMonth());
@@ -156,6 +289,8 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
           </div>
         )}
       </div>
+
+      <RunSection month={month} isAuthenticated={isAuthenticated} />
 
       {/* The old Bodyweight tab, as a section. Its data is per date, not per
           month — the pull-up e1RM leans on that — so nothing about it changed

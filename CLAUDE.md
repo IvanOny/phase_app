@@ -190,9 +190,11 @@ and the author is told at once, anonymously; there is no morning report.
 
 **Native Telegram reactions are relayed.** A reaction on a crew copy or a thread
 message reaches the other person by name («Олександра: 😅»). This needs the
-webhook registered with `allowed_updates` that includes `message_reaction` —
-`scripts/set_move_webhook.py` does it, once, and needs `MOVE_BOT_TOKEN`. Passing
-`allowed_updates` replaces the default set, so the script names every type.
+webhook registered with `allowed_updates` that includes `message_reaction`, and
+the cron's first job, `ensure_webhook`, keeps it so: one `getWebhookInfo` a
+morning, a `setWebhook` only when the list has drifted from `_WEBHOOK_UPDATES`.
+Nothing about the webhook is done by hand. Passing `allowed_updates` replaces
+the default set, so the list names every type the bot handles.
 
 **A picture can be a comment.** Media sent while a 💬 prompt is armed, or as a
 swipe-reply to a thread, is copied to the other person with the sender's name

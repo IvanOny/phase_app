@@ -3576,6 +3576,37 @@ def _flush_one(cur, conn, tg_id: int, chat_id: int, entry_id: int, lang: str) ->
             _t("pick_expired" if audience is None else "pick_expired_left", lang))
 
 
+# What the webhook must be registered for. Passing allowed_updates replaces
+# Telegram's default set rather than extending it, so every type is named.
+_WEBHOOK_UPDATES = ("message", "edited_message", "callback_query", "message_reaction")
+
+
+def ensure_webhook(conn) -> None:
+    """Keep the webhook registered for every update type the bot handles.
+
+    allowed_updates is a property of the registration, not of the code: it was
+    set once by hand, and deploys never touch it. When the bot learned to read
+    reactions, Telegram kept not sending them, because nobody had asked. This
+    asks -- once a morning, and only re-registers when the list is wrong, so
+    it is one API call a day and no hand ever has to hold the token again.
+
+    Reads the URL back from Telegram rather than knowing it: the registration
+    is the source of truth for where the webhook points.
+    """
+    info = _api_call("getWebhookInfo", {}) or {}
+    url = info.get("url")
+    if not url:
+        _log("⚠️ Move: no webhook registered — nothing to keep in shape")
+        return
+    have = set(info.get("allowed_updates") or [])
+    want = set(_WEBHOOK_UPDATES)
+    if have == want:
+        return
+    ok = _api_call("setWebhook", {"url": url, "allowed_updates": list(_WEBHOOK_UPDATES)})
+    _log("🔗 Move: webhook re-registered\n• allowed_updates: "
+         + ", ".join(_WEBHOOK_UPDATES) + ("" if ok else "\n• setWebhook FAILED"))
+
+
 def flush_pending_moves(conn) -> None:
     """Send anything that was recorded and never addressed.
 

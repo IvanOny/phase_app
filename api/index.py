@@ -138,7 +138,7 @@ def _run_daily_jobs(conn) -> dict:
     )
     from phase_app.exercise_bot import send_exercise_overview
     from phase_app.move_bot import (
-        process_move_radar, send_move_monthly_summaries,
+        process_move_radar, send_move_monthly_summaries, ensure_webhook,
         send_move_nudges, purge_move_transient, flush_pending_moves,
         send_snack_reports, announce_circles, announce_update, offer_intros,
     )
@@ -166,6 +166,9 @@ def _run_daily_jobs(conn) -> dict:
         # out, and the sweep clears a chat that has been collecting scaffolding
         # since yesterday morning. Radar and the nudges are today's business and
         # can afford to be last.
+        # First and cheapest: one getWebhookInfo, and a setWebhook only when the
+        # registration has drifted from what the code handles.
+        ("move_webhook", ensure_webhook),
         ("move_flush", flush_pending_moves),
         ("move_sweep", purge_move_transient),
         ("move_monthly", send_move_monthly_summaries),

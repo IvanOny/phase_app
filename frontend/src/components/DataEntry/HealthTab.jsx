@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { getMonthlyMetrics, saveMonthlyMetrics, getMonthlyRun, saveMonthlyRun } from '../../api/client.js';
 import BodyweightPanel from '../Powerlifting/BodyweightPanel.jsx';
+import HealthHistory from './HealthHistory.jsx';
+import { thisMonth, shiftMonth, monthLabel, clock } from '../../utils/months.js';
 
 // One row per month, typed in at month's end. "Best" is best, not highest:
 // the field says which way is up, the table stores what was typed.
@@ -14,24 +16,6 @@ const FIELDS = [
 ];
 const GROUPS = ['HRV', 'Resting HR', 'VO₂ max', 'Sleep score'];
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
-                'August', 'September', 'October', 'November', 'December'];
-
-function thisMonth() {
-  return new Date().toISOString().slice(0, 7);
-}
-
-function shiftMonth(ym, by) {
-  const [y, m] = ym.split('-').map(Number);
-  const d = new Date(Date.UTC(y, m - 1 + by, 1));
-  return d.toISOString().slice(0, 7);
-}
-
-function monthLabel(ym) {
-  const [y, m] = ym.split('-').map(Number);
-  return `${MONTHS[m - 1]} ${y}`;
-}
-
 function fmtStamp(iso) {
   if (!iso) return '';
   const s = String(iso).slice(0, 10);
@@ -40,13 +24,6 @@ function fmtStamp(iso) {
 }
 
 const empty = () => Object.fromEntries(FIELDS.map(f => [f.key, '']));
-
-function clock(sec, pace = false) {
-  if (sec == null) return '';
-  const s = Math.round(sec);
-  if (pace || s < 3600) return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  return `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-}
 
 // What a parsed Garmin row shows as, before and after saving: the numbers
 // that say what kind of month it was, not all twenty-two.
@@ -66,7 +43,7 @@ const RUN_SUMMARY = [
 // twenty-two: the row is what the browser puts on the clipboard from Garmin
 // Connect's table, and the server parses it -- units, h:m:s, /km and all --
 // or says which cell it could not read.
-function RunSection({ month, isAuthenticated }) {
+function RunSection({ month, isAuthenticated, onSaved }) {
   const [saved, setSaved] = useState(null);      // the stored row for `month`, if any
   const [raw, setRaw] = useState('');
   const [preview, setPreview] = useState(null);  // parsed but not saved
@@ -101,6 +78,7 @@ function RunSection({ month, isAuthenticated }) {
     try {
       const r = await saveMonthlyRun({ raw });
       setSaved(r);
+      onSaved?.();
       setPreview(null);
       setRaw('');
     } catch (e) {
@@ -178,6 +156,8 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
   const [month, setMonth] = useState(thisMonth());
   const [values, setValues] = useState(empty());
   const [savedAt, setSavedAt] = useState(null);
+  // Bumped whenever a month is written, so the history below redraws with it.
+  const [reloadKey, setReloadKey] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -210,6 +190,7 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
       const row = await saveMonthlyMetrics({ month, ...values });
       setSavedAt(row.updatedAt);
       setDirty(false);
+      setReloadKey(k => k + 1);
     } catch {
       setError('Failed to save');
     } finally {
@@ -294,7 +275,13 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
         )}
       </div>
 
-      <RunSection month={month} isAuthenticated={isAuthenticated} />
+      <RunSection month={month} isAuthenticated={isAuthenticated}
+                  onSaved={() => setReloadKey(k => k + 1)} />
+
+      {/* Everything entered above, read back: the month strip and the running
+          chart. Entry and history on one tab, because the reason to look at
+          the history is usually that you are about to add to it. */}
+      <HealthHistory reloadKey={reloadKey} />
 
       {/* The old Bodyweight tab, as a section. Its data is per date, not per
           month — the pull-up e1RM leans on that — so nothing about it changed

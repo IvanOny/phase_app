@@ -180,7 +180,7 @@ function formatDate(dateStr) {
  * sessions: array from sessionsMap
  * plMetrics: result of getSessionPlMetrics — { e1rm: { squat, bench, deadlift }, confirmedMax }
  */
-function buildChartData(sessions, plMetrics) {
+export function buildChartData(sessions, plMetrics) {
   if (!plMetrics) return [];
 
   const { e1rm = {}, confirmedMax = {} } = plMetrics;

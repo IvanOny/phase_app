@@ -3,6 +3,7 @@ import PhaseHeader from '../Dashboard/PhaseHeader.jsx';
 import PhaseNav from '../Dashboard/PhaseNav.jsx';
 import SessionsList from '../Sessions/SessionsList.jsx';
 import LiftTrendChart from './LiftTrendChart.jsx';
+import HealthBandChart from './HealthBandChart.jsx';
 import ClassificationPanel from './ClassificationPanel.jsx';
 import VolumeChart from '../Charts/VolumeChart.jsx';
 import { getSessionPlMetrics, getAllPlMetrics, getClassification } from '../../api/client.js';
@@ -131,6 +132,10 @@ export default function PowerliftingDashboard({
               the all-phase feed has arrived. */}
           <LiftTrendChart sessions={allPl?.sessions ?? sessions}
                           plMetrics={allPl ?? plMetrics} showTotal={false} />
+          {/* The same history read by the month, with HRV and bodyweight
+              underneath it on the same calendar. */}
+          <HealthBandChart sessions={allPl?.sessions ?? sessions}
+                           plMetrics={allPl ?? plMetrics} />
           <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises}
                        hideBenchFilter plMetrics={plMetrics} />
         </>

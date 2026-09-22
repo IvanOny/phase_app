@@ -475,7 +475,9 @@ def _trace(cur, conn, body: dict) -> None:
         return
 
     cq = body.get("callback_query")
-    src = (cq or body.get("message") or {}).get("from") or {}
+    rx = body.get("message_reaction")
+    src = ((cq or body.get("message") or {}).get("from")
+           or (rx or {}).get("user") or {})
     tg_id = src.get("id")
     if not tg_id:
         return
@@ -490,7 +492,10 @@ def _trace(cur, conn, body: dict) -> None:
     if src.get("username"):
         who += f" @{src['username']}"
 
-    if cq:
+    if rx:
+        emo = "".join(r.get("emoji", "✦") for r in rx.get("new_reaction") or []) or "∅"
+        what = f"❤️ reaction {emo} · msg {rx.get('message_id')}"
+    elif cq:
         what = "⌨ " + _describe_callback(cur, cq.get("data") or "")
     else:
         m = body.get("message") or {}
@@ -1257,6 +1262,31 @@ _STRINGS: dict[str, dict[str, str]] = {
         "uk": "⚡ Хтось із радару підтримав твій рух.",
         "en": "⚡ Someone on radar cheered your move.",
         "de": "⚡ Jemand vom Radar hat deine Bewegung beklatscht.",
+    },
+    # A native Telegram reaction on your move, relayed by name. The gesture
+    # people reached for the morning after the ⚡ went — and one that used
+    # to vanish, because the webhook never asked to be told about it.
+    "reaction_received": {
+        "uk": "{name}: {emoji}",
+        "en": "{name}: {emoji}",
+        "de": "{name}: {emoji}",
+    },
+    # What a picture sent as a comment looks like inside the text thread,
+    # which cannot hold the picture itself. The picture goes alongside.
+    "note_media_photo": {
+        "uk": "📷 фото",
+        "en": "📷 photo",
+        "de": "📷 Foto",
+    },
+    "note_media_video": {
+        "uk": "🎬 відео",
+        "en": "🎬 video",
+        "de": "🎬 Video",
+    },
+    "pick_prompt_photo": {
+        "uk": "📷 Фото готове. Кому надіслати?",
+        "en": "📷 Photo ready. Who should get it?",
+        "de": "📷 Foto fertig. An wen soll es gehen?",
     },
     "zap_gone": {
         "uk": "⚡ більше немає — напиши коментар, це важить більше.",
@@ -2594,6 +2624,99 @@ def _talk_deliver(cur, conn, entry_id: int, a_id: int, b_id: int,
     conn.commit()
 
 
+def _on_reaction(cur, conn, rx: dict) -> None:
+    """A native Telegram reaction on something the bot placed in a chat.
+
+    Relayed to the other person by name. Crew copies aren't anonymous, and a
+    reaction is the gesture people reached for the morning after the ⚡ went
+    — any emoji, no button, nothing to teach. Until now it vanished: the
+    webhook never asked Telegram for reaction updates, so Олександра's 😅 on
+    Iv's move reached nobody, and she asked whether he could see it.
+
+    Only additions are relayed. Removing a reaction, or changing it, says
+    nothing about the old one — the person already saw it land.
+
+    A radar copy is left alone: there is no name to relay under, and the ⚡ is
+    that copy's one gesture.
+    """
+    who = (rx.get("user") or {}).get("id")
+    chat_id = (rx.get("chat") or {}).get("id")
+    msg_id = rx.get("message_id")
+    if not who or not chat_id or not msg_id:
+        return
+    old = {r.get("emoji") for r in rx.get("old_reaction") or [] if r.get("emoji")}
+    new = [r.get("emoji") for r in rx.get("new_reaction") or [] if r.get("emoji")]
+    added = [e for e in new if e not in old]
+    if not added:
+        return
+    cur.execute(
+        "SELECT f.entry_id, f.kind, f.from_tg_id, e.telegram_user_id AS author "
+        "FROM move_forwards f JOIN move_entries e ON e.id = f.entry_id "
+        "WHERE f.chat_id = %s AND f.message_id = %s",
+        (chat_id, msg_id))
+    f = cur.fetchone()
+    if not f or f["kind"] == "radar":
+        return
+    # A crew copy: to the author. A thread message: to the other side of it.
+    to_id = f["from_tg_id"] if f["kind"] == "talk" and f["from_tg_id"] else f["author"]
+    if not to_id or to_id == who:
+        return
+    me, them = _user(cur, who), _user(cur, to_id)
+    if not me or not them or not me["participant_name"]:
+        return
+    if not _note_deliverable(cur, to_id, me["participant_name"]):
+        return
+    _send(them["chat_id"] or to_id,
+          _t("reaction_received", _norm_lang(them["language_code"]),
+             name=me["participant_name"], emoji="".join(added)))
+
+
+def _send_media_note(cur, conn, tg_id: int, chat_id: int, lang: str,
+                     entry_id: int, to_id: int, src_msg_id: int, kind: str,
+                     caption: str | None) -> None:
+    """A picture or clip sent as a comment.
+
+    The thread is one text message, rebuilt from move_comments, and it cannot
+    hold a picture. So the picture goes to the other person as a copy of its
+    own, captioned with the sender's name, and the thread gets a marker line
+    in its place — «📷 фото» — so the order of the conversation still reads.
+    The sender's original stays in their chat: it is their copy.
+    """
+    me, them = _user(cur, tg_id), _user(cur, to_id)
+    if not me or not them:
+        _send_t(cur, conn, chat_id, _t("note_gone", lang))
+        return
+    cur.execute("SELECT 1 FROM move_entries WHERE id = %s", (entry_id,))
+    if not cur.fetchone():
+        _send_t(cur, conn, chat_id, _t("note_gone", lang))
+        return
+    tname = them["participant_name"]
+    if not _note_deliverable(cur, to_id, me["participant_name"]):
+        _send_t(cur, conn, chat_id, _t("note_undelivered", lang, name=tname))
+        return
+    tlang = _norm_lang(them["language_code"])
+    marker = _t("note_media_photo" if kind in ("photo", "animation") else "note_media_video", tlang)
+    body = marker + (f" — {caption.strip()}" if caption and caption.strip() else "")
+    # Round videos cannot carry a caption; everything else names the sender.
+    payload = {"chat_id": them["chat_id"] or to_id, "from_chat_id": chat_id,
+               "message_id": src_msg_id}
+    if kind != "video_note":
+        payload["caption"] = f"{me['participant_name']}" + (f": {caption.strip()}" if caption and caption.strip() else "")
+    res = _api_call("copyMessage", payload)
+    if res and res.get("message_id"):
+        cur.execute(
+            "INSERT INTO move_forwards (entry_id, recipient_tg_id, chat_id, message_id, kind, from_tg_id) "
+            "SELECT %s, %s, %s, %s, 'note', %s WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s)",
+            (entry_id, to_id, them["chat_id"] or to_id, res["message_id"], tg_id, entry_id))
+    cur.execute(
+        "INSERT INTO move_comments (entry_id, from_tg_id, to_tg_id, body) "
+        "SELECT %s, %s, %s, %s WHERE EXISTS (SELECT 1 FROM move_entries WHERE id = %s) RETURNING id",
+        (entry_id, tg_id, to_id, body, entry_id))
+    row = cur.fetchone()
+    conn.commit()
+    _talk_deliver(cur, conn, entry_id, tg_id, to_id, undo_for=tg_id, undo_id=(row or {}).get("id"))
+
+
 def _send_note(cur, conn, tg_id: int, chat_id: int, lang: str,
                entry_id: int, to_id: int, body: str, src_msg_id: int | None = None) -> None:
     """Record one comment and re-show the thread it belongs to, to both people."""
@@ -3144,7 +3267,9 @@ def _pick_view(cur, tg_id: int, entry_id: int, lang: str) -> tuple[str, dict]:
     # ends here instead, so this is where taking it back has to live.
     rows.append([{"text": _t("btn_pick_cancel", lang),
                   "callback_data": f"mv:pk:x:{entry_id}"}])
-    text = _t("pick_prompt", lang)
+    cur.execute("SELECT media_type FROM move_entries WHERE id = %s", (entry_id,))
+    mt = (cur.fetchone() or {}).get("media_type")
+    text = _t("pick_prompt_photo" if mt == "photo" else "pick_prompt", lang)
     if _pick_hints_left(cur, tg_id):
         text += "\n\n" + _t("pick_how", lang)
     return text, {"inline_keyboard": rows}
@@ -5067,6 +5192,8 @@ def _touch_seen(cur, conn, body: dict) -> None:
         if body.get(k) and body[k].get("from"):
             who = body[k]["from"].get("id")
             break
+    if who is None and body.get("message_reaction"):
+        who = (body["message_reaction"].get("user") or {}).get("id")
     if who is None:
         return
     cur.execute("UPDATE move_users SET last_seen_at = NOW() WHERE telegram_user_id = %s", (who,))
@@ -5083,6 +5210,9 @@ def _handle_move_webhook(body: dict, conn) -> None:
     cq = body.get("callback_query")
     if cq:
         _handle_callback(cur, conn, cq)
+        return
+    if body.get("message_reaction"):
+        _on_reaction(cur, conn, body["message_reaction"])
         return
 
     msg = body.get("message") or _edited_retry(cur, body.get("edited_message"))
@@ -5120,6 +5250,29 @@ def _handle_move_webhook(body: dict, conn) -> None:
     if media:
         if not (u and u["participant_name"]):
             _send_t(cur, conn, chat_id, _t("register_first", lang))
+            return
+        # A picture can be a comment. Two ways it is one: the bot has just said
+        # «наступне повідомлення піде йому» — a promise that must hold whatever
+        # the next message turns out to be — or the picture is a swipe-reply to
+        # a thread. Олександра tapped 💬, sent a screenshot to show Iv her
+        # emoji, and got «Відео готове. Кому надіслати?»: the bot had read her
+        # answer to its own question as a new move.
+        state = _get_state(cur, tg_id) or ""
+        target = None
+        if state.startswith("await_note:"):
+            try:
+                target = tuple(int(x) for x in state.split(":")[1:3])
+            except ValueError:
+                target = None
+        elif msg.get("reply_to_message"):
+            target = _reply_target(cur, chat_id, msg["reply_to_message"]["message_id"])
+            if target and target[1] == tg_id:
+                target = None                     # a reply to their own move: a move
+        if target:
+            _clear_state(cur, tg_id)
+            conn.commit()
+            _send_media_note(cur, conn, tg_id, chat_id, lang, target[0], target[1],
+                             msg["message_id"], media[2], msg.get("caption"))
             return
         # Sending a move ends any half-finished prompt. Otherwise an armed
         # "await_crew" outranks the comment window below, and the text you type

@@ -186,7 +186,19 @@ messages so they aren't buried.
 **No ⚡ on crew copies.** A crew copy carries one button, 💬; the acknowledgement
 is a comment. Dropped 19 Sep 2026. Radar copies keep the ⚡ — a stranger's move
 has no route back to a name, so it is the only positive gesture available —
-and the author is told at once, anonymously; there is no morning report. The read receipt that the first ⚡ used to provide is
+and the author is told at once, anonymously; there is no morning report.
+
+**Native Telegram reactions are relayed.** A reaction on a crew copy or a thread
+message reaches the other person by name («Олександра: 😅»). This needs the
+webhook registered with `allowed_updates` that includes `message_reaction` —
+`scripts/set_move_webhook.py` does it, once, and needs `MOVE_BOT_TOKEN`. Passing
+`allowed_updates` replaces the default set, so the script names every type.
+
+**A picture can be a comment.** Media sent while a 💬 prompt is armed, or as a
+swipe-reply to a thread, is copied to the other person with the sender's name
+and marked in the thread as «📷 фото»; otherwise media is a move.
+
+The read receipt that the first ⚡ used to provide is
 `move_users.last_seen_at`, stamped on every incoming update: a recipient who did
 anything in Move after their copy arrived has seen it, and Undo is refused by
 name («Олександра вже заходила в Move після цього»).

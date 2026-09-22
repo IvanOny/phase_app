@@ -347,11 +347,27 @@ def get_session_bench_metrics(conn: psycopg2.extensions.connection, phase_id: in
     return {"e1rm": e1rm_map, "volume": vol_map}
 
 
-def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) -> dict[str, Any]:
+def get_session_pl_metrics(conn: psycopg2.extensions.connection,
+                           phase_id: int | None) -> dict[str, Any]:
     """
-    Return squat / bench / deadlift e1RM per session plus confirmed 1RMs —
-    all in one round-trip. Used by the Phase 2 powerlifting dashboard.
+    Return squat / bench / deadlift / pull-up e1RM per session plus confirmed
+    1RMs — all in one round-trip. Used by the Phase 2 powerlifting dashboard.
+
+    phase_id None means every phase on record. The trend chart asks for that:
+    a bench e1RM from the first bench phase is the same measurement as one
+    from the powerlifting phase, and a trend that starts where the current
+    phase does throws away the history that makes it a trend. The all-phases
+    answer also carries a `sessions` list, since the caller has no single
+    phase to take one from.
     """
+    # One scope clause for every query. TRUE rather than an omitted WHERE, so
+    # the SQL below reads the same either way.
+    scope = "s.phase_id = %(phase_id)s" if phase_id is not None else "TRUE"
+    # Bodyweight for a pull-up session: the nearest log entry. Within one phase
+    # that phase's log; across all of them, whichever entry is nearest by date,
+    # which is the better rule anyway -- the scale does not know about phases.
+    bw_scope = "b.phase_id = s.phase_id" if phase_id is not None else "TRUE"
+    params = {"phase_id": phase_id, "bw_factor": PULLUP_BW_FACTOR}
     with conn.cursor() as cur:
         # Best top-set e1RM per session for each of the three lifts
         for lift, flag in [("squat", "is_squat"), ("bench", "is_barbell_bench_press"), ("deadlift", "is_deadlift")]:
@@ -367,12 +383,12 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
                 JOIN session_exercises se ON se.session_id = s.session_id
                 JOIN exercises e ON e.exercise_id = se.exercise_id
                 JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
-                WHERE s.phase_id = %s
+                WHERE {scope}
                   AND e.{flag} = 1
                   AND es.is_top_set = 1
                 ORDER BY s.session_id, es.load_kg DESC, es.reps DESC, es.exercise_set_id DESC
                 """,
-                (phase_id,),
+                params,
             )
             if lift == "squat":
                 squat_rows = cur.fetchall()
@@ -399,7 +415,7 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
         # with no bodyweight logged at all yields no rows, and the series simply
         # doesn't appear.
         cur.execute(
-            """
+            f"""
             SELECT DISTINCT ON (s.session_id)
                 s.session_id,
                 s.session_date,
@@ -414,19 +430,19 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
             CROSS JOIN LATERAL (
                 SELECT weight_kg FROM bodyweight_log b
-                WHERE b.phase_id = s.phase_id
+                WHERE {bw_scope}
                 -- session_date is stored as text, hence the cast.
                 ORDER BY (b.logged_date > s.session_date::date),
                          ABS(b.logged_date - s.session_date::date)
                 LIMIT 1
             ) bw
-            WHERE s.phase_id = %(phase_id)s
+            WHERE {scope}
               AND e.is_pullup = 1
               AND es.is_top_set = 1
             ORDER BY s.session_id, (bw.weight_kg * %(bw_factor)s + es.load_kg) DESC,
                      es.reps DESC, es.exercise_set_id DESC
             """,
-            {"phase_id": phase_id, "bw_factor": PULLUP_BW_FACTOR},
+            params,
         )
         pullup_rows = cur.fetchall()
 
@@ -442,7 +458,7 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
         # was to strip the added kilos off a weighted set and plot the result,
         # a number describing a set nobody performed.
         cur.execute(
-            """
+            f"""
             SELECT DISTINCT ON (s.session_id)
                 s.session_id,
                 s.session_date,
@@ -457,36 +473,42 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
             JOIN exercise_sets es ON es.session_exercise_id = se.session_exercise_id
             CROSS JOIN LATERAL (
                 SELECT weight_kg FROM bodyweight_log b
-                WHERE b.phase_id = s.phase_id
+                WHERE {bw_scope}
                 ORDER BY (b.logged_date > s.session_date::date),
                          ABS(b.logged_date - s.session_date::date)
                 LIMIT 1
             ) bw
-            WHERE s.phase_id = %(phase_id)s
+            WHERE {scope}
               AND e.is_pullup = 1
               AND es.is_top_set = 1
               AND COALESCE(es.load_kg, 0) = 0
             ORDER BY s.session_id, es.reps DESC, es.exercise_set_id DESC
             """,
-            {"phase_id": phase_id, "bw_factor": PULLUP_BW_FACTOR},
+            params,
         )
         pullup_bw_rows = cur.fetchall()
 
-        # Confirmed 1RMs for this phase
+        # Confirmed 1RMs and the bodyweight log, same scope
+        tbl_scope = "phase_id = %(phase_id)s" if phase_id is not None else "TRUE"
         cur.execute(
-            "SELECT lift_type, weight_kg, logged_date, session_id "
-            "FROM confirmed_1rm WHERE phase_id = %s ORDER BY logged_date",
-            (phase_id,),
+            f"SELECT lift_type, weight_kg, logged_date, session_id "
+            f"FROM confirmed_1rm WHERE {tbl_scope} ORDER BY logged_date",
+            params,
         )
         confirmed_rows = cur.fetchall()
-
-        # Bodyweight log for this phase
         cur.execute(
-            "SELECT log_id, session_id, logged_date, weight_kg "
-            "FROM bodyweight_log WHERE phase_id = %s ORDER BY logged_date",
-            (phase_id,),
+            f"SELECT log_id, session_id, logged_date, weight_kg "
+            f"FROM bodyweight_log WHERE {tbl_scope} ORDER BY logged_date",
+            params,
         )
         bw_rows = cur.fetchall()
+
+        # Across all phases the caller has no phase to take a session list
+        # from, so this answer carries its own: every session, oldest first.
+        session_rows = []
+        if phase_id is None:
+            cur.execute("SELECT session_id, session_date FROM sessions ORDER BY session_date, session_id")
+            session_rows = cur.fetchall()
 
     def _map_e1rm(rows: list) -> dict[str, dict]:
         result: dict[str, dict] = {}
@@ -514,7 +536,7 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
             "weightKg":    float(r["weight_kg"]),
         })
 
-    return {
+    out = {
         "e1rm": {
             "squat":    _map_e1rm(squat_rows),
             "bench":    _map_e1rm(bench_rows),
@@ -537,6 +559,10 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection, phase_id: int) 
             for r in bw_rows
         ],
     }
+    if phase_id is None:
+        out["sessions"] = [{"sessionId": r["session_id"], "sessionDate": str(r["session_date"])}
+                           for r in session_rows]
+    return out
 
 
 def get_bench_volume(conn: psycopg2.extensions.connection, session_id: int) -> dict[str, Any] | None:

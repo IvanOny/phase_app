@@ -5,7 +5,7 @@ import SessionsList from '../Sessions/SessionsList.jsx';
 import LiftTrendChart from './LiftTrendChart.jsx';
 import ClassificationPanel from './ClassificationPanel.jsx';
 import VolumeChart from '../Charts/VolumeChart.jsx';
-import { getSessionPlMetrics, getClassification } from '../../api/client.js';
+import { getSessionPlMetrics, getAllPlMetrics, getClassification } from '../../api/client.js';
 import { resolveTierOneExerciseIds } from '../../data/quickExercises.js';
 
 export default function PowerliftingDashboard({
@@ -31,6 +31,9 @@ export default function PowerliftingDashboard({
   bwRefreshKey,
 }) {
   const [plMetrics, setPlMetrics] = useState(null);
+  // The trend chart's feed: every phase, not this one. Refetched whenever the
+  // sessions change, like plMetrics, so a set logged just now shows up.
+  const [allPl, setAllPl] = useState(null);
   const [classification, setClassification] = useState(null);
   const [classLoading, setClassLoading] = useState(false);
 
@@ -81,6 +84,9 @@ export default function PowerliftingDashboard({
     getSessionPlMetrics(selectedPhase.phaseId)
       .then(setPlMetrics)
       .catch(() => {});
+    getAllPlMetrics()
+      .then(setAllPl)
+      .catch(() => {});
     getClassification(selectedPhase.phaseId, null)
       .then(setClassification)
       .catch(() => {});
@@ -120,7 +126,11 @@ export default function PowerliftingDashboard({
             classification={classification}
             loading={classLoading}
           />
-          <LiftTrendChart sessions={sessions} plMetrics={plMetrics} showTotal={false} />
+          {/* All phases: the trend is the whole history, and the span pills
+              pick how much of it to look at. Falls back to this phase until
+              the all-phase feed has arrived. */}
+          <LiftTrendChart sessions={allPl?.sessions ?? sessions}
+                          plMetrics={allPl ?? plMetrics} showTotal={false} />
           <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises}
                        hideBenchFilter plMetrics={plMetrics} />
         </>

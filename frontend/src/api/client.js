@@ -307,6 +307,15 @@ export async function getSessionPlMetrics(phaseId) {
   return apiFetch('GET', `/v1/metrics/phases/${phaseId}/session-pl-metrics`);
 }
 
+// Every phase at once, for the lift trend: a bench e1RM from the first bench
+// phase is the same measurement as one from the powerlifting phase, and a
+// trend that starts where the current phase does throws away the history
+// that makes it a trend. Carries its own `sessions` list.
+export async function getAllPlMetrics() {
+  if (MOCK_MODE) return Promise.resolve({ e1rm: { squat: {}, bench: {}, deadlift: {} }, confirmedMax: { bench: null, squat: null, deadlift: null }, confirmedRms: { bench: [], squat: [], deadlift: [] }, bodyweightLog: [], sessions: [] });
+  return apiFetch('GET', '/v1/metrics/session-pl-metrics');
+}
+
 export async function getClassification(phaseId, bodyweightKg) {
   if (MOCK_MODE) return Promise.resolve(null);
   const bwParam = bodyweightKg != null ? `?bodyweightKg=${bodyweightKg}` : '';

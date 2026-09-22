@@ -159,6 +159,8 @@ class PhaseApi:
             return self.get_session_bench_metrics(int(path.split("/")[4]))
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/session-pl-metrics", path):
             return self.get_session_pl_metrics(int(path.split("/")[4]))
+        if method == "GET" and path == "/v1/metrics/session-pl-metrics":
+            return self.get_session_pl_metrics(None)
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/classification", path):
             return self.get_classification(int(path.split("/")[4]), qp)
 
@@ -1105,7 +1107,7 @@ class PhaseApi:
     # Powerlifting metrics                                                 #
     # ------------------------------------------------------------------ #
 
-    def get_session_pl_metrics(self, phase_id: int) -> ApiResponse:
+    def get_session_pl_metrics(self, phase_id: int | None) -> ApiResponse:
         from phase_app.metrics import get_session_pl_metrics
         return ApiResponse(200, get_session_pl_metrics(self.conn, phase_id))
 

@@ -4,7 +4,7 @@ import LogSetsForm from './LogSetsForm.jsx';
 import CreatePhaseForm from './CreatePhaseForm.jsx';
 import ExerciseCatalogForm from './ExerciseCatalogForm.jsx';
 import ScreenshotImportForm from './ScreenshotImportForm.jsx';
-import BodyweightPanel from '../Powerlifting/BodyweightPanel.jsx';
+import HealthTab from './HealthTab.jsx';
 import QuickLogForm from './QuickLogForm.jsx';
 
 const TABS = [
@@ -12,7 +12,7 @@ const TABS = [
   { id: 'import',      label: 'Import' },
   { id: 'session',     label: 'Session' },
   { id: 'sets',        label: 'Sets' },
-  { id: 'bodyweight',  label: 'Bodyweight' },
+  { id: 'health',      label: 'Health' },
   { id: 'exercises',   label: 'Exercises' },
   { id: 'phase',       label: 'Phase' },
 ];
@@ -99,11 +99,11 @@ export default function DataEntryPanel({
               onSetsLogged={onSetsLogged}
             />
           )}
-          {activeTab === 'bodyweight' && (
-            <BodyweightPanel
+          {activeTab === 'health' && (
+            <HealthTab
               phaseId={selectedPhaseId}
               isAuthenticated={isAuthenticated}
-              onSaved={onBodyweightSaved}
+              onBodyweightSaved={onBodyweightSaved}
             />
           )}
           {activeTab === 'exercises' && (

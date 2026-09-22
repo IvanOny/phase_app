@@ -329,6 +329,18 @@ export async function getBodyweightLog(phaseId) {
   return apiFetchList('GET', `/v1/bodyweight?phaseId=${phaseId}`);
 }
 
+// ---- Monthly recovery metrics (HRV, RHR, VO2 max, sleep) ----
+
+export async function getMonthlyMetrics(month) {
+  if (MOCK_MODE) return Promise.resolve(month ? null : []);
+  return apiFetch('GET', `/v1/monthly-metrics${month ? `?month=${month}` : ''}`);
+}
+
+export async function saveMonthlyMetrics(payload) {
+  if (MOCK_MODE) return Promise.resolve({ ...payload, updatedAt: new Date().toISOString() });
+  return apiFetch('POST', '/v1/monthly-metrics', payload);
+}
+
 export async function createBodyweightEntry(payload) {
   if (MOCK_MODE) return Promise.resolve({ logId: nextId(), ...payload });
   return apiFetch('POST', '/v1/bodyweight', payload);

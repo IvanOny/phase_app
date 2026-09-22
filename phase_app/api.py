@@ -165,6 +165,10 @@ class PhaseApi:
             return self.get_classification(int(path.split("/")[4]), qp)
 
         # Bodyweight log
+        if method == "GET" and path == "/v1/monthly-metrics":
+            return self.get_monthly_metrics(qp)
+        if method == "POST" and path == "/v1/monthly-metrics":
+            return self.save_monthly_metrics(body)
         if method == "GET" and path == "/v1/bodyweight":
             return self.list_bodyweight(qp)
         if method == "POST" and path == "/v1/bodyweight":
@@ -1171,6 +1175,64 @@ class PhaseApi:
     # ------------------------------------------------------------------ #
     # Bodyweight log                                                       #
     # ------------------------------------------------------------------ #
+
+    # ------------------------------------------------------------------ #
+    # Monthly recovery metrics: one row per month, typed in at month's end.
+    # ------------------------------------------------------------------ #
+    _MONTHLY_FIELDS = ("hrvBest", "hrvAvg", "rhrBest", "rhrAvg", "vo2maxBest", "sleepAvg")
+    _MONTHLY_COLS = ("hrv_best", "hrv_avg", "rhr_best", "rhr_avg", "vo2max_best", "sleep_avg")
+
+    def _monthly_row(self, r) -> dict[str, Any]:
+        out = {"month": r["month"], "updatedAt": str(r["updated_at"])}
+        for f, c in zip(self._MONTHLY_FIELDS, self._MONTHLY_COLS):
+            out[f] = float(r[c]) if r[c] is not None else None
+        return out
+
+    def get_monthly_metrics(self, qp: dict[str, str]) -> ApiResponse:
+        """One month if ?month=YYYY-MM is given, else every month, oldest first."""
+        month = qp.get("month")
+        if month:
+            r = self._exec("SELECT * FROM monthly_metrics WHERE month = %s", (month,)).fetchone()
+            return ApiResponse(200, self._monthly_row(r) if r else None)
+        rows = self._exec("SELECT * FROM monthly_metrics ORDER BY month").fetchall()
+        return ApiResponse(200, [self._monthly_row(r) for r in rows])
+
+    def save_monthly_metrics(self, payload: dict[str, Any]) -> ApiResponse:
+        """Upsert. The month is the key; any field absent or null clears it.
+
+        Entered on the 30th and corrected on the 2nd is the same row -- the
+        month is the identity, not the moment it was typed.
+        """
+        month = payload.get("month")
+        if not isinstance(month, str) or not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
+            return ApiResponse(400, {"error": "validation_error", "detail": "month must be YYYY-MM"})
+        vals = []
+        for f in self._MONTHLY_FIELDS:
+            v = payload.get(f)
+            if v in (None, ""):
+                vals.append(None)
+                continue
+            try:
+                vals.append(float(v))
+            except (TypeError, ValueError):
+                return ApiResponse(400, {"error": "validation_error", "detail": f"{f} must be a number"})
+        try:
+            r = self._exec(
+                "INSERT INTO monthly_metrics (month, hrv_best, hrv_avg, rhr_best, rhr_avg, vo2max_best, sleep_avg) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (month) DO UPDATE SET "
+                "  hrv_best = EXCLUDED.hrv_best, hrv_avg = EXCLUDED.hrv_avg, "
+                "  rhr_best = EXCLUDED.rhr_best, rhr_avg = EXCLUDED.rhr_avg, "
+                "  vo2max_best = EXCLUDED.vo2max_best, sleep_avg = EXCLUDED.sleep_avg, "
+                "  updated_at = NOW() "
+                "RETURNING *",
+                (month, *vals),
+            ).fetchone()
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(200, self._monthly_row(r))
 
     def list_bodyweight(self, qp: dict[str, str]) -> ApiResponse:
         if "phaseId" not in qp:

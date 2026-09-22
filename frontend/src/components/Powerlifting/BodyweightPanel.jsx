@@ -16,6 +16,10 @@ export default function BodyweightPanel({ phaseId, isAuthenticated, onSaved }) {
   const [weightKg, setWeightKg] = useState('');
   const [date, setDate] = useState(today());
   const [saving, setSaving] = useState(false);
+  // The list is folded away: this panel is for writing a number down, and the
+  // history is read on the dashboard. It still opens, because a weight typed
+  // wrong last month can be deleted nowhere else.
+  const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -59,10 +63,20 @@ export default function BodyweightPanel({ phaseId, isAuthenticated, onSaved }) {
             {latest.weightKg} kg <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>· {fmtDate(latest.loggedDate)}</span>
           </span>
         )}
+        {log.length > 0 && (
+          <button
+            onClick={() => setShowAll(v => !v)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 10px',
+                     fontSize: 11, color: 'var(--text-muted)' }}
+            aria-expanded={showAll}
+          >
+            {showAll ? 'hide' : 'all ' + log.length}
+          </button>
+        )}
       </div>
 
       {isAuthenticated && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: log.length ? 'var(--space-4)' : 0 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: showAll && log.length ? 'var(--space-4)' : 0 }}>
           <input
             type="number"
             className="inline-input"
@@ -92,7 +106,7 @@ export default function BodyweightPanel({ phaseId, isAuthenticated, onSaved }) {
         </div>
       )}
 
-      {log.length > 0 && (
+      {showAll && log.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {[...log].reverse().map(entry => (
             <div key={entry.logId} style={{

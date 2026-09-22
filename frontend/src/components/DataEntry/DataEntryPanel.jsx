@@ -9,10 +9,10 @@ import QuickLogForm from './QuickLogForm.jsx';
 
 const TABS = [
   { id: 'quick',       label: 'Quick' },
+  { id: 'health',      label: 'Health' },
   { id: 'import',      label: 'Import' },
   { id: 'session',     label: 'Session' },
   { id: 'sets',        label: 'Sets' },
-  { id: 'health',      label: 'Health' },
   { id: 'exercises',   label: 'Exercises' },
   { id: 'phase',       label: 'Phase' },
 ];

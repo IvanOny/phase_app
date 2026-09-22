@@ -247,32 +247,36 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
           )}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 1fr', rowGap: 10, columnGap: 12,
+        {/* Two columns: the metric, then its fields in a row that wraps. On a
+            phone the row folds and "average" drops under "best" instead of
+            running off the right edge. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', rowGap: 10, columnGap: 12,
                       alignItems: 'center', fontSize: 13 }}>
           {GROUPS.map(g => {
             const fs = FIELDS.filter(f => f.group === g);
             return (
               <div key={g} style={{ display: 'contents' }}>
                 <span style={{ color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>{g}</span>
-                {fs.map(f => (
-                  <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ color: 'var(--text-muted)', width: 52 }}>{f.label}</span>
-                    <input
-                      type="number"
-                      className="inline-input"
-                      value={values[f.key]}
-                      onChange={e => set(f.key, e.target.value)}
-                      disabled={!isAuthenticated}
-                      inputMode="decimal"
-                      step={f.step}
-                      min="0"
-                      style={{ width: 68 }}
-                      title={f.hint || ''}
-                    />
-                    {f.unit && <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{f.unit}</span>}
-                  </label>
-                ))}
-                {fs.length === 1 && <span />}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+                  {fs.map(f => (
+                    <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: 'var(--text-muted)' }}>{f.label}</span>
+                      <input
+                        type="number"
+                        className="inline-input"
+                        value={values[f.key]}
+                        onChange={e => set(f.key, e.target.value)}
+                        disabled={!isAuthenticated}
+                        inputMode="decimal"
+                        step={f.step}
+                        min="0"
+                        style={{ width: 64 }}
+                        title={f.hint || ''}
+                      />
+                      {f.unit && <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{f.unit}</span>}
+                    </label>
+                  ))}
+                </div>
               </div>
             );
           })}

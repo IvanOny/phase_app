@@ -50,15 +50,36 @@ const DAY_MS = 86400000;
 // the data never did. `null` is everything on record, cut from first session to
 // last as before.
 const SPANS = [
-  { key: '30',  label: '30d', days: 30 },
-  { key: '100', label: '100d', days: 100 },
-  { key: '365', label: '1y',  days: 365 },
-  { key: 'all', label: 'all', days: null },
+  { key: '30',     label: '30d', days: 30 },
+  { key: '100',    label: '100d', days: 100 },
+  { key: '365',    label: '1y',  days: 365 },
+  { key: 'all',    label: 'all', days: null },
+  { key: 'custom', label: 'custom' },
 ];
 const DEFAULT_SPAN = '100';
 
 function isoDay(ms) {
   return new Date(ms).toISOString().slice(0, 10);
+}
+
+function todayMs() {
+  return Date.parse(new Date().toISOString().slice(0, 10));
+}
+
+// The window the buckets are cut over, as {from, to} in ms at midnight UTC,
+// or null for "first session to last". A preset ends today; a custom range
+// is whatever the two date fields say, with the two swapped if they were
+// typed the wrong way round.
+function resolveRange(spanKey, custom) {
+  if (spanKey === 'custom') {
+    const a = Date.parse(custom.from), b = Date.parse(custom.to);
+    if (Number.isNaN(a) || Number.isNaN(b)) return null;
+    return { from: Math.min(a, b), to: Math.max(a, b) };
+  }
+  const days = SPANS.find(s => s.key === spanKey)?.days ?? null;
+  if (!days) return null;
+  const today = todayMs();
+  return { from: today - days * DAY_MS, to: today };
 }
 
 function round1(n) {
@@ -77,20 +98,22 @@ function round1(n) {
  * measurement, so its bucket value is the last one in the window, not a mean
  * of running bests.
  */
-function bucketChartData(points, lifts, spanDays = null) {
+function bucketChartData(points, lifts, range = null) {
   const has = p => lifts.some(l => (l === 'total' ? p.total : p[`_${l}`]) != null);
   let used = points.filter(has);
 
-  // A chosen span is anchored at today, not at the last session: "the last
-  // 100 days" is a question about the calendar, and a window that ends five
-  // days ago because that is when you last trained would answer a different
-  // one. The trailing gap is honest — it shows you haven't trained this week.
+  // A chosen range is anchored on the calendar, not on the sessions: "the
+  // last 100 days" ends today, not five days ago because that is when you
+  // last trained, and a custom range ends where it was told to. The trailing
+  // gap is honest — it shows you haven't trained this week.
   let t0, t1;
-  if (spanDays) {
-    const today = Date.parse(new Date().toISOString().slice(0, 10));
-    t1 = today;
-    t0 = today - spanDays * DAY_MS;
-    used = used.filter(p => Date.parse(p.date.split('T')[0]) >= t0);
+  if (range) {
+    t0 = range.from;
+    t1 = range.to;
+    used = used.filter(p => {
+      const t = Date.parse(p.date.split('T')[0]);
+      return t >= t0 && t <= t1;
+    });
     if (used.length === 0) return [];
   } else {
     if (used.length === 0) return [];
@@ -240,7 +263,12 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   // are one tap away.
   const [selected, setSelected] = useState(['bench']);
   const [spanKey, setSpanKey] = useState(DEFAULT_SPAN);
-  const spanDays = SPANS.find(s => s.key === spanKey)?.days ?? null;
+  // The custom range starts as the last 100 days, so choosing "custom" shows
+  // the same chart with two fields to move its edges.
+  const [custom, setCustom] = useState(() => ({
+    from: isoDay(todayMs() - 100 * DAY_MS), to: isoDay(todayMs()),
+  }));
+  const range = resolveRange(spanKey, custom);
 
   function toggleLift(lift) {
     setSelected(prev => {
@@ -263,14 +291,14 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
 
   // A tooltip pinned to a line that has just been switched off would hang there
   // describing something invisible.
-  useEffect(() => { openTooltip(null); setHovered(null); }, [selected, spanKey]);
+  useEffect(() => { openTooltip(null); setHovered(null); }, [selected, spanKey, custom]);
 
   // Only what the pills have on. The y-axis reads dataMin/dataMax off the
   // series actually rendered, so hiding the rest re-scales the chart around
   // what is left — which is most of the reason to hide them. The windows are
   // cut over these lifts' span too, so the ten points cover what is shown.
   const liftsToShow = selected.filter(l => l !== 'total' || showTotal);
-  const data = bucketChartData(buildChartData(sessions, plMetrics), liftsToShow, spanDays);
+  const data = bucketChartData(buildChartData(sessions, plMetrics), liftsToShow, range);
   const hasData = data.length > 0;
 
   // Last index in data where each lift has a non-null value (for inline label placement)
@@ -438,6 +466,19 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
           })}
         </div>
       </div>
+      {spanKey === 'custom' && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end',
+                      marginBottom: 8, fontSize: 11, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+          <input type="date" className="inline-input" value={custom.from} max={custom.to}
+                 onChange={e => setCustom(c => ({ ...c, from: e.target.value }))}
+                 aria-label="From" style={{ fontSize: 11, padding: '1px 4px' }} />
+          <span>–</span>
+          <input type="date" className="inline-input" value={custom.to} min={custom.from}
+                 max={isoDay(todayMs())}
+                 onChange={e => setCustom(c => ({ ...c, to: e.target.value }))}
+                 aria-label="To" style={{ fontSize: 11, padding: '1px 4px' }} />
+        </div>
+      )}
       {hasData ? (
         <>
           <div
@@ -531,7 +572,11 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
           </div>
         </>
       ) : (
-        <div className="chart-empty">No lift data yet — log squat, bench, deadlift or pull-up sets with top-set marked</div>
+        <div className="chart-empty">
+          {range
+            ? 'No sessions in this range for the lifts selected'
+            : 'No lift data yet — log squat, bench, deadlift or pull-up sets with top-set marked'}
+        </div>
       )}
     </div>
   );

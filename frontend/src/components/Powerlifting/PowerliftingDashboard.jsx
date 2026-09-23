@@ -5,10 +5,9 @@ import SessionsList from '../Sessions/SessionsList.jsx';
 import LiftTrendChart from './LiftTrendChart.jsx';
 import HealthBandChart from '../Health/HealthBandChart.jsx';
 import HealthHistory from '../Health/HealthHistory.jsx';
-import InjuriesCard from '../Health/InjuriesCard.jsx';
 import ClassificationPanel from './ClassificationPanel.jsx';
 import VolumeChart from '../Charts/VolumeChart.jsx';
-import { getSessionPlMetrics, getAllPlMetrics, getClassification, getInjuries } from '../../api/client.js';
+import { getSessionPlMetrics, getAllPlMetrics, getClassification } from '../../api/client.js';
 import { resolveTierOneExerciseIds } from '../../data/quickExercises.js';
 
 export default function PowerliftingDashboard({
@@ -37,14 +36,6 @@ export default function PowerliftingDashboard({
   // The trend chart's feed: every phase, not this one. Refetched whenever the
   // sessions change, like plMetrics, so a set logged just now shows up.
   const [allPl, setAllPl] = useState(null);
-  // One fetch, three readers: the card, and the spans on both trend charts.
-  const [injuries, setInjuries] = useState([]);
-  // Refetched on the same key as bodyweight: both are saved from the Health
-  // tab. Private, so only fetched logged in -- and dropped on logout.
-  useEffect(() => {
-    if (!isAuthenticated) { setInjuries([]); return; }
-    getInjuries().then(r => setInjuries(Array.isArray(r) ? r : [])).catch(() => {});
-  }, [bwRefreshKey, isAuthenticated]);
   const [classification, setClassification] = useState(null);
   const [classLoading, setClassLoading] = useState(false);
 
@@ -141,7 +132,7 @@ export default function PowerliftingDashboard({
               pick how much of it to look at. Falls back to this phase until
               the all-phase feed has arrived. */}
           <LiftTrendChart sessions={allPl?.sessions ?? sessions}
-                          plMetrics={allPl ?? plMetrics} showTotal={false} injuries={injuries} />
+                          plMetrics={allPl ?? plMetrics} showTotal={false} />
           <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises}
                        hideBenchFilter plMetrics={plMetrics} />
           {/* Health reads here, under the lifting. The Health tab is where
@@ -151,8 +142,7 @@ export default function PowerliftingDashboard({
           {isAuthenticated && (
             <>
               <HealthHistory />
-              <HealthBandChart plMetrics={allPl ?? plMetrics} injuries={injuries} />
-              <InjuriesCard injuries={injuries} />
+              <HealthBandChart plMetrics={allPl ?? plMetrics} />
             </>
           )}
         </>

@@ -368,28 +368,6 @@ export async function saveMonthlyRun(payload) {
   return apiFetch('POST', '/v1/monthly-run', payload);
 }
 
-// ---- Injuries (spans annotated over the charts) ----
-
-export async function getInjuries() {
-  if (MOCK_MODE) return Promise.resolve([]);
-  return apiFetch('GET', '/v1/injuries');
-}
-
-export async function createInjury(payload) {
-  if (MOCK_MODE) return Promise.resolve({ injuryId: Date.now(), ...payload });
-  return apiFetch('POST', '/v1/injuries', payload);
-}
-
-export async function updateInjury(injuryId, payload) {
-  if (MOCK_MODE) return Promise.resolve({ injuryId, ...payload });
-  return apiFetch('PATCH', `/v1/injuries/${injuryId}`, payload);
-}
-
-export async function deleteInjury(injuryId) {
-  if (MOCK_MODE) return Promise.resolve({ deleted: true });
-  return apiFetch('DELETE', `/v1/injuries/${injuryId}`);
-}
-
 export async function createBodyweightEntry(payload) {
   if (MOCK_MODE) return Promise.resolve({ logId: nextId(), ...payload });
   return apiFetch('POST', '/v1/bodyweight', payload);

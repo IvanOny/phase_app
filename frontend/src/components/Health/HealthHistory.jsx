@@ -1,10 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip,
-} from 'recharts';
 import { getMonthlyMetrics, getMonthlyRun } from '../../api/client.js';
 import { useChartColors } from '../../hooks/useChartColors.js';
-import { monthShort, monthTick, monthRange, clock } from '../../utils/months.js';
+import { monthShort, monthRange, clock } from '../../utils/months.js';
 
 // Which way is up. Resting heart rate is the one metric where the smaller
 // number is the better month, and the arrow has to know that or it will
@@ -76,66 +73,9 @@ function MonthStrip({ rows, colors }) {
   );
 }
 
-// Draft 2: volume as bars, pace as a line drawn upside down so faster is
-// higher. The two together are the story — the distance went up and the pace
-// came down at the same time, which neither series says on its own.
-function RunningChart({ rows, colors }) {
-  const data = rows.filter(r => r.totalKm != null);
-  if (data.length === 0) {
-    return <div className="chart-empty">No running months yet</div>;
-  }
-  const paces = data.map(r => r.avgPaceS).filter(v => v != null);
-  const lo = Math.min(...paces), hi = Math.max(...paces);
-  const pad = Math.max((hi - lo) * 0.15, 15);
-
-  return (
-    <>
-      <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-secondary)',
-                    marginBottom: 6, flexWrap: 'wrap' }}>
-        <span>
-          <span style={{ display: 'inline-block', width: 9, height: 9, borderRadius: 2,
-                         background: colors.accent, opacity: 0.55, marginRight: 5 }} />
-          km per month
-        </span>
-        <span>
-          <span style={{ display: 'inline-block', width: 14, height: 2, background: '#f59e0b',
-                         verticalAlign: 'middle', marginRight: 5 }} />
-          avg pace — higher is faster
-        </span>
-      </div>
-      <ResponsiveContainer width="100%" height={220}>
-        <ComposedChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: -12 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke={colors.border} vertical={false} />
-          <XAxis dataKey="month" tickFormatter={monthTick} tick={{ fontSize: 11, fill: colors.textMuted }}
-                 axisLine={{ stroke: colors.border }} tickLine={false} interval={0} />
-          <YAxis yAxisId="km" tick={{ fontSize: 11, fill: colors.textMuted }}
-                 axisLine={false} tickLine={false} width={40} />
-          {/* Reversed, so a faster month sits higher. A pace axis the normal
-              way up reads as though getting better were falling. */}
-          <YAxis yAxisId="pace" orientation="right" reversed domain={[lo - pad, hi + pad]}
-                 tickFormatter={v => clock(v, true)} width={44}
-                 tick={{ fontSize: 11, fill: colors.textMuted }} axisLine={false} tickLine={false} />
-          <Tooltip
-            contentStyle={{ background: colors.bgApp, border: `1px solid ${colors.border}`,
-                            borderRadius: 8, fontSize: 12 }}
-            labelFormatter={monthShort}
-            formatter={(v, name) => (name === 'avgPaceS'
-              ? [`${clock(v, true)} /km`, 'pace']
-              : [`${Math.round(v * 10) / 10} km`, 'distance'])}
-          />
-          <Bar yAxisId="km" dataKey="totalKm" fill={colors.accent} fillOpacity={0.55}
-               radius={[3, 3, 0, 0]} maxBarSize={44} isAnimationActive={false} />
-          <Line yAxisId="pace" type="monotone" dataKey="avgPaceS" stroke="#f59e0b" strokeWidth={2}
-                dot={{ r: 3, fill: '#f59e0b' }} connectNulls isAnimationActive={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </>
-  );
-}
-
 /**
- * The two history views over the monthly tables, fetched once and shared:
- * the strip reads every column, the chart reads two of them.
+ * The month strip over both monthly tables, recovery and running, merged
+ * into one row per month.
  *
  * `reloadKey` is anything that should send it back to the server -- a month
  * saved elsewhere in the page. It is fetched once otherwise.
@@ -178,13 +118,6 @@ export default function HealthHistory({ reloadKey = 0 }) {
           <span className="card-title">Months</span>
         </div>
         <MonthStrip rows={rows} colors={colors} />
-      </div>
-
-      <div className="chart-wrapper">
-        <div className="chart-title-row">
-          <span className="card-title">Running — volume and pace</span>
-        </div>
-        <RunningChart rows={rows} colors={colors} />
       </div>
     </>
   );

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getMonthlyMetrics, saveMonthlyMetrics, getMonthlyRun, saveMonthlyRun } from '../../api/client.js';
 import BodyweightPanel from '../Powerlifting/BodyweightPanel.jsx';
+import InjuriesSection from './InjuriesSection.jsx';
 import { thisMonth, shiftMonth, monthLabel, clock } from '../../utils/months.js';
 
 // One row per month, typed in at month's end. "Best" is best, not highest:
@@ -271,6 +272,8 @@ export default function HealthTab({ phaseId, isAuthenticated, onBodyweightSaved 
       </div>
 
       <RunSection month={month} isAuthenticated={isAuthenticated} />
+
+      <InjuriesSection isAuthenticated={isAuthenticated} onChanged={onBodyweightSaved} />
 
       {/* The old Bodyweight tab, as a section. Its data is per date, not per
           month — the pull-up e1RM leans on that — so nothing about it changed

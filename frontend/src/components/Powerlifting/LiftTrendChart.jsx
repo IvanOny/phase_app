@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
+import { injurySpans, injuryMarks } from '../Health/InjuriesCard.jsx';
 import { useChartColors } from '../../hooks/useChartColors.js';
 
 // Mirrors PULLUP_BW_FACTOR in phase_app/metrics.py, which is where the e1RM is
@@ -252,7 +253,7 @@ function buildChartData(sessions, plMetrics) {
   return points;
 }
 
-export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }) {
+export default function LiftTrendChart({ sessions, plMetrics, showTotal = true, injuries = [] }) {
   const colors = useChartColors();
   const isTouch = useIsTouchDevice();
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-pl');
@@ -496,6 +497,12 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                 <YAxis domain={['dataMin - 10', 'dataMax + 10']}
                   tick={{ fill: colors.textMuted, fontSize: 12 }}
                   axisLine={false} tickLine={false} width={44} />
+                {/* Injuries, shaded across the windows they fall in. */}
+                {injuryMarks(injurySpans(
+                  injuries,
+                  data.map(b => ({ key: b.date, from: b.dateStart, to: b.dateEnd })),
+                  iso => data.findIndex(b => iso >= b.dateStart && iso <= b.dateEnd),
+                ))}
                 {liftsToShow.map(lift => (
                   <Line
                     key={lift}

@@ -3,6 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip,
 } from 'recharts';
 import { getMonthlyMetrics } from '../../api/client.js';
+import { injurySpans, injuryMarks } from './InjuriesCard.jsx';
 import { useChartColors } from '../../hooks/useChartColors.js';
 import { monthOf, monthTick, monthShort, monthRange, thisMonth } from '../../utils/months.js';
 
@@ -42,7 +43,7 @@ function avg(xs) {
  * Gaps are drawn as gaps. A month with nothing entered still gets its tick,
  * so the axis is a calendar and not a list of the months that had data.
  */
-export default function HealthBandChart({ plMetrics }) {
+export default function HealthBandChart({ plMetrics, injuries = [] }) {
   const colors = useChartColors();
   const [selected, setSelected] = useState(['hrvAvg', 'bw']);
   const [spanKey, setSpanKey] = useState('12');
@@ -154,6 +155,11 @@ export default function HealthBandChart({ plMetrics }) {
                      tick={single ? axisTick : false} axisLine={false} tickLine={false}
                      hide={!single && i > 0} />
             ))}
+            {injuryMarks(injurySpans(
+              injuries,
+              rows.map(r => ({ key: r.month, from: r.month + '-01', to: r.month + '-31' })),
+              iso => rows.findIndex(r => r.month === monthOf(iso)),
+            ), withData[0])}
             <Tooltip
               contentStyle={{ background: colors.bgApp, border: `1px solid ${colors.border}`,
                               borderRadius: 8, fontSize: 12 }}

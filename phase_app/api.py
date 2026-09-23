@@ -174,6 +174,14 @@ class PhaseApi:
             return self.get_monthly_metrics(qp)
         if method == "POST" and path == "/v1/monthly-metrics":
             return self.save_monthly_metrics(body)
+        if method == "GET" and path == "/v1/injuries":
+            return self.list_injuries()
+        if method == "POST" and path == "/v1/injuries":
+            return self.save_injury(None, body)
+        if method == "PATCH" and re.fullmatch(r"/v1/injuries/\d+", path):
+            return self.save_injury(int(path.split("/")[3]), body)
+        if method == "DELETE" and re.fullmatch(r"/v1/injuries/\d+", path):
+            return self.delete_injury(int(path.split("/")[3]))
         if method == "GET" and path == "/v1/bodyweight":
             return self.list_bodyweight(qp)
         if method == "POST" and path == "/v1/bodyweight":
@@ -1337,6 +1345,88 @@ class PhaseApi:
             "loggedDate": payload["loggedDate"],
             "weightKg":   payload["weightKg"],
         })
+
+    # ------------------------------------------------------------------ #
+    # Injuries: spans drawn over the training history                      #
+    # ------------------------------------------------------------------ #
+    _INJURY_SEVERITIES = ("minor", "moderate", "severe")
+
+    def _injury_row(self, r) -> dict[str, Any]:
+        return {
+            "injuryId":   r["injury_id"],
+            "startedOn":  str(r["started_on"]),
+            "resolvedOn": str(r["resolved_on"]) if r["resolved_on"] else None,
+            "area":       r["area"],
+            "severity":   r["severity"],
+            "note":       r["note"],
+        }
+
+    def list_injuries(self) -> ApiResponse:
+        rows = self._exec("SELECT * FROM injuries ORDER BY started_on").fetchall()
+        return ApiResponse(200, [self._injury_row(r) for r in rows])
+
+    def save_injury(self, injury_id: int | None, payload: dict[str, Any]) -> ApiResponse:
+        """Create (injury_id None) or update. On update, only the keys sent
+        change -- so "resolved today" is one field, not a resubmitted form."""
+        def date_or_none(key):
+            v = payload.get(key)
+            if v in (None, ""):
+                return None
+            if not isinstance(v, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", v):
+                raise ValueError(f"{key} must be YYYY-MM-DD")
+            return v
+
+        try:
+            fields = {}
+            if "startedOn" in payload:
+                fields["started_on"] = date_or_none("startedOn")
+            if "resolvedOn" in payload:
+                fields["resolved_on"] = date_or_none("resolvedOn")
+            if "area" in payload:
+                fields["area"] = (payload.get("area") or "").strip() or None
+            if "severity" in payload:
+                if payload["severity"] not in self._INJURY_SEVERITIES:
+                    raise ValueError("severity must be minor, moderate or severe")
+                fields["severity"] = payload["severity"]
+            if "note" in payload:
+                fields["note"] = (payload.get("note") or "").strip() or None
+        except ValueError as exc:
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+
+        if injury_id is None and (not fields.get("started_on") or not fields.get("area")):
+            return ApiResponse(400, {"error": "validation_error", "detail": "startedOn and area are required"})
+        if not fields:
+            return ApiResponse(400, {"error": "validation_error", "detail": "nothing to change"})
+
+        cols = list(fields)
+        try:
+            if injury_id is None:
+                r = self._exec(
+                    "INSERT INTO injuries (" + ", ".join(cols) + ") VALUES ("
+                    + ", ".join(["%s"] * len(cols)) + ") RETURNING *",
+                    tuple(fields[c] for c in cols),
+                ).fetchone()
+            else:
+                r = self._exec(
+                    "UPDATE injuries SET " + ", ".join(f"{c} = %s" for c in cols)
+                    + " WHERE injury_id = %s RETURNING *",
+                    tuple(fields[c] for c in cols) + (injury_id,),
+                ).fetchone()
+                if r is None:
+                    self.conn.rollback()
+                    return ApiResponse(404, {"error": "not_found"})
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(201 if injury_id is None else 200, self._injury_row(r))
+
+    def delete_injury(self, injury_id: int) -> ApiResponse:
+        cur = self._exec("DELETE FROM injuries WHERE injury_id = %s RETURNING injury_id", (injury_id,))
+        if cur.fetchone() is None:
+            return ApiResponse(404, {"error": "not_found"})
+        self.conn.commit()
+        return ApiResponse(200, {"deleted": True, "injuryId": injury_id})
 
     def delete_bodyweight(self, log_id: int) -> ApiResponse:
         cur = self._exec("DELETE FROM bodyweight_log WHERE log_id = %s RETURNING log_id", (log_id,))

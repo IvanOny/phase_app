@@ -30,21 +30,35 @@ function nextId() {
   return ++_nextId;
 }
 
+// Thrown for a 401. `expired` separates a session that ran out (a token was
+// sent and refused -- the user should be asked to log in again) from a
+// logged-out reader touching something private (nothing to prompt about;
+// the caller just shows less).
+export class UnauthorizedError extends Error {
+  constructor(expired) {
+    super(expired ? 'Session expired. Please log in again.' : 'Log in to see this.');
+    this.status = 401;
+    this.expired = expired;
+  }
+}
+
 async function apiFetch(method, path, body, { allow404 = false, allow409 = false } = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  if (method !== 'GET') {
-    const token = getStoredToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-  }
+  // Sent on every call, reads included: the server now keeps the reads about
+  // the person -- recovery, running, injuries, bodyweight -- behind the login.
+  const token = getStoredToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
-    window.dispatchEvent(new Event('auth:logout'));
-    throw new Error('Session expired. Please log in again.');
+    if (token) {
+      localStorage.removeItem(TOKEN_KEY);
+      window.dispatchEvent(new Event('auth:logout'));
+    }
+    throw new UnauthorizedError(Boolean(token));
   }
   if (res.status === 404 && allow404) return null;
   if (res.status === 409 && allow409) return res.json();

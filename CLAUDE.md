@@ -55,6 +55,21 @@ frontend/src/
 
 **Stale DB connection** — `api/index.py` pings with `SELECT 1` before reusing a cached `_conn` on warm Vercel instances. Supabase drops idle connections silently.
 
+**Auth** — the server enforces it; the UI only mirrors it. `api/index.py` checks
+every `/v1/` request against `needs_auth` in `phase_app/auth.py` before dispatching.
+Every POST/PATCH/DELETE needs the Bearer token `POST /v1/auth/login` issues
+(HMAC with `TOKEN_SECRET`); so do the reads about the person — `/v1/monthly-metrics`,
+`/v1/monthly-run`, `/v1/injuries`, `/v1/bodyweight` (`PRIVATE_READS`). **Training
+reads stay public, deliberately**: the dashboard is meant to be viewable logged out,
+and a lift history is not a medical record. The one health series inside a training
+read, `bodyweightLog` in the lift metrics, is stripped for a logged-out caller; the
+single weight each pull-up e1RM used stays, because the public chart has to explain
+its number. Exempt: `/v1/auth/login`, and `/v1/burpee*` and `/v1/exq/*`, which check
+their own `?token=`. Webhooks and cron live outside `/v1/` and guard themselves.
+A new private route goes in `PRIVATE_READS`, and its dashboard card renders only
+when `isAuthenticated`. Until 23 Sep 2026 the login gated only the UI and the API
+answered anyone; the repo is public, so the API URL was never a secret.
+
 **Tooltip behavior** — `useIsTouchDevice` (`hover: hover` + `pointer: fine` media query) switches charts between hover-show (desktop) and tap-show (mobile). Tooltip divs use `pointer-events: none` on desktop.
 
 **Tap-outside dismiss pattern** — used on every chart tooltip. When a tooltip opens, register a one-shot `pointerdown` capture listener on `document` that closes it; clean it up in the effect's return. On the trigger element (dot, bar, tile) add `onPointerDown={e => e.stopPropagation()}` so the tap that opens the tooltip doesn't immediately fire the dismiss listener. Applied in: `ClassificationPanel` (lift tiles), `LiftTrendChart` (dots), `VolumeChart` (bars).

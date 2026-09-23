@@ -39,10 +39,12 @@ export default function PowerliftingDashboard({
   const [allPl, setAllPl] = useState(null);
   // One fetch, three readers: the card, and the spans on both trend charts.
   const [injuries, setInjuries] = useState([]);
-  // Refetched on the same key as bodyweight: both are saved from the Health tab.
+  // Refetched on the same key as bodyweight: both are saved from the Health
+  // tab. Private, so only fetched logged in -- and dropped on logout.
   useEffect(() => {
+    if (!isAuthenticated) { setInjuries([]); return; }
     getInjuries().then(r => setInjuries(Array.isArray(r) ? r : [])).catch(() => {});
-  }, [bwRefreshKey]);
+  }, [bwRefreshKey, isAuthenticated]);
   const [classification, setClassification] = useState(null);
   const [classLoading, setClassLoading] = useState(false);
 
@@ -143,10 +145,16 @@ export default function PowerliftingDashboard({
           <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises}
                        hideBenchFilter plMetrics={plMetrics} />
           {/* Health reads here, under the lifting. The Health tab is where
-              it is typed in; this is where it is looked at. */}
-          <HealthHistory />
-          <HealthBandChart plMetrics={allPl ?? plMetrics} injuries={injuries} />
-          <InjuriesCard injuries={injuries} />
+              it is typed in; this is where it is looked at. It is about the
+              person rather than the training, so it needs the login -- the
+              server refuses these reads otherwise. */}
+          {isAuthenticated && (
+            <>
+              <HealthHistory />
+              <HealthBandChart plMetrics={allPl ?? plMetrics} injuries={injuries} />
+              <InjuriesCard injuries={injuries} />
+            </>
+          )}
         </>
       )}
 

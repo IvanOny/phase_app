@@ -51,6 +51,13 @@ function PhaseApp() {
   const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, login, logout } = useAuth();
   const [showLogin, setShowLogin] = useState(false);
+  // apiFetch fires this only when a token it sent was refused -- an expired
+  // session, not a logged-out visitor -- so the prompt never nags a reader.
+  useEffect(() => {
+    const prompt = () => setShowLogin(true);
+    window.addEventListener('auth:logout', prompt);
+    return () => window.removeEventListener('auth:logout', prompt);
+  }, []);
   const [phases, setPhases] = useState([]);
   const [selectedPhaseId, setSelectedPhaseId] = useState(null);
   const [sessionsMap, setSessionsMap] = useState({});

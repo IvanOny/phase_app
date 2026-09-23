@@ -46,19 +46,51 @@ def check_credentials(username: str, password: str) -> bool:
     return user_ok and pass_ok
 
 
-def require_auth(method: str, path: str, auth_header: str | None, secret: str) -> bool:
-    """Return True if the request is allowed through.
+# Who may call what.
+#
+# Training reads stay public: the dashboard is meant to be viewable logged
+# out, and a lift history is not a medical record. Reads about the person --
+# recovery metrics, running summaries, injuries, the bodyweight log -- need
+# the login, as does every write. A few routes carry their own credential in
+# the query string and are left to check it themselves.
+PRIVATE_READS = (
+    "/v1/monthly-metrics",
+    "/v1/monthly-run",
+    "/v1/injuries",
+    "/v1/bodyweight",
+)
+_SELF_GUARDED = ("/v1/burpee", "/v1/exq")      # ?token= resolved by the handler
+_READ_METHODS = ("GET", "HEAD", "OPTIONS")
 
-    Rules:
-    - All GET requests: always allowed (public read).
-    - POST /v1/auth/login: always allowed (the login endpoint itself).
-    - Everything else (POST/PATCH/DELETE): requires a valid Bearer token.
+
+def _under(path: str, prefix: str) -> bool:
+    return path == prefix or path.startswith(prefix + "/")
+
+
+def needs_auth(method: str, path: str) -> bool:
+    """True if this request must carry a valid Bearer token.
+
+    Only /v1/ is policed here. The Telegram webhooks and the cron trigger
+    live outside it and have guards of their own.
     """
-    if method == "GET":
-        return True
-    if method == "POST" and path == "/v1/auth/login":
-        return True
-    if not auth_header or not auth_header.startswith("Bearer "):
+    if not path.startswith("/v1/"):
         return False
-    token = auth_header[len("Bearer "):]
-    return verify_token(token, secret)
+    if path == "/v1/auth/login":
+        return False
+    if any(_under(path, p) for p in _SELF_GUARDED):
+        return False
+    if method in _READ_METHODS:
+        return any(_under(path, p) for p in PRIVATE_READS)
+    return True
+
+
+def is_authenticated(auth_header: str | None, secret: str) -> bool:
+    """A valid, unexpired token signed with `secret`. No secret, no one."""
+    if not secret or not auth_header or not auth_header.startswith("Bearer "):
+        return False
+    return verify_token(auth_header[len("Bearer "):], secret)
+
+
+def require_auth(method: str, path: str, auth_header: str | None, secret: str) -> bool:
+    """Return True if the request is allowed through."""
+    return not needs_auth(method, path) or is_authenticated(auth_header, secret)

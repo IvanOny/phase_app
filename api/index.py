@@ -11,6 +11,7 @@ import psycopg2
 
 from phase_app.api import PhaseApi
 from phase_app.db_pg import get_connection
+from phase_app.auth import is_authenticated, needs_auth
 
 app = Flask(__name__)
 
@@ -260,14 +261,29 @@ def cron_daily():
 def handle(path: str):
     if request.method == "OPTIONS":
         return make_response("", 204)
+    full_path = "/" + path
+    # The login used to gate only the UI; the server answered anyone. Now
+    # every write and every read about the person needs the token login
+    # issued. The policy is in auth.py (needs_auth); training reads stay open.
+    authed = is_authenticated(request.headers.get("Authorization"),
+                              os.environ.get("TOKEN_SECRET", ""))
+    if needs_auth(request.method, full_path) and not authed:
+        return jsonify({"error": "unauthorized"}), 401
     query_params = {k: v for k, v in request.args.items()}
     body = request.get_json(silent=True) or {}
     global _conn
     try:
-        resp = _get_api().handle(request.method, "/" + path, body, query_params)
+        resp = _get_api().handle(request.method, full_path, body, query_params)
     except Exception:
         # Roll back any aborted transaction so the connection is reusable.
         _release(_conn)
         raise
     _release(_conn)
-    return jsonify(resp.body), resp.status
+    payload = resp.body
+    # The lift metrics carry the whole bodyweight log for the charts that
+    # need it. That series is a health record, so a logged-out reader gets
+    # the metrics without it. The single weight each pull-up e1RM was
+    # computed with stays, since the public chart has to explain its number.
+    if not authed and isinstance(payload, dict) and "bodyweightLog" in payload:
+        payload = {k: v for k, v in payload.items() if k != "bodyweightLog"}
+    return jsonify(payload), resp.status

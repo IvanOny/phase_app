@@ -3,6 +3,7 @@ import PhaseHeader from '../Dashboard/PhaseHeader.jsx';
 import PhaseNav from '../Dashboard/PhaseNav.jsx';
 import SessionsList from '../Sessions/SessionsList.jsx';
 import LiftTrendChart from './LiftTrendChart.jsx';
+import PlatesCard from './PlatesCard.jsx';
 import HealthBandChart from '../Health/HealthBandChart.jsx';
 import HealthHistory from '../Health/HealthHistory.jsx';
 import ClassificationPanel from './ClassificationPanel.jsx';
@@ -124,27 +125,26 @@ export default function PowerliftingDashboard({
         </div>
       ) : (
         <>
-          <ClassificationPanel
-            classification={classification}
-            loading={classLoading}
-          />
-          {/* All phases: the trend is the whole history, and the span pills
-              pick how much of it to look at. Falls back to this phase until
-              the all-phase feed has arrived. */}
+          {/* Order: what to load next time, the trend, the body, the top
+              sets, the class. All-phase feeds fall back to this phase until
+              they arrive. */}
+          <PlatesCard sessions={allPl?.sessions ?? sessions} plMetrics={allPl ?? plMetrics} />
           <LiftTrendChart sessions={allPl?.sessions ?? sessions}
                           plMetrics={allPl ?? plMetrics} showTotal={false} />
-          <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises}
-                       hideBenchFilter plMetrics={plMetrics} />
-          {/* Health reads here, under the lifting. The Health tab is where
-              it is typed in; this is where it is looked at. It is about the
-              person rather than the training, so it needs the login -- the
-              server refuses these reads otherwise. */}
+          {/* Health is about the person rather than the training, so it needs
+              the login -- the server refuses these reads otherwise. */}
           {isAuthenticated && (
             <>
               <HealthHistory />
               <HealthBandChart plMetrics={allPl ?? plMetrics} />
             </>
           )}
+          <VolumeChart sessions={sessions} exerciseVolumes={tierOneVolumes} exercises={exercises}
+                       hideBenchFilter plMetrics={plMetrics} />
+          <ClassificationPanel
+            classification={classification}
+            loading={classLoading}
+          />
         </>
       )}
 

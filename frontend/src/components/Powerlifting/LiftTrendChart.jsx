@@ -56,7 +56,10 @@ const SPANS = [
   { key: 'all',    label: 'all', days: null },
   { key: 'custom', label: 'custom' },
 ];
-const DEFAULT_SPAN = '100';
+// The last month by default: the chart opens on what the current block is
+// doing, and the longer views are one tap away.
+const DEFAULT_SPAN = '30';
+const DEFAULT_SPAN_DAYS = 30;
 
 function isoDay(ms) {
   return new Date(ms).toISOString().slice(0, 10);
@@ -257,16 +260,15 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   const isTouch = useIsTouchDevice();
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-pl');
   const [hovered, setHovered] = useState(null); // { date, lift }
-  // Bench alone to start with. Four lines plus Total on one axis was five
-  // overlapping series and a y-range wide enough to flatten all of them; one
-  // lift is the question anybody actually opens this chart with, and the rest
-  // are one tap away.
-  const [selected, setSelected] = useState(['bench']);
+  // All four lifts to start with. Total stays out (showTotal is off on the
+  // dashboard): four lines share a scale well enough, a fifth summing three
+  // of them would stretch the y-range until the others went flat.
+  const [selected, setSelected] = useState(['squat', 'bench', 'deadlift', 'pullup']);
   const [spanKey, setSpanKey] = useState(DEFAULT_SPAN);
-  // The custom range starts as the last 100 days, so choosing "custom" shows
+  // The custom range starts as the default span, so choosing "custom" shows
   // the same chart with two fields to move its edges.
   const [custom, setCustom] = useState(() => ({
-    from: isoDay(todayMs() - 100 * DAY_MS), to: isoDay(todayMs()),
+    from: isoDay(todayMs() - DEFAULT_SPAN_DAYS * DAY_MS), to: isoDay(todayMs()),
   }));
   const range = resolveRange(spanKey, custom);
 
@@ -545,7 +547,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                         <span style={{ color: cfg.color, fontWeight: 600 }}>
                           {lift === 'total' ? 'Total' : sessions.length > 1 ? 'avg e1RM' : 'e1RM'}
                         </span>
-                        <strong>{val}</strong>
+                        <strong>{Math.round(val)}</strong>
                       </div>
                       <div className="tooltip-row" style={{ opacity: 0.6 }}>
                         <span>{window}</span>
@@ -553,13 +555,14 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                       </div>
                       {lift !== 'total' && sessions.length > 0 && (
                         <div style={{ borderTop: `1px solid ${colors.border}`, marginTop: 4, paddingTop: 4 }}>
-                          {sessions.map(s => (
+                          {/* Newest first: the last session is the one you remember. */}
+                          {[...sessions].reverse().map(s => (
                             <div key={s.date} className="tooltip-row" style={{ opacity: 0.8, gap: 10 }}>
                               <span>
                                 {formatDate(s.date)}
                                 {s.set && <span style={{ opacity: 0.6 }}> · {setLabel(s.set)}</span>}
                               </span>
-                              <span>{s.value}</span>
+                              <span>{Math.round(s.value)}</span>
                             </div>
                           ))}
                         </div>

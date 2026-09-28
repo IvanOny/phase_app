@@ -131,7 +131,8 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
         topValue = sets.length ? Math.max(...sets.map(set => set.timeMinutes ?? 0)) : null;
       } else if (pullupE1rm) {
         volume   = sets.reduce((sum, set) => sum + (set.reps ?? 0), 0);
-        topValue = pullupE1rm[String(s.sessionId)]?.topSetE1rmKg ?? null;
+        const e = pullupE1rm[String(s.sessionId)]?.topSetE1rmKg;
+        topValue = e != null ? Math.round(e) : null;
       } else if (isBodyweight) {
         const totalReps = sets.reduce((sum, set) => sum + (set.reps ?? 0), 0);
         const topSetReps = sets.length ? Math.max(...sets.map(set => set.reps ?? 0)) : null;

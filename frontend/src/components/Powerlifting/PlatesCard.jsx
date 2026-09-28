@@ -1,37 +1,14 @@
 // What to put on the bar: the last top set of each barbell lift, with the
 // plates it takes per side. The bench phase's Next Step card answered "what
 // next"; this answers "what did I last lift, and how do I load it again".
-//
-// Pounds, as the bench card did: the gym's plates are pounds, on a 45 lb bar.
-// It has 45s and 35s too, and they are left out on purpose. The warm-up is
-// one 25 a side and the working set adds another, so 65 kg is 25+25 -- not
-// the 45+5 a fewest-plates count would give, which means stripping the bar
-// between warm-up and work.
-const BAR_LBS = 45;
-const PLATES_LBS = [25, 10, 5, 2.5];
-const KG_TO_LB = 2.20462;
+// How a side is built -- 25s, then 35s -- lives in utils/plates.js.
+import { platesPerSide } from '../../utils/plates.js';
 
 const LIFTS = [
   { key: 'squat',    label: 'Squat' },
   { key: 'bench',    label: 'Bench press' },
   { key: 'deadlift', label: 'Deadlift' },
 ];
-
-// Kilograms to the plates a side, 25s first. The total rounds to the nearest
-// 5 lb first -- two 2.5s is the smallest step the gym has.
-export function platesPerSide(kg) {
-  const totalLbs = Math.round((kg * KG_TO_LB) / 5) * 5;
-  let rem = (totalLbs - BAR_LBS) / 2;
-  if (rem <= 0) return { totalLbs, plates: [] };
-  const plates = [];
-  for (const p of PLATES_LBS) {
-    while (rem >= p - 0.01) {
-      plates.push(p);
-      rem = Math.round((rem - p) * 100) / 100;
-    }
-  }
-  return { totalLbs, plates };
-}
 
 function fmtDate(d) {
   const [, m, day] = String(d).slice(0, 10).split('-');

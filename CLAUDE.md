@@ -59,7 +59,7 @@ frontend/src/
 every `/v1/` request against `needs_auth` in `phase_app/auth.py` before dispatching.
 Every POST/PATCH/DELETE needs the Bearer token `POST /v1/auth/login` issues
 (HMAC with `TOKEN_SECRET`); so do the reads about the person — `/v1/monthly-metrics`,
-`/v1/monthly-run`, `/v1/injuries`, `/v1/bodyweight` (`PRIVATE_READS`). **Training
+`/v1/monthly-run`, `/v1/injuries`, `/v1/bodyweight`, `/v1/day-notes` (`PRIVATE_READS`). **Training
 reads stay public, deliberately**: the dashboard is meant to be viewable logged out,
 and a lift history is not a medical record. The one health series inside a training
 read, `bodyweightLog` in the lift metrics, is stripped for a logged-out caller; the

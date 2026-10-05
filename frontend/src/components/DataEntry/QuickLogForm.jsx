@@ -16,21 +16,20 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// How the weight is typed: kilograms on the bar, or pounds of plates on one
-// side (the way the bar is actually loaded). Remembered per browser, since
-// whoever types sides types sides every time.
-const UNIT_KEY = 'quicklog-weight-unit';
-function storedUnit() {
-  try { return localStorage.getItem(UNIT_KEY) === 'side' ? 'side' : 'kg'; } catch { return 'kg'; }
-}
+// A barbell weight shows two ways at once: kilograms on the bar, and pounds
+// of plates on one side (how the bar is actually loaded). Either can be
+// typed; the other follows. Kilograms are whole when they come from a side
+// -- 35 a side is 52 kg, not 52.2 -- and what is stored is the kg box.
+const sideFromKg = kg => (kg === '' ? '' : String(kgToSideLbs(Number(kg))));
+const kgFromSide = side => (side === '' ? '' : String(Math.round(sideLbsToKg(Number(side)))));
 
 export default function QuickLogForm({ phaseId, phaseType, exercises, quickList, onQuickListChange, onSessionCreated }) {
   const list = (quickList && quickList.length > 0) ? quickList : DEFAULT_QUICK_EXERCISES;
 
   const [selectedIdx, setSelectedIdx] = useState(null);
   const [date, setDate]             = useState(todayStr);
-  const [weight, setWeight]         = useState('');
-  const [unit, setUnit]             = useState(storedUnit);   // 'kg' | 'side'
+  const [weight, setWeight]         = useState('');   // kg
+  const [side, setSide]             = useState('');   // lb a side, barbell only
   const [reps, setReps]             = useState('');
   // run fields
   const [distKm, setDistKm]         = useState('');
@@ -45,21 +44,12 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
 
   const selected = selectedIdx !== null ? list[selectedIdx] : null;
 
-  // What gets stored is always kilograms. Plates a side only for a barbell
-  // lift; added weight on a bodyweight exercise stays in kg.
-  const sideMode = unit === 'side' && selected?.type === 'strength';
-  const loadKg = sideMode ? (weight ? sideLbsToKg(Number(weight)) : 0) : Number(weight) || 0;
-
-  // Switching unit converts what is in the box rather than clearing it:
-  // 52.2 kg becomes 35 a side, 35 a side becomes 52.2.
-  function chooseUnit(u) {
-    if (u !== unit && weight !== '' && selected?.type === 'strength') {
-      const w = Number(weight);
-      setWeight(String(u === 'side' ? kgToSideLbs(w) : sideLbsToKg(w)));
-    }
-    setUnit(u);
-    try { localStorage.setItem(UNIT_KEY, u); } catch { /* not remembered, still works */ }
-  }
+  // What gets stored is the kg box. Added weight on a bodyweight exercise has
+  // no side to speak of and stays kg only.
+  const loadKg = Number(weight) || 0;
+  function typeKg(v)   { setWeight(v); setSide(sideFromKg(v)); }
+  function typeSide(v) { setSide(v);   setWeight(kgFromSide(v)); }
+  function clearWeight() { setWeight(''); setSide(''); }
 
   // The last top set of every exercise in this phase, to start each log from
   // what was done last time. Refetched after a log, so the next one starts
@@ -89,12 +79,16 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
     setStatus(null);
     const entry = list[idx];
     const top = entry && entry.type !== 'run' ? lastTopSet(entry) : null;
-    if (!top) { setWeight(''); setReps(''); return; }
+    if (!top) { clearWeight(); setReps(''); return; }
     setReps(String(top.reps));
     if (entry.type === 'strength') {
-      setWeight(String(unit === 'side' ? kgToSideLbs(top.loadKg) : top.loadKg));
+      // Whole kilos, and the side worked out from the exact load: 52.2 shows
+      // as 52 kg and 35 a side.
+      setWeight(String(Math.round(top.loadKg)));
+      setSide(sideFromKg(top.loadKg));
     } else {
       setWeight(top.loadKg ? String(top.loadKg) : '');
+      setSide('');
     }
   }
 
@@ -158,11 +152,11 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
       });
 
       const shown = selected.type === 'strength'
-        ? `${loadKg} kg${sideMode ? ` (${weight} lb a side)` : ''} × `
+        ? `${loadKg} kg${side ? ` (${side} lb a side)` : ''} × `
         : (selected.type === 'bodyweight' && Number(weight) ? `+${weight} kg × ` : '');
       setStatus({ type: 'ok', message: `Logged ${selected.label}: ${shown}${reps} reps` });
       setReps('');
-      setWeight('');
+      clearWeight();
       loadLastSets();
       onSessionCreated?.();
     } catch (err) {
@@ -350,28 +344,19 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Top set</div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
                 {selected.type === 'strength' && (
-                  <div className="form-group" style={{ margin: 0 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      Weight
-                      <span role="group" aria-label="Weight unit" style={{ display: 'inline-flex', gap: 2 }}>
-                        {[['kg', 'kg'], ['side', 'lb / side']].map(([u, text]) => (
-                          <button key={u} type="button" onClick={() => chooseUnit(u)} aria-pressed={unit === u}
-                                  className={`filter-chip${unit === u ? ' active' : ''}`}
-                                  style={{ fontSize: 10, padding: '0 6px', textTransform: 'none', letterSpacing: 0 }}>
-                            {text}
-                          </button>
-                        ))}
-                      </span>
-                      {/* The conversion, visible before saving: 45 lb bar + two sides.
-                          In the label row, so the input stays level with Reps. */}
-                      {sideMode && weight && (
-                        <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>= {loadKg} kg</span>
-                      )}
-                    </label>
-                    <input type="number" min="0" step={sideMode ? '2.5' : '0.5'} value={weight}
-                           placeholder={sideMode ? 'e.g. 50' : ''}
-                           onChange={e => setWeight(e.target.value)} style={{ width: 80 }} autoFocus />
-                  </div>
+                  <>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label>Weight (kg)</label>
+                      <input type="number" min="0" step="0.5" value={weight}
+                             onChange={e => typeKg(e.target.value)} style={{ width: 72 }} autoFocus />
+                    </div>
+                    {/* The same weight as plates on one side of a 45 lb bar. */}
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label>lb / side</label>
+                      <input type="number" min="0" step="2.5" value={side}
+                             onChange={e => typeSide(e.target.value)} style={{ width: 72 }} />
+                    </div>
+                  </>
                 )}
                 {selected.type === 'bodyweight' && (
                   <div className="form-group" style={{ margin: 0 }}>

@@ -29,7 +29,8 @@ def test_training_reads_stay_public():
 
 
 def test_health_reads_need_the_login():
-    for path in ("/v1/monthly-metrics", "/v1/monthly-run", "/v1/injuries", "/v1/bodyweight"):
+    for path in ("/v1/monthly-metrics", "/v1/monthly-run", "/v1/injuries", "/v1/bodyweight",
+                 "/v1/day-notes"):
         assert needs_auth("GET", path), path
     # A prefix is a path segment, not a string prefix.
     assert not needs_auth("GET", "/v1/bodyweight-standards")

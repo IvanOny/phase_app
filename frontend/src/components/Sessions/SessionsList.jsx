@@ -7,6 +7,7 @@ import {
   createExerciseSet,
   updateExerciseSet,
   deleteExerciseSet,
+  getDayNotes,
 } from '../../api/client.js';
 import { formatDuration, formatPace, parseDuration, parsePace, runSummary } from '../../utils/runMetrics.js';
 import ConfirmDialog from '../Common/ConfirmDialog.jsx';
@@ -855,6 +856,20 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
   const realCount    = executedFiltered.length;
   const plannedCount = plannedFiltered.length;
 
+  // Day notes, shown once above the first session of their date. Private,
+  // so only fetched logged in; refetched when Quick log saves one.
+  const [dayNotes, setDayNotes] = useState({});
+  useEffect(() => {
+    if (!isAuthenticated) { setDayNotes({}); return undefined; }
+    const load = () => getDayNotes()
+      .then(r => setDayNotes(Object.fromEntries((Array.isArray(r) ? r : []).map(n => [n.date, n.note]))))
+      .catch(() => {});
+    load();
+    window.addEventListener('daynote:saved', load);
+    return () => window.removeEventListener('daynote:saved', load);
+  }, [isAuthenticated]);
+  const dayOf = s => String(s.sessionDate).slice(0, 10);
+
   return (
     <div className="chart-wrapper" ref={wrapperRef}>
       <div className="sessions-cal-filter-layout">
@@ -895,6 +910,13 @@ export default function SessionsList({ phase, sessions, e1rmMap, volumeMap, exer
                 <Fragment key={s.sessionId}>
                   {filters.exerciseId && i > 0 && (
                     <div className="session-group-divider" />
+                  )}
+                  {dayNotes[dayOf(s)] && (i === 0 || dayOf(visibleSessions[i - 1]) !== dayOf(s)) && (
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '6px 8px 2px',
+                                  fontStyle: 'italic', whiteSpace: 'pre-wrap' }}>
+                      <span style={{ fontStyle: 'normal', fontWeight: 600, color: 'var(--text-muted)' }}>Day · </span>
+                      {dayNotes[dayOf(s)]}
+                    </div>
                   )}
                   <div className={filters.exerciseId ? `session-group session-group--${i % 2 === 0 ? 'even' : 'odd'}` : ''}>
                     <SessionRow

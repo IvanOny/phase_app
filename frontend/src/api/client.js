@@ -314,6 +314,22 @@ export async function getPhaseProgression(phaseId) {
   return apiFetchList('GET', `/v1/phases/${phaseId}/progression`);
 }
 
+// ---- Day notes: one per date, about the day rather than an exercise ----
+
+export async function getDayNotes() {
+  if (MOCK_MODE) return Promise.resolve([]);
+  return apiFetch('GET', '/v1/day-notes');
+}
+
+// An empty note deletes the day's note. Announced on window, so the log on
+// the dashboard can redraw without a reload.
+export async function saveDayNote(date, note) {
+  const r = MOCK_MODE ? { date, note: note || null }
+    : await apiFetch('POST', '/v1/day-notes', { date, note });
+  window.dispatchEvent(new Event('daynote:saved'));
+  return r;
+}
+
 // Each training day's exercises, newest first -- Quick log's A/B rule.
 export async function getTrainingDays(phaseId) {
   if (MOCK_MODE) return Promise.resolve([]);

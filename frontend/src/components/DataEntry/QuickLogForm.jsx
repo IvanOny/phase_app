@@ -9,6 +9,8 @@ import {
   createExercise,
   getPhaseProgression,
   getTrainingDays,
+  getDayNotes,
+  saveDayNote,
 } from '../../api/client.js';
 import { planDay } from '../../utils/nextLift.js';
 import { DEFAULT_QUICK_EXERCISES, resolveQuickEntry } from '../../data/quickExercises.js';
@@ -33,6 +35,9 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
   const [weight, setWeight]         = useState('');   // kg
   const [side, setSide]             = useState('');   // lb a side, barbell only
   const [reps, setReps]             = useState('');
+  // A note on this one log -- stored on its session, which Quick log makes
+  // per exercise, so the log list shows it under that lift.
+  const [note, setNote]             = useState('');
   // run fields
   const [distKm, setDistKm]         = useState('');
   const [durMin, setDurMin]         = useState('');
@@ -70,6 +75,34 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
       .catch(() => setDays([]));
   }
   useEffect(loadLastSets, [phaseId]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The day note: one per date, about the day rather than a lift. Shown for
+  // whatever the Date field says, saved on its own button -- or with the
+  // next log, so a typed note is never lost to a forgotten click.
+  const [dayNotes, setDayNotes] = useState({});      // date -> note
+  const [dayNote, setDayNote] = useState('');
+  const [dayNoteState, setDayNoteState] = useState(null);   // 'saving' | 'saved' | 'error'
+  useEffect(() => {
+    getDayNotes()
+      .then(r => setDayNotes(Object.fromEntries((Array.isArray(r) ? r : []).map(n => [n.date, n.note]))))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { setDayNote(dayNotes[date] || ''); setDayNoteState(null); }, [date, dayNotes]);
+  const dayNoteDirty = dayNote.trim() !== (dayNotes[date] || '');
+  async function saveDay() {
+    setDayNoteState('saving');
+    try {
+      const r = await saveDayNote(date, dayNote);
+      setDayNotes(m => {
+        const next = { ...m };
+        if (r?.note) next[date] = r.note; else delete next[date];
+        return next;
+      });
+      setDayNoteState('saved');
+    } catch {
+      setDayNoteState('error');
+    }
+  }
 
   // The four lifts the rule knows, as catalog ids.
   const roleIds = {
@@ -111,6 +144,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
   function selectExercise(idx) {
     setSelectedIdx(idx);
     setStatus(null);
+    setNote('');
     const entry = list[idx];
     const top = entry && entry.type !== 'run' ? lastTopSet(entry) : null;
     if (!top) { clearWeight(); setReps(''); return; }
@@ -158,7 +192,8 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
     setStatus(null);
     try {
       const sessionType = phaseType === 'powerlifting' ? 'mix' : selected.sessionType;
-      const session = await createSession({ phaseId: Number(phaseId), sessionDate: date, sessionType });
+      const session = await createSession({ phaseId: Number(phaseId), sessionDate: date, sessionType,
+                                            notes: note.trim() || null });
       const sessionId = session.sessionId;
 
       let catalogEx = resolveQuickEntry(selected, exercises);
@@ -191,6 +226,8 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
       setStatus({ type: 'ok', message: `Logged ${selected.label}: ${shown}${reps} reps` });
       setReps('');
       clearWeight();
+      setNote('');
+      if (dayNoteDirty) saveDay();
       autoPick.current = true;   // the refetch below picks the day's next lift
       loadLastSets();
       onSessionCreated?.();
@@ -208,7 +245,8 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
     setSaving(true);
     setStatus(null);
     try {
-      const session = await createSession({ phaseId: Number(phaseId), sessionDate: date, sessionType: 'run' });
+      const session = await createSession({ phaseId: Number(phaseId), sessionDate: date, sessionType: 'run',
+                                            notes: note.trim() || null });
       const patch = {
         distanceKm: Number(distKm),
         durationSeconds: Math.round(Number(durMin) * 60),
@@ -234,6 +272,8 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
       if (rpe)   parts.push(`RPE ${rpe}`);
       setStatus({ type: 'ok', message: `Logged run: ${parts.join(' · ')}` });
       setDistKm(''); setDurMin(''); setAvgHr(''); setRpe('');
+      setNote('');
+      if (dayNoteDirty) saveDay();
       onSessionCreated?.();
     } catch (err) {
       setStatus({ type: 'err', message: err.message || 'Failed to log.' });
@@ -383,6 +423,12 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
                   {saving ? 'Logging…' : 'Log'}
                 </button>
               </div>
+              <input
+                type="text" className="inline-input" value={note}
+                onChange={e => setNote(e.target.value)}
+                placeholder="Note on this run (optional)"
+                style={{ width: '100%', fontSize: 13 }}
+              />
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -430,9 +476,45 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
                   {saving ? 'Logging…' : 'Log'}
                 </button>
               </div>
+              <input
+                type="text" className="inline-input" value={note}
+                onChange={e => setNote(e.target.value)}
+                placeholder="Note on this lift (optional)"
+                style={{ width: '100%', fontSize: 13 }}
+              />
             </div>
           )}
         </>
+      )}
+
+      {/* About the day, not a lift: sleep, mood, what hurt, what was skipped. */}
+      {!editMode && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Day note
+            </div>
+            <span style={{ fontSize: 11, color: dayNoteState === 'error' ? 'var(--ready-red)' : 'var(--text-muted)' }}>
+              {dayNoteState === 'saving' ? 'saving…'
+                : dayNoteState === 'error' ? 'could not save'
+                : dayNoteDirty ? 'unsaved'
+                : dayNotes[date] ? 'saved' : ''}
+            </span>
+          </div>
+          <textarea
+            className="inline-input" rows={2} value={dayNote}
+            onChange={e => { setDayNote(e.target.value); setDayNoteState(null); }}
+            placeholder={isToday ? 'How was today? Sleep, energy, anything that hurt…' : 'About this day…'}
+            style={{ width: '100%', fontSize: 13, resize: 'vertical', fontFamily: 'inherit' }}
+          />
+          {dayNoteDirty && (
+            <div>
+              <button className="btn btn-xs" onClick={saveDay} disabled={dayNoteState === 'saving'}>
+                {dayNote.trim() ? 'Save day note' : 'Delete day note'}
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {status && (

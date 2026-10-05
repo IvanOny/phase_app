@@ -174,6 +174,10 @@ class PhaseApi:
             return self.get_monthly_metrics(qp)
         if method == "POST" and path == "/v1/monthly-metrics":
             return self.save_monthly_metrics(body)
+        if method == "GET" and path == "/v1/day-notes":
+            return self.list_day_notes()
+        if method == "POST" and path == "/v1/day-notes":
+            return self.save_day_note(body)
         if method == "GET" and path == "/v1/injuries":
             return self.list_injuries()
         if method == "POST" and path == "/v1/injuries":
@@ -1369,6 +1373,44 @@ class PhaseApi:
             "loggedDate": payload["loggedDate"],
             "weightKg":   payload["weightKg"],
         })
+
+    # ------------------------------------------------------------------ #
+    # Day notes: one per date, about the day rather than an exercise        #
+    # ------------------------------------------------------------------ #
+    def list_day_notes(self) -> ApiResponse:
+        """The last year of day notes, newest first."""
+        rows = self._exec(
+            "SELECT note_date, note, updated_at FROM day_notes "
+            "WHERE note_date >= CURRENT_DATE - 366 ORDER BY note_date DESC"
+        ).fetchall()
+        return ApiResponse(200, [
+            {"date": str(r["note_date"]), "note": r["note"], "updatedAt": str(r["updated_at"])}
+            for r in rows
+        ])
+
+    def save_day_note(self, payload: dict[str, Any]) -> ApiResponse:
+        """Upsert by date. An empty note deletes the day's note, so clearing
+        the field is how a note is removed."""
+        date = payload.get("date")
+        if not isinstance(date, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            return ApiResponse(400, {"error": "validation_error", "detail": "date must be YYYY-MM-DD"})
+        note = (payload.get("note") or "").strip()
+        try:
+            if not note:
+                self._exec("DELETE FROM day_notes WHERE note_date = %s", (date,))
+                self.conn.commit()
+                return ApiResponse(200, {"date": date, "note": None})
+            r = self._exec(
+                "INSERT INTO day_notes (note_date, note) VALUES (%s, %s) "
+                "ON CONFLICT (note_date) DO UPDATE SET note = EXCLUDED.note, updated_at = NOW() "
+                "RETURNING note_date, note, updated_at",
+                (date, note),
+            ).fetchone()
+            self.conn.commit()
+        except psycopg2.DatabaseError as exc:
+            self.conn.rollback()
+            return ApiResponse(400, {"error": "validation_error", "detail": str(exc)})
+        return ApiResponse(200, {"date": str(r["note_date"]), "note": r["note"], "updatedAt": str(r["updated_at"])})
 
     # ------------------------------------------------------------------ #
     # Injuries: spans drawn over the training history                      #

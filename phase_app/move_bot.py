@@ -2691,6 +2691,23 @@ def _on_reaction(cur, conn, rx: dict) -> None:
 
     text = _t("reaction_received", _norm_lang(them["language_code"]),
               name=me["participant_name"], emoji="".join(added))
+    if from_side:
+        # A thread holds every line both people wrote, and Telegram reports
+        # only that the message was reacted to, not which line. The one it
+        # is almost always about is the last thing the recipient wrote --
+        # so that line is quoted. A picture sent as a comment quotes its own
+        # marker line, «📷 фото», for the same reason.
+        cur.execute(
+            "SELECT body FROM move_comments "
+            "WHERE entry_id = %s AND from_tg_id = %s AND to_tg_id = %s "
+            "ORDER BY id DESC LIMIT 1",
+            (f["entry_id"], to_id, who))
+        line = cur.fetchone()
+        if line and line["body"]:
+            quote = " ".join(line["body"].split())
+            if len(quote) > 60:
+                quote = quote[:59].rstrip() + "…"
+            text += f" «{quote}»"
     # With nothing to reply to -- the original deleted, the thread gone --
     # the move's date is the one thing left that says which move.
     if not reply_to and f["entry_date"]:

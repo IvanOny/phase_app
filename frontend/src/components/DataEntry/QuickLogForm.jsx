@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   createSession,
   updateSession,
@@ -8,7 +8,9 @@ import {
   getExerciseSets,
   createExercise,
   getPhaseProgression,
+  getTrainingDays,
 } from '../../api/client.js';
+import { planDay } from '../../utils/nextLift.js';
 import { DEFAULT_QUICK_EXERCISES, resolveQuickEntry } from '../../data/quickExercises.js';
 import { sideLbsToKg, kgToSideLbs } from '../../utils/plates.js';
 
@@ -54,12 +56,44 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
   // The last top set of every exercise in this phase, to start each log from
   // what was done last time. Refetched after a log, so the next one starts
   // from the set just entered.
+  // With them, each training day's exercises, for the A/B rule (nextLift.js).
+  // Fetched together so a suggestion never prefills from a stale top set.
   const [lastSets, setLastSets] = useState([]);
+  const [days, setDays] = useState(null);
   function loadLastSets() {
     if (!phaseId) return;
-    getPhaseProgression(phaseId).then(r => setLastSets(Array.isArray(r) ? r : [])).catch(() => {});
+    Promise.all([getPhaseProgression(phaseId), getTrainingDays(phaseId)])
+      .then(([p, d]) => {
+        setLastSets(Array.isArray(p) ? p : []);
+        setDays(Array.isArray(d) ? d : []);
+      })
+      .catch(() => setDays([]));
   }
   useEffect(loadLastSets, [phaseId]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The four lifts the rule knows, as catalog ids.
+  const roleIds = {
+    bench:    (exercises || []).find(e => e.isBarbellBenchPress)?.exerciseId,
+    squat:    (exercises || []).find(e => e.isSquat)?.exerciseId,
+    deadlift: (exercises || []).find(e => e.isDeadlift)?.exerciseId,
+    pullup:   resolveQuickEntry({ label: 'Pull-up' }, exercises)?.exerciseId,
+  };
+  const indexOfRole = role => list.findIndex(e => {
+    const ex = resolveQuickEntry(e, exercises);
+    return ex && ex.exerciseId === roleIds[role];
+  });
+  const day = phaseType === 'powerlifting' && days ? planDay(date, days, roleIds) : null;
+
+  // Pick the day's next lift when the form opens and again after each log;
+  // a tap on any exercise turns it off until the next log.
+  const autoPick = useRef(true);
+  useEffect(() => {
+    if (!day || !autoPick.current) return;
+    autoPick.current = false;
+    const idx = day.next ? indexOfRole(day.next) : -1;
+    if (idx >= 0) selectExercise(idx);
+    else { setSelectedIdx(null); clearWeight(); setReps(''); }
+  }, [days, lastSets]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   function lastTopSet(entry) {
     const ex = resolveQuickEntry(entry, exercises);
@@ -157,6 +191,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
       setStatus({ type: 'ok', message: `Logged ${selected.label}: ${shown}${reps} reps` });
       setReps('');
       clearWeight();
+      autoPick.current = true;   // the refetch below picks the day's next lift
       loadLastSets();
       onSessionCreated?.();
     } catch (err) {
@@ -235,6 +270,16 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Exercise</div>
+          {/* What the rule thinks, so a wrong guess is visible, not silent. */}
+          {day && (
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto', marginRight: 12 }}>
+              Day {day.type} · {day.next
+                ? `next: ${list[indexOfRole(day.next)]?.label ?? day.next}`
+                : 'done'}
+              {day.type === 'B' && day.prIn > 0 && ` · pull-up PR in ${day.prIn} B day${day.prIn > 1 ? 's' : ''}`}
+              {day.type === 'B' && day.prIn === 0 && !day.logged.has('pullup') && ' · pull-up PR today'}
+            </span>
+          )}
           <button
             onClick={() => setEditMode(m => !m)}
             style={{ fontSize: 12, color: editMode ? 'var(--accent)' : 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
@@ -247,7 +292,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
           {list.map((ex, idx) => (
             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
-                onClick={() => { if (!editMode) selectExercise(idx); }}
+                onClick={() => { if (!editMode) { autoPick.current = false; selectExercise(idx); } }}
                 style={{
                   flex: 1,
                   textAlign: 'left',

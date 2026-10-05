@@ -199,6 +199,8 @@ class PhaseApi:
 
         if method == "GET" and re.fullmatch(r"/v1/phases/\d+/progression", path):
             return self.get_phase_progression(int(path.split("/")[3]))
+        if method == "GET" and re.fullmatch(r"/v1/phases/\d+/training-days", path):
+            return self.get_training_days(int(path.split("/")[3]))
 
         if method == "POST" and path == "/v1/import/screenshot":
             return self.import_screenshot(body)
@@ -998,6 +1000,28 @@ class PhaseApi:
     def get_phase_maintenance_metrics(self, phase_id: int) -> ApiResponse:
         from phase_app.metrics import get_phase_maintenance
         return ApiResponse(200, get_phase_maintenance(self.conn, phase_id))
+
+    def get_training_days(self, phase_id: int) -> ApiResponse:
+        """Each training day of the last 90 in this phase, with the exercises
+        logged on it, newest first. Quick log reads it to tell an A day from
+        a B day and to count the B days since the last pull-up PR attempt."""
+        rows = self._exec(
+            """
+            SELECT s.session_date::date AS d,
+                   array_agg(DISTINCT se.exercise_id ORDER BY se.exercise_id) AS ids
+            FROM sessions s
+            JOIN session_exercises se ON se.session_id = s.session_id
+            WHERE s.phase_id = %s
+              AND COALESCE(s.is_planned, FALSE) = FALSE
+              AND s.session_date::date >= CURRENT_DATE - 90
+            GROUP BY 1
+            ORDER BY 1 DESC
+            """,
+            (phase_id,),
+        ).fetchall()
+        return ApiResponse(200, {"items": [
+            {"date": str(r["d"]), "exerciseIds": list(r["ids"])} for r in rows
+        ]})
 
     def get_phase_progression(self, phase_id: int) -> ApiResponse:
         rows = self._exec(

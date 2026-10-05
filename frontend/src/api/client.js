@@ -314,6 +314,12 @@ export async function getPhaseProgression(phaseId) {
   return apiFetchList('GET', `/v1/phases/${phaseId}/progression`);
 }
 
+// Each training day's exercises, newest first -- Quick log's A/B rule.
+export async function getTrainingDays(phaseId) {
+  if (MOCK_MODE) return Promise.resolve([]);
+  return apiFetchList('GET', `/v1/phases/${phaseId}/training-days`);
+}
+
 // ---- Powerlifting metrics ----
 
 export async function getSessionPlMetrics(phaseId) {

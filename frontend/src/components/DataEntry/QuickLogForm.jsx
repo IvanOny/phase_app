@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   createSession,
   updateSession,
@@ -7,9 +7,10 @@ import {
   createExerciseSet,
   getExerciseSets,
   createExercise,
+  getPhaseProgression,
 } from '../../api/client.js';
 import { DEFAULT_QUICK_EXERCISES, resolveQuickEntry } from '../../data/quickExercises.js';
-import { sideLbsToKg } from '../../utils/plates.js';
+import { sideLbsToKg, kgToSideLbs } from '../../utils/plates.js';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -49,10 +50,52 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
   const sideMode = unit === 'side' && selected?.type === 'strength';
   const loadKg = sideMode ? (weight ? sideLbsToKg(Number(weight)) : 0) : Number(weight) || 0;
 
+  // Switching unit converts what is in the box rather than clearing it:
+  // 52.2 kg becomes 35 a side, 35 a side becomes 52.2.
   function chooseUnit(u) {
+    if (u !== unit && weight !== '' && selected?.type === 'strength') {
+      const w = Number(weight);
+      setWeight(String(u === 'side' ? kgToSideLbs(w) : sideLbsToKg(w)));
+    }
     setUnit(u);
-    setWeight('');
     try { localStorage.setItem(UNIT_KEY, u); } catch { /* not remembered, still works */ }
+  }
+
+  // The last top set of every exercise in this phase, to start each log from
+  // what was done last time. Refetched after a log, so the next one starts
+  // from the set just entered.
+  const [lastSets, setLastSets] = useState([]);
+  function loadLastSets() {
+    if (!phaseId) return;
+    getPhaseProgression(phaseId).then(r => setLastSets(Array.isArray(r) ? r : [])).catch(() => {});
+  }
+  useEffect(loadLastSets, [phaseId]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  function lastTopSet(entry) {
+    const ex = resolveQuickEntry(entry, exercises);
+    if (!ex) return null;
+    const mine = lastSets.filter(p => p.exerciseId === ex.exerciseId && p.workingSets?.length);
+    if (!mine.length) return null;
+    // One row per session type; the newest session wins. Its first set is
+    // the top set -- Quick log writes it first and marks it so.
+    const latest = mine.reduce((a, b) =>
+      (b.lastSessionDate > a.lastSessionDate
+       || (b.lastSessionDate === a.lastSessionDate && b.lastSessionId > a.lastSessionId)) ? b : a);
+    return latest.workingSets[0];
+  }
+
+  function selectExercise(idx) {
+    setSelectedIdx(idx);
+    setStatus(null);
+    const entry = list[idx];
+    const top = entry && entry.type !== 'run' ? lastTopSet(entry) : null;
+    if (!top) { setWeight(''); setReps(''); return; }
+    setReps(String(top.reps));
+    if (entry.type === 'strength') {
+      setWeight(String(unit === 'side' ? kgToSideLbs(top.loadKg) : top.loadKg));
+    } else {
+      setWeight(top.loadKg ? String(top.loadKg) : '');
+    }
   }
 
   function removeExercise(idx) {
@@ -120,6 +163,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
       setStatus({ type: 'ok', message: `Logged ${selected.label}: ${shown}${reps} reps` });
       setReps('');
       setWeight('');
+      loadLastSets();
       onSessionCreated?.();
     } catch (err) {
       setStatus({ type: 'err', message: err.message || 'Failed to log.' });
@@ -209,7 +253,7 @@ export default function QuickLogForm({ phaseId, phaseType, exercises, quickList,
           {list.map((ex, idx) => (
             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
-                onClick={() => { if (!editMode) { setSelectedIdx(idx); setStatus(null); } }}
+                onClick={() => { if (!editMode) selectExercise(idx); }}
                 style={{
                   flex: 1,
                   textAlign: 'left',

@@ -77,6 +77,13 @@ export function platesPerSide(kg) {
   return { totalLbs, plates: side > 0 ? sideToPlates(side) : [] };
 }
 
+// Kilograms on the bar -> pounds on one side, the inverse of sideLbsToKg:
+// 52.2 kg -> 115 lb -> 35 a side. 0 when the bar alone is all there is.
+export function kgToSideLbs(kg) {
+  const totalLbs = Math.round((kg / LB_TO_KG) / 5) * 5;
+  return Math.max(0, (totalLbs - BAR_LBS) / 2);
+}
+
 // Pounds on one side -> kilograms on the bar, bar included, to 0.1 kg.
 // 50 lb a side is 45 + 2 x 50 = 145 lb = 65.8 kg.
 export function sideLbsToKg(sideLbs) {

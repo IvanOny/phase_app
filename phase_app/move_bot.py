@@ -2650,15 +2650,19 @@ def _on_reaction(cur, conn, rx: dict) -> None:
     if not added:
         return
     cur.execute(
-        "SELECT f.entry_id, f.kind, f.from_tg_id, e.telegram_user_id AS author "
+        "SELECT f.entry_id, f.kind, f.from_tg_id, e.telegram_user_id AS author, "
+        "       e.chat_id AS src_chat, e.message_id AS src_msg, e.entry_date "
         "FROM move_forwards f JOIN move_entries e ON e.id = f.entry_id "
         "WHERE f.chat_id = %s AND f.message_id = %s",
         (chat_id, msg_id))
     f = cur.fetchone()
     if not f or f["kind"] == "radar":
         return
-    # A crew copy: to the author. A thread message: to the other side of it.
-    to_id = f["from_tg_id"] if f["kind"] == "talk" and f["from_tg_id"] else f["author"]
+    # A crew copy: to the author. A thread message, or a picture sent as a
+    # comment: to whoever wrote it -- not the move's author, who may be
+    # the one reacting.
+    from_side = f["kind"] in ("talk", "note") and f["from_tg_id"]
+    to_id = f["from_tg_id"] if from_side else f["author"]
     if not to_id or to_id == who:
         return
     me, them = _user(cur, who), _user(cur, to_id)
@@ -2666,9 +2670,32 @@ def _on_reaction(cur, conn, rx: dict) -> None:
         return
     if not _note_deliverable(cur, to_id, me["participant_name"]):
         return
-    _send(them["chat_id"] or to_id,
-          _t("reaction_received", _norm_lang(them["language_code"]),
-             name=me["participant_name"], emoji="".join(added)))
+    to_chat = them["chat_id"] or to_id
+
+    # "Oleh: 👍" four times in a row said nothing about what was liked. So the
+    # relay is a reply to the recipient's own copy of the thing: their video
+    # for a reaction on their move, their copy of the thread for a reaction
+    # on a comment. Telegram draws that message above the emoji.
+    reply_to = None
+    if not from_side:
+        if f["src_msg"] and f["src_chat"] == to_chat:
+            reply_to = f["src_msg"]
+    else:
+        cur.execute(
+            "SELECT message_id FROM move_forwards "
+            "WHERE entry_id = %s AND kind = 'talk' AND recipient_tg_id = %s AND from_tg_id = %s "
+            "ORDER BY id DESC LIMIT 1",
+            (f["entry_id"], to_id, who))
+        t = cur.fetchone()
+        reply_to = t["message_id"] if t else None
+
+    text = _t("reaction_received", _norm_lang(them["language_code"]),
+              name=me["participant_name"], emoji="".join(added))
+    # With nothing to reply to -- the original deleted, the thread gone --
+    # the move's date is the one thing left that says which move.
+    if not reply_to and f["entry_date"]:
+        text += f" · {f['entry_date'].strftime('%d.%m')}"
+    _send(to_chat, text, reply_to=reply_to)
 
 
 def _send_media_note(cur, conn, tg_id: int, chat_id: int, lang: str,

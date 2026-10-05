@@ -58,7 +58,9 @@ export default function PlatesCard({ sessions, plMetrics }) {
                 {Math.round(last.e1rm)}
               </span>
               <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                {last.load}×{last.reps}
+                {/* Whole kilos, like the e1RM: a load entered as plates a
+                    side converts to 52.2, but the bar holds 25+10 either way. */}
+                {Math.round(last.load)}×{last.reps}
               </span>
               <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
                 {plates.length ? plates.join('+') : 'empty bar'}

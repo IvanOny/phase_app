@@ -33,8 +33,8 @@ const LIFT_CONFIG = {
   // its lift's colour but dashed and hollow: the same e1RM formula on a
   // different test (bench: best set at a fixed 60 kg; pull-ups: the season's
   // max), so it must never pass for the app's own line.
-  nbBench:  { label: 'Bench · notebook',   color: '#0891b2', notebook: true },
-  nbPullup: { label: 'Pull-up · notebook', color: '#ec4899', notebook: true },
+  nbBench:  { label: 'Bench · average',   color: '#0891b2', notebook: true },
+  nbPullup: { label: 'Pull-up · average', color: '#ec4899', notebook: true },
 };
 
 // Which notebook series rides with which lift pill.
@@ -333,10 +333,15 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   // what is left — which is most of the reason to hide them. The windows are
   // cut over these lifts' span too, so the ten points cover what is shown.
   const liftsToShow = selected.filter(l => l !== 'total' || showTotal);
+  // The averages (the hand-kept notebook) are a long history -- 2024 on --
+  // and only mean something on the 'all' span. On a 30-day view they were a
+  // lone hollow circle at today, the season in progress. So they, and their
+  // pill, appear on 'all' only.
+  const notebookOn = showNotebook && spanKey === 'all';
   // The notebook rides with its lift's pill: bench on, notebook bench on.
   const seriesToShow = [
     ...liftsToShow,
-    ...(showNotebook ? liftsToShow.filter(l => NOTEBOOK_FOR[l]).map(l => NOTEBOOK_FOR[l]) : []),
+    ...(notebookOn ? liftsToShow.filter(l => NOTEBOOK_FOR[l]).map(l => NOTEBOOK_FOR[l]) : []),
   ];
   const hasNotebook = notebookPoints(notebook).length > 0;
   const points = [...buildChartData(sessions, plMetrics), ...notebookPoints(notebook)]
@@ -499,16 +504,16 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
           );
         })}
         {/* The notebook, on or off. Dashed like its lines. */}
-        {hasNotebook && (
+        {hasNotebook && spanKey === 'all' && (
           <button
             className={`filter-chip${showNotebook ? ' active' : ''}`}
             onClick={() => setShowNotebook(v => !v)}
             aria-pressed={showNotebook}
-            title="Hand-kept notebook: bench best set at 60 kg, pull-up max by season. Same e1RM formula, different test."
+            title="Hand-kept averages: bench best set at 60 kg by month, pull-up max by season. Same e1RM formula, different test."
             style={{ fontSize: 11, padding: '1px 8px', borderStyle: 'dashed',
                      ...(showNotebook ? { background: 'transparent' } : null) }}
           >
-            Notebook
+            Average
           </button>
         )}
         {/* The span, on the right of the same row: which lifts, and over how
@@ -611,7 +616,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                       <div className="tooltip-row">
                         <span style={{ color: cfg.color, fontWeight: 600 }}>
                           {lift === 'total' ? 'Total'
-                            : cfg.notebook ? (sessions.length > 1 ? 'notebook · avg e1RM' : 'notebook · e1RM')
+                            : cfg.notebook ? (sessions.length > 1 ? 'average · avg e1RM' : 'average · e1RM')
                             : sessions.length > 1 ? 'avg e1RM' : 'e1RM'}
                         </span>
                         <strong>{Math.round(val)}</strong>

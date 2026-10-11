@@ -1156,18 +1156,25 @@ class PhaseApi:
 
     # A season as a date: its middle month, the 15th. Winter comes after
     # autumn in the notebook's row, so winter YYYY is Dec YYYY - Feb YYYY+1
-    # and its middle is January of the next year.
+    # and its middle is January of the next year. And the day after it ends
+    # (year offset, month, day), to tell a finished season from one in progress.
     _SEASON_MID = {"spring": (0, 4), "summer": (0, 7), "autumn": (0, 10), "winter": (1, 1)}
+    _SEASON_AFTER = {"spring": (0, 6, 1), "summer": (0, 9, 1), "autumn": (0, 12, 1), "winter": (1, 3, 1)}
 
     def get_notebook_points(self) -> ApiResponse:
         """The hand-kept notebook as e1RM points the lift trend can draw.
 
-        Same formula as the app's own top sets (Epley), on the closest thing
-        the notebook has to a top set: bench is the month's best set at the
-        notebook load; pull-ups the season's max, at PULLUP_BW_FACTOR of the
-        bodyweight logged nearest that date. Every point carries what was
-        actually done, because the line is a different test drawn on the
-        same axis and the tooltip has to say so.
+        The app's own formula (Epley) on the notebook's average reps: bench is
+        the month's average across sets at the notebook load, pull-ups the
+        season's average at PULLUP_BW_FACTOR of the bodyweight logged nearest
+        that date. Averages rather than the best set or the max: the line
+        sits lower than the app's top-set e1RM, but it is the series the
+        notebook was kept for, and it moves less from one good day.
+
+        Only finished periods: a season or month still running is a number
+        that will change, and drawn at today it was a lone point with
+        nothing after it. Every point carries what was actually done, for
+        the tooltip.
         """
         import datetime as _dt
         from phase_app.metrics import PULLUP_BW_FACTOR
@@ -1182,31 +1189,36 @@ class PhaseApi:
 
         today = _dt.date.today()
         out = []
-        for r in self._exec("SELECT * FROM pullup_seasons WHERE max_reps IS NOT NULL").fetchall():
+        for r in self._exec("SELECT * FROM pullup_seasons WHERE avg_reps IS NOT NULL").fetchall():
+            ay, am, ad = self._SEASON_AFTER[r["season"]]
+            if _dt.date(r["year"] + ay, am, ad) > today:
+                continue                                   # still in progress
             dy, mo = self._SEASON_MID[r["season"]]
-            d = min(_dt.date(r["year"] + dy, mo, 15), today)     # a season in progress sits at today
+            d = _dt.date(r["year"] + dy, mo, 15)
             w = bw_near(d)
             if w is None:
                 continue
-            reps = int(r["max_reps"])
-            detail = f"max {reps}" + (f" ({r['max_times']}×)" if r["max_times"] else "")
-            if r["avg_reps"] is not None:
-                detail += f", avg {float(r['avg_reps']):g}"
+            avg = float(r["avg_reps"])
+            detail = f"avg {avg:g}"
+            if r["max_reps"] is not None:
+                detail += f", max {r['max_reps']}" + (f" ({r['max_times']}×)" if r["max_times"] else "")
             out.append({
                 "lift": "pullup", "date": d.isoformat(), "year": r["year"], "season": r["season"],
-                "e1rm": round(PULLUP_BW_FACTOR * w * (1 + reps / 30), 1),
+                "e1rm": round(PULLUP_BW_FACTOR * w * (1 + avg / 30), 1),
                 "detail": f"{r['season']} {r['year']} · {detail} · bw {w:g}",
             })
+        this_month = today.strftime("%Y-%m")
         for r in self._exec(
-                "SELECT * FROM notebook_lifts WHERE exercise = 'bench press' ORDER BY month").fetchall():
-            reps = r["best_reps"] if r["best_reps"] is not None else float(r["avg_reps"])
+                "SELECT * FROM notebook_lifts WHERE exercise = 'bench press' AND month < %s ORDER BY month",
+                (this_month,)).fetchall():
+            avg = float(r["avg_reps"])
             load = float(r["load_kg"])
             y, m = map(int, r["month"].split("-"))
-            best = f"{load:g}×{reps:g} best" if r["best_reps"] is not None else f"{load:g}×{reps:g} avg"
+            best = f", best {r['best_reps']}" if r["best_reps"] is not None else ""
             out.append({
                 "lift": "bench", "date": _dt.date(y, m, 15).isoformat(), "year": y,
-                "e1rm": round(load * (1 + float(reps) / 30), 1),
-                "detail": f"{best}, avg {float(r['avg_reps']):g} · {r['protocol']}",
+                "e1rm": round(load * (1 + avg / 30), 1),
+                "detail": f"{load:g} kg × avg {avg:g}{best} · {r['protocol']}",
             })
         out.sort(key=lambda p: p["date"])
         return ApiResponse(200, {"items": out})

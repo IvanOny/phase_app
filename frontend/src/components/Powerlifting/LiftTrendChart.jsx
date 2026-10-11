@@ -31,8 +31,9 @@ const LIFT_CONFIG = {
   total:    { label: 'Total',    color: '#f59e0b' },
   // The training notebook kept by hand before and beside the app, drawn in
   // its lift's colour but dashed and hollow: the same e1RM formula on a
-  // different test (bench: best set at a fixed 60 kg; pull-ups: the season's
-  // max), so it must never pass for the app's own line.
+  // different measure (average reps across sets -- bench at a fixed 60 kg by
+  // month, pull-ups by finished season), so it must never pass for the app's
+  // own top-set line.
   nbBench:  { label: 'Bench · average',   color: '#0891b2', notebook: true },
   nbPullup: { label: 'Pull-up · average', color: '#ec4899', notebook: true },
 };
@@ -509,7 +510,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
             className={`filter-chip${showNotebook ? ' active' : ''}`}
             onClick={() => setShowNotebook(v => !v)}
             aria-pressed={showNotebook}
-            title="Hand-kept averages: bench best set at 60 kg by month, pull-up max by season. Same e1RM formula, different test."
+            title="Hand-kept averages: bench average reps at 60 kg by month, pull-up average reps by finished season. Same e1RM formula, different measure."
             style={{ fontSize: 11, padding: '1px 8px', borderStyle: 'dashed',
                      ...(showNotebook ? { background: 'transparent' } : null) }}
           >

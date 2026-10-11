@@ -162,6 +162,8 @@ class PhaseApi:
             return self.get_session_pl_metrics(int(path.split("/")[4]))
         if method == "GET" and path == "/v1/metrics/session-pl-metrics":
             return self.get_session_pl_metrics(None)
+        if method == "GET" and path == "/v1/metrics/notebook":
+            return self.get_notebook_points()
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/classification", path):
             return self.get_classification(int(path.split("/")[4]), qp)
 
@@ -1151,6 +1153,63 @@ class PhaseApi:
     # ------------------------------------------------------------------ #
     # Powerlifting metrics                                                 #
     # ------------------------------------------------------------------ #
+
+    # A season as a date: its middle month, the 15th. Winter comes after
+    # autumn in the notebook's row, so winter YYYY is Dec YYYY - Feb YYYY+1
+    # and its middle is January of the next year.
+    _SEASON_MID = {"spring": (0, 4), "summer": (0, 7), "autumn": (0, 10), "winter": (1, 1)}
+
+    def get_notebook_points(self) -> ApiResponse:
+        """The hand-kept notebook as e1RM points the lift trend can draw.
+
+        Same formula as the app's own top sets (Epley), on the closest thing
+        the notebook has to a top set: bench is the month's best set at the
+        notebook load; pull-ups the season's max, at PULLUP_BW_FACTOR of the
+        bodyweight logged nearest that date. Every point carries what was
+        actually done, because the line is a different test drawn on the
+        same axis and the tooltip has to say so.
+        """
+        import datetime as _dt
+        from phase_app.metrics import PULLUP_BW_FACTOR
+
+        bw = [(r["logged_date"], float(r["weight_kg"])) for r in self._exec(
+            "SELECT logged_date, weight_kg FROM bodyweight_log ORDER BY logged_date").fetchall()]
+
+        def bw_near(d):
+            if not bw:
+                return None
+            return min(bw, key=lambda x: abs((x[0] - d).days))[1]
+
+        today = _dt.date.today()
+        out = []
+        for r in self._exec("SELECT * FROM pullup_seasons WHERE max_reps IS NOT NULL").fetchall():
+            dy, mo = self._SEASON_MID[r["season"]]
+            d = min(_dt.date(r["year"] + dy, mo, 15), today)     # a season in progress sits at today
+            w = bw_near(d)
+            if w is None:
+                continue
+            reps = int(r["max_reps"])
+            detail = f"max {reps}" + (f" ({r['max_times']}×)" if r["max_times"] else "")
+            if r["avg_reps"] is not None:
+                detail += f", avg {float(r['avg_reps']):g}"
+            out.append({
+                "lift": "pullup", "date": d.isoformat(), "year": r["year"], "season": r["season"],
+                "e1rm": round(PULLUP_BW_FACTOR * w * (1 + reps / 30), 1),
+                "detail": f"{r['season']} {r['year']} · {detail} · bw {w:g}",
+            })
+        for r in self._exec(
+                "SELECT * FROM notebook_lifts WHERE exercise = 'bench press' ORDER BY month").fetchall():
+            reps = r["best_reps"] if r["best_reps"] is not None else float(r["avg_reps"])
+            load = float(r["load_kg"])
+            y, m = map(int, r["month"].split("-"))
+            best = f"{load:g}×{reps:g} best" if r["best_reps"] is not None else f"{load:g}×{reps:g} avg"
+            out.append({
+                "lift": "bench", "date": _dt.date(y, m, 15).isoformat(), "year": y,
+                "e1rm": round(load * (1 + float(reps) / 30), 1),
+                "detail": f"{best}, avg {float(r['avg_reps']):g} · {r['protocol']}",
+            })
+        out.sort(key=lambda p: p["date"])
+        return ApiResponse(200, {"items": out})
 
     def get_session_pl_metrics(self, phase_id: int | None) -> ApiResponse:
         from phase_app.metrics import get_session_pl_metrics

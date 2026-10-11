@@ -10,6 +10,7 @@ import {
   Legend,
 } from 'recharts';
 import { useChartColors } from '../../hooks/useChartColors.js';
+import { getNotebookPoints } from '../../api/client.js';
 
 // Mirrors PULLUP_BW_FACTOR in phase_app/metrics.py, which is where the e1RM is
 // actually computed. Here only so the tooltip can show the weight the formula
@@ -28,10 +29,24 @@ const LIFT_CONFIG = {
   // Total: that stays S+B+D.
   pullup:   { label: 'Pull-up',  color: '#ec4899' },
   total:    { label: 'Total',    color: '#f59e0b' },
+  // The training notebook kept by hand before and beside the app, drawn in
+  // its lift's colour but dashed and hollow: the same e1RM formula on a
+  // different test (bench: best set at a fixed 60 kg; pull-ups: the season's
+  // max), so it must never pass for the app's own line.
+  nbBench:  { label: 'Bench · notebook',   color: '#0891b2', notebook: true },
+  nbPullup: { label: 'Pull-up · notebook', color: '#ec4899', notebook: true },
 };
+
+// Which notebook series rides with which lift pill.
+const NOTEBOOK_FOR = { bench: 'nbBench', pullup: 'nbPullup' };
+// Notebook seasons before this year are kept in the database but not drawn
+// (2021 sits alone before a two-year gap). The user's call, 11 Oct 2026.
+const NOTEBOOK_FROM_YEAR = 2024;
 
 // Squat, bench, deadlift, pull-up, then Total — the order they are read in.
 const LIFT_ORDER = ['squat', 'bench', 'deadlift', 'pullup', 'total'];
+// Every series a bucket carries: the pills' lifts plus the notebook's.
+const SERIES = [...LIFT_ORDER, 'nbBench', 'nbPullup'];
 
 // How many points a line has, however many sessions are behind it. The span
 // of the lifts on screen is cut into this many equal windows, and each point
@@ -138,7 +153,7 @@ function bucketChartData(points, lifts, range = null) {
       dateStart: isoDay(start),
       dateEnd: isoDay(Math.min(end, t1 + DAY_MS) - 1),
     };
-    LIFT_ORDER.forEach(l => { b[l] = null; b[`_${l}`] = null; b[`_${l}Sessions`] = []; });
+    SERIES.forEach(l => { b[l] = null; b[`_${l}`] = null; b[`_${l}Sessions`] = []; });
     b._start = start; b._end = end;
     return b;
   });
@@ -150,7 +165,7 @@ function bucketChartData(points, lifts, range = null) {
     // never past the last one.
     while (i < n - 1 && t >= buckets[i]._end) i++;
     const b = buckets[i];
-    for (const l of LIFT_ORDER) {
+    for (const l of SERIES) {
       const v = l === 'total' ? p.total : p[`_${l}`];
       if (v == null) continue;
       b[`_${l}Sessions`].push({ date: p.date, value: v, set: p[`_${l}Set`] ?? null });
@@ -158,7 +173,7 @@ function bucketChartData(points, lifts, range = null) {
   }
 
   for (const b of buckets) {
-    for (const l of LIFT_ORDER) {
+    for (const l of SERIES) {
       const ss = b[`_${l}Sessions`];
       if (ss.length === 0) continue;
       const v = l === 'total'
@@ -170,6 +185,18 @@ function bucketChartData(points, lifts, range = null) {
     delete b._start; delete b._end;
   }
   return buckets;
+}
+
+// The notebook endpoint's points, shaped like buildChartData's so the
+// buckets take them as they take sessions. `set.note` is what was actually
+// done, for the tooltip.
+function notebookPoints(items) {
+  return (items || [])
+    .filter(p => p.year >= NOTEBOOK_FROM_YEAR && NOTEBOOK_FOR[p.lift])
+    .map(p => {
+      const key = NOTEBOOK_FOR[p.lift];
+      return { date: p.date, [`_${key}`]: p.e1rm, [`_${key}Set`]: { note: p.detail } };
+    });
 }
 
 function formatDate(dateStr) {
@@ -272,6 +299,12 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   }));
   const range = resolveRange(spanKey, custom);
 
+  const [notebook, setNotebook] = useState([]);
+  const [showNotebook, setShowNotebook] = useState(true);
+  useEffect(() => {
+    getNotebookPoints().then(r => setNotebook(Array.isArray(r) ? r : [])).catch(() => {});
+  }, []);
+
   function toggleLift(lift) {
     setSelected(prev => {
       // Never all off: an empty chart is a worse answer than the one lift
@@ -293,15 +326,33 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
 
   // A tooltip pinned to a line that has just been switched off would hang there
   // describing something invisible.
-  useEffect(() => { openTooltip(null); setHovered(null); }, [selected, spanKey, custom]);
+  useEffect(() => { openTooltip(null); setHovered(null); }, [selected, spanKey, custom, showNotebook]);
 
   // Only what the pills have on. The y-axis reads dataMin/dataMax off the
   // series actually rendered, so hiding the rest re-scales the chart around
   // what is left — which is most of the reason to hide them. The windows are
   // cut over these lifts' span too, so the ten points cover what is shown.
   const liftsToShow = selected.filter(l => l !== 'total' || showTotal);
-  const data = bucketChartData(buildChartData(sessions, plMetrics), liftsToShow, range);
+  // The notebook rides with its lift's pill: bench on, notebook bench on.
+  const seriesToShow = [
+    ...liftsToShow,
+    ...(showNotebook ? liftsToShow.filter(l => NOTEBOOK_FOR[l]).map(l => NOTEBOOK_FOR[l]) : []),
+  ];
+  const hasNotebook = notebookPoints(notebook).length > 0;
+  const points = [...buildChartData(sessions, plMetrics), ...notebookPoints(notebook)]
+    .sort((a, b) => Date.parse(a.date.split('T')[0]) - Date.parse(b.date.split('T')[0]));
+  const data = bucketChartData(points, seriesToShow, range);
   const hasData = data.length > 0;
+
+  // dd.mm says nothing once a chart spans years -- and with the notebook,
+  // "all" reaches back to 2024. Past ~10 months the ticks read mm.yy.
+  const spansYears = data.length > 1
+    && Date.parse(data[data.length - 1].date) - Date.parse(data[0].date) > 300 * DAY_MS;
+  const tickFormat = d => {
+    if (!spansYears) return formatDate(d);
+    const [y, m] = String(d).split('T')[0].split('-');
+    return `${m}.${y.slice(2)}`;
+  };
 
   // Last index in data where each lift has a non-null value (for inline label placement)
   const lastIndexByLift = {};
@@ -396,12 +447,12 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
         <g style={{ cursor: 'pointer' }} onPointerDown={e => e.stopPropagation()} {...handlers}>
           <circle
             cx={cx} cy={cy} r={dotR}
-            fill={cfg.color}
-            fillOpacity={isActive ? 1 : 0.85}
-            stroke={isActive || isHovered ? cfg.color : colors.bgApp}
-            strokeWidth={isActive ? 3 : 1.5}
+            fill={cfg.notebook ? colors.bgApp : cfg.color}
+            fillOpacity={cfg.notebook ? 1 : isActive ? 1 : 0.85}
+            stroke={cfg.notebook || isActive || isHovered ? cfg.color : colors.bgApp}
+            strokeWidth={cfg.notebook ? 2 : isActive ? 3 : 1.5}
           />
-          {isLast && (
+          {isLast && !cfg.notebook && (
             <text
               x={cx + dotR + 4}
               y={cy + 4 + (labelDy[lift] || 0)}
@@ -447,6 +498,19 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
             </button>
           );
         })}
+        {/* The notebook, on or off. Dashed like its lines. */}
+        {hasNotebook && (
+          <button
+            className={`filter-chip${showNotebook ? ' active' : ''}`}
+            onClick={() => setShowNotebook(v => !v)}
+            aria-pressed={showNotebook}
+            title="Hand-kept notebook: bench best set at 60 kg, pull-up max by season. Same e1RM formula, different test."
+            style={{ fontSize: 11, padding: '1px 8px', borderStyle: 'dashed',
+                     ...(showNotebook ? { background: 'transparent' } : null) }}
+          >
+            Notebook
+          </button>
+        )}
         {/* The span, on the right of the same row: which lifts, and over how
             long. One of these is always on, like the lifts — there is no
             "no span". */}
@@ -492,20 +556,21 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
               <LineChart data={data} margin={{ top: 8, right: 64, bottom: 24, left: 0 }}
                 onMouseLeave={() => { if (!isTouch) { setHovered(null); openTooltip(null); } }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />
-                <XAxis dataKey="date" tickFormatter={formatDate}
+                <XAxis dataKey="date" tickFormatter={tickFormat}
                   tick={{ fill: colors.textMuted, fontSize: 12 }}
                   axisLine={{ stroke: colors.border }} tickLine={false} />
                 <YAxis domain={['dataMin - 10', 'dataMax + 10']}
                   tick={{ fill: colors.textMuted, fontSize: 12 }}
                   axisLine={false} tickLine={false} width={44} />
-                {liftsToShow.map(lift => (
+                {seriesToShow.map(lift => (
                   <Line
                     key={lift}
                     type="monotone"
                     dataKey={lift}
                     stroke={LIFT_CONFIG[lift].color}
-                    strokeWidth={lift === 'total' ? 2.5 : 1.8}
-                    strokeDasharray={lift === 'total' ? '5 3' : undefined}
+                    strokeWidth={lift === 'total' ? 2.5 : LIFT_CONFIG[lift].notebook ? 1.4 : 1.8}
+                    strokeOpacity={LIFT_CONFIG[lift].notebook ? 0.75 : 1}
+                    strokeDasharray={lift === 'total' ? '5 3' : LIFT_CONFIG[lift].notebook ? '4 4' : undefined}
                     connectNulls
                     dot={makeDot(lift)}
                     activeDot={false}
@@ -538,14 +603,16 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                   const sessions = tooltip.data[`_${lift}Sessions`] || [];
                   if (val == null) return null;
                   const window = `${formatDate(tooltip.data.dateStart)} – ${formatDate(tooltip.data.dateEnd)}`;
-                  const setLabel = set => !set ? '' : set.bodyweight != null
+                  const setLabel = set => !set ? '' : set.note ? set.note : set.bodyweight != null
                     ? `${(set.bodyweight * PULLUP_BW_FACTOR).toFixed(1)}${set.load ? ` + ${set.load}` : ''} × ${set.reps}`
                     : `${set.load}×${set.reps}`;
                   return (
                     <>
                       <div className="tooltip-row">
                         <span style={{ color: cfg.color, fontWeight: 600 }}>
-                          {lift === 'total' ? 'Total' : sessions.length > 1 ? 'avg e1RM' : 'e1RM'}
+                          {lift === 'total' ? 'Total'
+                            : cfg.notebook ? (sessions.length > 1 ? 'notebook · avg e1RM' : 'notebook · e1RM')
+                            : sessions.length > 1 ? 'avg e1RM' : 'e1RM'}
                         </span>
                         <strong>{Math.round(val)}</strong>
                       </div>

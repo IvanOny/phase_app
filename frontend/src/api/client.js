@@ -314,6 +314,13 @@ export async function getPhaseProgression(phaseId) {
   return apiFetchList('GET', `/v1/phases/${phaseId}/progression`);
 }
 
+// ---- Notebook: the hand-kept series, as e1RM points for the lift trend ----
+
+export async function getNotebookPoints() {
+  if (MOCK_MODE) return Promise.resolve([]);
+  return apiFetchList('GET', '/v1/metrics/notebook');
+}
+
 // ---- Day notes: one per date, about the day rather than an exercise ----
 
 export async function getDayNotes() {

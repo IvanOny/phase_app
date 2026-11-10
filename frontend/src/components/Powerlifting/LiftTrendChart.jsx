@@ -504,17 +504,26 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
         {LIFT_ORDER.filter(l => l !== 'total' || showTotal).map(lift => {
           const cfg = LIFT_CONFIG[lift];
           const on = selected.includes(lift);
+          // On 'all' only the hand-kept averages are drawn, and only bench and
+          // pull-up have any. Squat and deadlift were never written down, so
+          // their pills there are switches with nothing on the other end:
+          // dimmed and inert, rather than tappable into a blank chart.
+          const dead = notebookOn && !NOTEBOOK_FOR[lift] && lift !== 'total';
           return (
             <button
               key={lift}
-              className={`filter-chip${on ? ' active' : ''}`}
-              onClick={() => toggleLift(lift)}
-              aria-pressed={on}
+              className={`filter-chip${on && !dead ? ' active' : ''}`}
+              onClick={() => { if (!dead) toggleLift(lift); }}
+              aria-pressed={on && !dead}
+              aria-disabled={dead || undefined}
+              title={dead ? `No hand-kept ${cfg.label.toLowerCase()} history — this span shows averages only`
+                          : undefined}
               style={{
                 fontSize: 11,
                 padding: '1px 8px',
-                ...(on ? { color: cfg.color, borderColor: cfg.color,
-                           background: 'transparent' } : null),
+                ...(dead ? { opacity: 0.35, cursor: 'default' } : null),
+                ...(on && !dead ? { color: cfg.color, borderColor: cfg.color,
+                                    background: 'transparent' } : null),
               }}
             >
               {cfg.label}

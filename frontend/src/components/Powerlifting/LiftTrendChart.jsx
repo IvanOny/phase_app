@@ -29,11 +29,16 @@ const LIFT_CONFIG = {
   // Total: that stays S+B+D.
   pullup:   { label: 'Pull-up',  color: '#ec4899' },
   total:    { label: 'Total',    color: '#f59e0b' },
-  // The training notebook kept by hand before and beside the app, drawn in
-  // its lift's colour but dashed and hollow: the same e1RM formula on a
-  // different measure (average reps across sets -- bench at a fixed 60 kg by
-  // month, pull-ups by finished season), so it must never pass for the app's
-  // own top-set line.
+  // The training notebook kept by hand before and beside the app: the same
+  // e1RM formula on a different measure (average reps across sets -- bench by
+  // month, pull-ups by finished season).
+  //
+  // Drawn exactly like the logged lines. It used to be dashed, hollow and
+  // faded to keep it from passing for the app's own top-set line, but that
+  // meant switching the range to All changed the whole chart's character --
+  // the same lift in two different visual languages. The tooltip still names
+  // what it is ("average · avg e1RM"), which is where that distinction now
+  // lives. The user's call, 10 Nov 2026.
   nbBench:  { label: 'Bench · average',   color: '#0891b2', notebook: true },
   nbPullup: { label: 'Pull-up · average', color: '#ec4899', notebook: true },
 };
@@ -453,10 +458,10 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
         <g style={{ cursor: 'pointer' }} onPointerDown={e => e.stopPropagation()} {...handlers}>
           <circle
             cx={cx} cy={cy} r={dotR}
-            fill={cfg.notebook ? colors.bgApp : cfg.color}
-            fillOpacity={cfg.notebook ? 1 : isActive ? 1 : 0.85}
-            stroke={cfg.notebook || isActive || isHovered ? cfg.color : colors.bgApp}
-            strokeWidth={cfg.notebook ? 2 : isActive ? 3 : 1.5}
+            fill={cfg.color}
+            fillOpacity={isActive ? 1 : 0.85}
+            stroke={isActive || isHovered ? cfg.color : colors.bgApp}
+            strokeWidth={isActive ? 3 : 1.5}
           />
           {isLast && !cfg.notebook && (
             <text
@@ -504,14 +509,14 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
             </button>
           );
         })}
-        {/* The notebook, on or off. Dashed like its lines. */}
+        {/* The notebook, on or off. Plain like its lines now. */}
         {hasNotebook && spanKey === 'all' && (
           <button
             className={`filter-chip${showNotebook ? ' active' : ''}`}
             onClick={() => setShowNotebook(v => !v)}
             aria-pressed={showNotebook}
-            title="Hand-kept averages: bench average reps at 60 kg by month, pull-up average reps by finished season. Same e1RM formula, different measure."
-            style={{ fontSize: 11, padding: '1px 8px', borderStyle: 'dashed',
+            title="Hand-kept averages: bench average reps by month, pull-up average reps by finished season. Same e1RM formula, different measure."
+            style={{ fontSize: 11, padding: '1px 8px',
                      ...(showNotebook ? { background: 'transparent' } : null) }}
           >
             Average
@@ -574,9 +579,8 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                     type="monotone"
                     dataKey={lift}
                     stroke={LIFT_CONFIG[lift].color}
-                    strokeWidth={lift === 'total' ? 2.5 : LIFT_CONFIG[lift].notebook ? 1.4 : 1.8}
-                    strokeOpacity={LIFT_CONFIG[lift].notebook ? 0.75 : 1}
-                    strokeDasharray={lift === 'total' ? '5 3' : LIFT_CONFIG[lift].notebook ? '4 4' : undefined}
+                    strokeWidth={lift === 'total' ? 2.5 : 1.8}
+                    strokeDasharray={lift === 'total' ? '5 3' : undefined}
                     connectNulls
                     dot={makeDot(lift)}
                     activeDot={false}

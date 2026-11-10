@@ -344,33 +344,21 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   // lone hollow circle at today, the season in progress. So they, and their
   // pill, appear on 'all' only.
   const notebookOn = showNotebook && spanKey === 'all';
-  // The notebook rides with its lift's pill: bench on, notebook bench on.
-  const seriesToShow = [
-    ...liftsToShow,
-    ...(notebookOn ? liftsToShow.filter(l => NOTEBOOK_FOR[l]).map(l => NOTEBOOK_FOR[l]) : []),
-  ];
+  // 'all' is the long view, and the long view is the hand-kept averages: one
+  // point a month or a season, going back to 2024. The logged lines are the
+  // close-up -- individual sessions, and only ~7 months of them -- so showing
+  // both at once put two readings of the same lift side by side and made the
+  // widest span the busiest. 'all' now draws averages only; every other span
+  // draws logged sessions only. The two never share a chart.
+  //
+  // This is also why the averages are no longer clipped at the handover: they
+  // were cut short to stop pull-up drawing twice, and nothing draws twice now.
+  // Clipping them here would end 'all' in April 2026 with months missing.
+  const seriesToShow = notebookOn
+    ? liftsToShow.filter(l => NOTEBOOK_FOR[l]).map(l => NOTEBOOK_FOR[l])
+    : liftsToShow;
   const hasNotebook = notebookPoints(notebook).length > 0;
-  const logged = buildChartData(sessions, plMetrics);
-  // An average is the record for a lift only until the app starts keeping one.
-  // Pull-up seasons are still written down alongside logged sessions, so from
-  // April 2026 the same months were on the chart twice -- two pink lines, the
-  // season's average reps at bodyweight against logged top sets at +11 kg,
-  // measuring different things and inviting the reader to compare them. The
-  // notebook now stops where its lift's own logged history starts. Bench never
-  // overlapped, so nothing changes there.
-  const loggedFrom = {};
-  for (const p of logged) {
-    for (const lift of Object.keys(NOTEBOOK_FOR)) {
-      if (p[`_${lift}`] == null) continue;
-      const d = p.date.split('T')[0];
-      if (!loggedFrom[lift] || d < loggedFrom[lift]) loggedFrom[lift] = d;
-    }
-  }
-  const nbVisible = (notebook || []).filter(p => {
-    const from = loggedFrom[p.lift];
-    return !from || String(p.date).split('T')[0] < from;
-  });
-  const points = [...logged, ...notebookPoints(nbVisible)]
+  const points = [...buildChartData(sessions, plMetrics), ...notebookPoints(notebook)]
     .sort((a, b) => Date.parse(a.date.split('T')[0]) - Date.parse(b.date.split('T')[0]));
   const data = bucketChartData(points, seriesToShow, range);
   const hasData = data.length > 0;
@@ -483,7 +471,11 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
             stroke={isActive || isHovered ? cfg.color : colors.bgApp}
             strokeWidth={isActive ? 3 : 1.5}
           />
-          {isLast && !cfg.notebook && (
+          {/* Labelled like any other line. The averages used to be unlabelled
+              because they ran beside the logged lines they belong to; on 'all'
+              they are the only lines there is, and an unlabelled chart is
+              worse than a slightly longer label. */}
+          {isLast && (
             <text
               x={cx + dotR + 4}
               y={cy + 4 + (labelDy[lift] || 0)}
@@ -535,7 +527,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
             className={`filter-chip${showNotebook ? ' active' : ''}`}
             onClick={() => setShowNotebook(v => !v)}
             aria-pressed={showNotebook}
-            title="Hand-kept averages: bench average reps by month, pull-up average reps by finished season. Same e1RM formula, different measure."
+            title="Hand-kept averages: bench average reps by month, pull-up average reps by finished season. Same e1RM formula, different measure. Turn it off to see logged sessions over the same span instead."
             style={{ fontSize: 11, padding: '1px 8px',
                      ...(showNotebook ? { background: 'transparent' } : null) }}
           >
@@ -673,9 +665,14 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
         </>
       ) : (
         <div className="chart-empty">
-          {range
-            ? 'No sessions in this range for the lifts selected'
-            : 'No lift data yet — log squat, bench, deadlift or pull-up sets with top-set marked'}
+          {/* On 'all' nothing logged is drawn, so "no sessions" would be both
+              wrong and unhelpful: squat and deadlift have no hand-kept history
+              at all, and that is the whole reason the chart is blank. */}
+          {notebookOn
+            ? 'No hand-kept averages for the lifts selected — only bench and pull-up have them'
+            : range
+              ? 'No sessions in this range for the lifts selected'
+              : 'No lift data yet — log squat, bench, deadlift or pull-up sets with top-set marked'}
         </div>
       )}
     </div>

@@ -350,7 +350,27 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
     ...(notebookOn ? liftsToShow.filter(l => NOTEBOOK_FOR[l]).map(l => NOTEBOOK_FOR[l]) : []),
   ];
   const hasNotebook = notebookPoints(notebook).length > 0;
-  const points = [...buildChartData(sessions, plMetrics), ...notebookPoints(notebook)]
+  const logged = buildChartData(sessions, plMetrics);
+  // An average is the record for a lift only until the app starts keeping one.
+  // Pull-up seasons are still written down alongside logged sessions, so from
+  // April 2026 the same months were on the chart twice -- two pink lines, the
+  // season's average reps at bodyweight against logged top sets at +11 kg,
+  // measuring different things and inviting the reader to compare them. The
+  // notebook now stops where its lift's own logged history starts. Bench never
+  // overlapped, so nothing changes there.
+  const loggedFrom = {};
+  for (const p of logged) {
+    for (const lift of Object.keys(NOTEBOOK_FOR)) {
+      if (p[`_${lift}`] == null) continue;
+      const d = p.date.split('T')[0];
+      if (!loggedFrom[lift] || d < loggedFrom[lift]) loggedFrom[lift] = d;
+    }
+  }
+  const nbVisible = (notebook || []).filter(p => {
+    const from = loggedFrom[p.lift];
+    return !from || String(p.date).split('T')[0] < from;
+  });
+  const points = [...logged, ...notebookPoints(nbVisible)]
     .sort((a, b) => Date.parse(a.date.split('T')[0]) - Date.parse(b.date.split('T')[0]));
   const data = bucketChartData(points, seriesToShow, range);
   const hasData = data.length > 0;

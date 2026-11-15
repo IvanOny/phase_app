@@ -29,30 +29,19 @@ const LIFT_CONFIG = {
   // Total: that stays S+B+D.
   pullup:   { label: 'Pull-up',  color: '#ec4899' },
   total:    { label: 'Total',    color: '#f59e0b' },
-  // The training notebook kept by hand before and beside the app: the same
-  // e1RM formula on a different measure (average reps across sets -- bench by
-  // month, pull-ups by finished season).
-  //
-  // Drawn exactly like the logged lines. It used to be dashed, hollow and
-  // faded to keep it from passing for the app's own top-set line, but that
-  // meant switching the range to All changed the whole chart's character --
-  // the same lift in two different visual languages. The tooltip still names
-  // what it is ("average · avg e1RM"), which is where that distinction now
-  // lives. The user's call, 10 Nov 2026.
-  nbBench:  { label: 'Bench · average',   color: '#0891b2', notebook: true },
-  nbPullup: { label: 'Pull-up · average', color: '#ec4899', notebook: true },
 };
 
-// Which notebook series rides with which lift pill.
-const NOTEBOOK_FOR = { bench: 'nbBench', pullup: 'nbPullup' };
+// Which lifts have a hand-kept history to fall back on before the app.
+const HAS_NOTEBOOK = { bench: true, pullup: true };
 // Notebook seasons before this year are kept in the database but not drawn
 // (2021 sits alone before a two-year gap). The user's call, 11 Oct 2026.
 const NOTEBOOK_FROM_YEAR = 2024;
 
 // Squat, bench, deadlift, pull-up, then Total — the order they are read in.
 const LIFT_ORDER = ['squat', 'bench', 'deadlift', 'pullup', 'total'];
-// Every series a bucket carries: the pills' lifts plus the notebook's.
-const SERIES = [...LIFT_ORDER, 'nbBench', 'nbPullup'];
+// Every series a bucket carries. The hand-kept history is folded into its
+// own lift's series, so there is nothing extra here.
+const SERIES = LIFT_ORDER;
 
 // How many points a line has, however many sessions are behind it. The span
 // of the lifts on screen is cut into this many equal windows, and each point
@@ -198,11 +187,12 @@ function bucketChartData(points, lifts, range = null) {
 // done, for the tooltip.
 function notebookPoints(items) {
   return (items || [])
-    .filter(p => p.year >= NOTEBOOK_FROM_YEAR && NOTEBOOK_FOR[p.lift])
-    .map(p => {
-      const key = NOTEBOOK_FOR[p.lift];
-      return { date: p.date, [`_${key}`]: p.e1rm, [`_${key}Set`]: { note: p.detail } };
-    });
+    .filter(p => p.year >= NOTEBOOK_FROM_YEAR && HAS_NOTEBOOK[p.lift])
+    .map(p => ({
+      date: p.date,
+      [`_${p.lift}`]: p.e1rm,
+      [`_${p.lift}Set`]: { note: p.detail, notebook: true },
+    }));
 }
 
 function formatDate(dateStr) {
@@ -306,7 +296,6 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   const range = resolveRange(spanKey, custom);
 
   const [notebook, setNotebook] = useState([]);
-  const [showNotebook, setShowNotebook] = useState(true);
   useEffect(() => {
     getNotebookPoints().then(r => setNotebook(Array.isArray(r) ? r : [])).catch(() => {});
   }, []);
@@ -332,33 +321,39 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
 
   // A tooltip pinned to a line that has just been switched off would hang there
   // describing something invisible.
-  useEffect(() => { openTooltip(null); setHovered(null); }, [selected, spanKey, custom, showNotebook]);
+  useEffect(() => { openTooltip(null); setHovered(null); }, [selected, spanKey, custom]);
 
   // Only what the pills have on. The y-axis reads dataMin/dataMax off the
   // series actually rendered, so hiding the rest re-scales the chart around
   // what is left — which is most of the reason to hide them. The windows are
   // cut over these lifts' span too, so the ten points cover what is shown.
   const liftsToShow = selected.filter(l => l !== 'total' || showTotal);
-  // The averages (the hand-kept notebook) are a long history -- 2024 on --
-  // and only mean something on the 'all' span. On a 30-day view they were a
-  // lone hollow circle at today, the season in progress. So they, and their
-  // pill, appear on 'all' only.
-  const notebookOn = showNotebook && spanKey === 'all';
-  // 'all' is the long view, and the long view is the hand-kept averages: one
-  // point a month or a season, going back to 2024. The logged lines are the
-  // close-up -- individual sessions, and only ~7 months of them -- so showing
-  // both at once put two readings of the same lift side by side and made the
-  // widest span the busiest. 'all' now draws averages only; every other span
-  // draws logged sessions only. The two never share a chart.
+  const seriesToShow = liftsToShow;
+  // One line per lift, and the hand-kept history is part of it rather than a
+  // second line beside it. e1RM exists to put different load/rep combinations
+  // on one scale, so a month averaging 65.8 kg x 9 belongs on the same line as
+  // a session of 74.8 kg x 5. This also means every span is complete: 1y used
+  // to start in April 2026 because only logged sessions were drawn, and 'all'
+  // used to drop squat and deadlift because only averages were.
   //
-  // This is also why the averages are no longer clipped at the handover: they
-  // were cut short to stop pull-up drawing twice, and nothing draws twice now.
-  // Clipping them here would end 'all' in April 2026 with months missing.
-  const seriesToShow = notebookOn
-    ? liftsToShow.filter(l => NOTEBOOK_FOR[l]).map(l => NOTEBOOK_FOR[l])
-    : liftsToShow;
-  const hasNotebook = notebookPoints(notebook).length > 0;
-  const points = [...buildChartData(sessions, plMetrics), ...notebookPoints(notebook)]
+  // The notebook is used only before a lift's own logged history starts.
+  // Afterwards the sessions are the better record of the same months, and
+  // keeping both put the same weeks on the chart twice.
+  const logged = buildChartData(sessions, plMetrics);
+  const loggedFrom = {};
+  for (const p of logged) {
+    for (const lift of Object.keys(HAS_NOTEBOOK)) {
+      if (p[`_${lift}`] == null) continue;
+      const d = p.date.split('T')[0];
+      if (!loggedFrom[lift] || d < loggedFrom[lift]) loggedFrom[lift] = d;
+    }
+  }
+  const history = notebookPoints(notebook).filter(p => {
+    const lift = Object.keys(HAS_NOTEBOOK).find(l => p[`_${l}`] != null);
+    const from = lift && loggedFrom[lift];
+    return !from || p.date.split('T')[0] < from;
+  });
+  const points = [...logged, ...history]
     .sort((a, b) => Date.parse(a.date.split('T')[0]) - Date.parse(b.date.split('T')[0]));
   const data = bucketChartData(points, seriesToShow, range);
   const hasData = data.length > 0;
@@ -504,45 +499,23 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
         {LIFT_ORDER.filter(l => l !== 'total' || showTotal).map(lift => {
           const cfg = LIFT_CONFIG[lift];
           const on = selected.includes(lift);
-          // On 'all' only the hand-kept averages are drawn, and only bench and
-          // pull-up have any. Squat and deadlift were never written down, so
-          // their pills there are switches with nothing on the other end:
-          // dimmed and inert, rather than tappable into a blank chart.
-          const dead = notebookOn && !NOTEBOOK_FOR[lift] && lift !== 'total';
           return (
             <button
               key={lift}
-              className={`filter-chip${on && !dead ? ' active' : ''}`}
-              onClick={() => { if (!dead) toggleLift(lift); }}
-              aria-pressed={on && !dead}
-              aria-disabled={dead || undefined}
-              title={dead ? `No hand-kept ${cfg.label.toLowerCase()} history — this span shows averages only`
-                          : undefined}
+              className={`filter-chip${on ? ' active' : ''}`}
+              onClick={() => toggleLift(lift)}
+              aria-pressed={on}
               style={{
                 fontSize: 11,
                 padding: '1px 8px',
-                ...(dead ? { opacity: 0.35, cursor: 'default' } : null),
-                ...(on && !dead ? { color: cfg.color, borderColor: cfg.color,
-                                    background: 'transparent' } : null),
+                ...(on ? { color: cfg.color, borderColor: cfg.color,
+                           background: 'transparent' } : null),
               }}
             >
               {cfg.label}
             </button>
           );
         })}
-        {/* The notebook, on or off. Plain like its lines now. */}
-        {hasNotebook && spanKey === 'all' && (
-          <button
-            className={`filter-chip${showNotebook ? ' active' : ''}`}
-            onClick={() => setShowNotebook(v => !v)}
-            aria-pressed={showNotebook}
-            title="Hand-kept averages: bench average reps by month, pull-up average reps by finished season. Same e1RM formula, different measure. Turn it off to see logged sessions over the same span instead."
-            style={{ fontSize: 11, padding: '1px 8px',
-                     ...(showNotebook ? { background: 'transparent' } : null) }}
-          >
-            Average
-          </button>
-        )}
         {/* The span, on the right of the same row: which lifts, and over how
             long. One of these is always on, like the lifts — there is no
             "no span". */}
@@ -641,9 +614,14 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                     <>
                       <div className="tooltip-row">
                         <span style={{ color: cfg.color, fontWeight: 600 }}>
+                          {/* History and logged sessions share a line now, so the
+                              label has to come from the point rather than the
+                              series: these windows are the only place that says
+                              which of the two you are looking at. */}
                           {lift === 'total' ? 'Total'
-                            : cfg.notebook ? (sessions.length > 1 ? 'average · avg e1RM' : 'average · e1RM')
-                            : sessions.length > 1 ? 'avg e1RM' : 'e1RM'}
+                            : sessions.some(s => s?.notebook)
+                              ? (sessions.length > 1 ? 'average · avg e1RM' : 'average · e1RM')
+                              : sessions.length > 1 ? 'avg e1RM' : 'e1RM'}
                         </span>
                         <strong>{Math.round(val)}</strong>
                       </div>
@@ -674,14 +652,9 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
         </>
       ) : (
         <div className="chart-empty">
-          {/* On 'all' nothing logged is drawn, so "no sessions" would be both
-              wrong and unhelpful: squat and deadlift have no hand-kept history
-              at all, and that is the whole reason the chart is blank. */}
-          {notebookOn
-            ? 'No hand-kept averages for the lifts selected — only bench and pull-up have them'
-            : range
-              ? 'No sessions in this range for the lifts selected'
-              : 'No lift data yet — log squat, bench, deadlift or pull-up sets with top-set marked'}
+          {range
+            ? 'No sessions in this range for the lifts selected'
+            : 'No lift data yet — log squat, bench, deadlift or pull-up sets with top-set marked'}
         </div>
       )}
     </div>

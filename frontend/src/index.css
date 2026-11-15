@@ -6,12 +6,6 @@
 
 body {
   margin: 0;
-  /* The lift trend breaks out of the 1100px column to the full viewport
-     (.chart-wrapper--full). 100vw counts the vertical scrollbar, so without
-     this the page gains a few pixels of sideways scroll. `clip` rather than
-     `hidden`: hidden would make body a scroll container and break any
-     position: sticky inside it. */
-  overflow-x: clip;
   background: var(--bg-app);
   color: var(--text-primary);
   font-family: var(--font-sans);

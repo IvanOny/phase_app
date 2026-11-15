@@ -406,34 +406,6 @@
   padding: var(--space-6);
 }
 
-/* Full-bleed: steps outside the dashboard's 1100px column to the width of the
-   viewport. The negative margins are half the difference between the viewport
-   and this element's own width, which is what makes it centre correctly at any
-   size. Square edges and no side border, because a card edge a pixel from the
-   window edge reads as a mistake rather than a frame.
-   Needs body { overflow-x: clip } — see index.css. */
-.chart-wrapper--full {
-  width: 100vw;
-  margin-left: calc(50% - 50vw);
-  margin-right: calc(50% - 50vw);
-  border-left: 0;
-  border-right: 0;
-  border-radius: 0;
-  padding-left: var(--space-6);
-  padding-right: var(--space-6);
-}
-
-@media (max-width: 600px) {
-  /* Already edge to edge on a phone; the breakout would only add padding maths. */
-  .chart-wrapper--full {
-    width: auto;
-    margin-left: 0;
-    margin-right: 0;
-    padding-left: var(--space-6);
-    padding-right: var(--space-6);
-  }
-}
-
 .chart-title-row {
   display: flex;
   align-items: center;

@@ -555,12 +555,17 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
       )}
       {hasData ? (
         <>
+          {/* Height comes from the viewport rather than a fixed 260px: this is
+              the page's main chart, and four lines a few kilos apart need the
+              room to separate. clamp keeps it sane at both ends — never so
+              short it is unreadable on a phone, never taller than the screen
+              on a desktop, and it costs no resize listener. */}
           <div
             ref={chartRef}
-            style={{ position: 'relative' }}
+            style={{ position: 'relative', height: 'clamp(300px, 56vh, 620px)' }}
             onMouseLeave={() => { if (!isTouch) { setHovered(null); openTooltip(null); } }}
           >
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data} margin={{ top: 8, right: 64, bottom: 24, left: 0 }}
                 onMouseLeave={() => { if (!isTouch) { setHovered(null); openTooltip(null); } }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={colors.border} />

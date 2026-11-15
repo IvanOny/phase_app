@@ -11,6 +11,21 @@ import psycopg2.extensions
 # point on the pull-up line at once.
 PULLUP_BW_FACTOR = 0.90
 
+# Pull-ups use Lombardi (load * reps^0.10); the barbell lifts stay on Epley
+# (load * (1 + reps/30)).
+#
+# Not a preference between formulas -- a difference between the lifts. Epley is
+# linear in reps and holds to about ten or twelve; the barbell work lives there,
+# so it stays. Pull-ups do not: they are done at one load, bodyweight, with reps
+# running to twenty-three, and Epley read that set as 118 kg -- more than any
+# weighted set actually performed. Lombardi reads it as 91.
+#
+# Capping reps instead was tried and is worse: every unweighted set is at the
+# same load, so a cap collapses them all to one value and the line goes flat,
+# hiding a real climb from 13 reps to 23. Lombardi keeps the order and
+# compresses the scale, which is the part that was wrong.
+LOMBARDI_EXP = 0.10
+
 
 def get_bench_top_set_e1rm(conn: psycopg2.extensions.connection, session_id: int) -> dict[str, Any] | None:
     with conn.cursor() as cur:
@@ -367,7 +382,8 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection,
     # that phase's log; across all of them, whichever entry is nearest by date,
     # which is the better rule anyway -- the scale does not know about phases.
     bw_scope = "b.phase_id = s.phase_id" if phase_id is not None else "TRUE"
-    params = {"phase_id": phase_id, "bw_factor": PULLUP_BW_FACTOR}
+    params = {"phase_id": phase_id, "bw_factor": PULLUP_BW_FACTOR,
+              "lombardi": LOMBARDI_EXP}
     with conn.cursor() as cur:
         # Best top-set e1RM per session for each of the three lifts
         for lift, flag in [("squat", "is_squat"), ("bench", "is_barbell_bench_press"), ("deadlift", "is_deadlift")]:
@@ -423,7 +439,7 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection,
                 es.reps,
                 bw.weight_kg AS bodyweight_kg,
                 ROUND(((bw.weight_kg * %(bw_factor)s + es.load_kg)
-                        * (1 + es.reps / 30.0))::numeric, 2) AS e1rm_kg
+                        * POWER(GREATEST(es.reps, 1), %(lombardi)s))::numeric, 2) AS e1rm_kg
             FROM sessions s
             JOIN session_exercises se ON se.session_id = s.session_id
             JOIN exercises e ON e.exercise_id = se.exercise_id
@@ -466,7 +482,7 @@ def get_session_pl_metrics(conn: psycopg2.extensions.connection,
                 es.reps,
                 bw.weight_kg AS bodyweight_kg,
                 ROUND(((bw.weight_kg * %(bw_factor)s)
-                        * (1 + es.reps / 30.0))::numeric, 2) AS e1rm_kg
+                        * POWER(GREATEST(es.reps, 1), %(lombardi)s))::numeric, 2) AS e1rm_kg
             FROM sessions s
             JOIN session_exercises se ON se.session_id = s.session_id
             JOIN exercises e ON e.exercise_id = se.exercise_id

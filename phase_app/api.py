@@ -1177,7 +1177,7 @@ class PhaseApi:
         the tooltip.
         """
         import datetime as _dt
-        from phase_app.metrics import PULLUP_BW_FACTOR
+        from phase_app.metrics import PULLUP_BW_FACTOR, LOMBARDI_EXP
 
         bw = [(r["logged_date"], float(r["weight_kg"])) for r in self._exec(
             "SELECT logged_date, weight_kg FROM bodyweight_log ORDER BY logged_date").fetchall()]
@@ -1204,7 +1204,7 @@ class PhaseApi:
                 detail += f", max {r['max_reps']}" + (f" ({r['max_times']}×)" if r["max_times"] else "")
             out.append({
                 "lift": "pullup", "date": d.isoformat(), "year": r["year"], "season": r["season"],
-                "e1rm": round(PULLUP_BW_FACTOR * w * (1 + avg / 30), 1),
+                "e1rm": round(PULLUP_BW_FACTOR * w * max(avg, 1) ** LOMBARDI_EXP, 1),
                 "detail": f"{r['season']} {r['year']} · {detail} · bw {w:g}",
             })
         this_month = today.strftime("%Y-%m")

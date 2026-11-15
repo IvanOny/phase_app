@@ -21,7 +21,10 @@ const LIFT_CONFIG = {
   squat:    { label: 'Squat',    color: '#6366f1' },
   bench:    { label: 'Bench',    color: '#0891b2' },
   deadlift: { label: 'Deadlift', color: '#10b981' },
-  // Pull-up e1RM is (0.9 × bodyweight + added) × (1 + reps/30) — the bar load
+  // Pull-up e1RM is (0.9 × bodyweight + added) × reps^0.10 — Lombardi, not the
+  // Epley the barbell lifts use. Pull-ups are done at one load for up to
+  // twenty-three reps, and Epley is linear in reps: it read that set as 118 kg,
+  // above any weighted set performed. See LOMBARDI_EXP in metrics.py. The bar load
   // alone is 0 on an unweighted set, so it lands on the same axis as the barbell
   // lifts rather than on the floor. The 0.9 is the arms, which hang from the bar
   // instead of being lifted; it lives in metrics.py as PULLUP_BW_FACTOR and is

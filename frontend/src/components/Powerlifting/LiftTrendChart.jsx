@@ -491,7 +491,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   }
 
   return (
-    <div className="chart-wrapper">
+    <div className="chart-wrapper chart-wrapper--full">
       <div className="chart-title-row">
         <span className="card-title">Lift Trend — e1RM (kg)</span>
       </div>

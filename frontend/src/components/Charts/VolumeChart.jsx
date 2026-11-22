@@ -125,6 +125,16 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
     .map(s => {
       const dateKey = normDate(s.sessionDate);
       const sets = s.sets ?? [];
+      // The set the top number came from, so the tooltip can say the reps
+      // behind it. The flagged one if there is one; otherwise the heaviest,
+      // breaking a tie on reps -- which is how the top load was picked too.
+      const topSet = sets.find(x => x.isTopSet) ?? sets.reduce((best, x) => {
+        if (x.loadKg == null) return best;
+        if (!best) return x;
+        if (x.loadKg > best.loadKg) return x;
+        if (x.loadKg === best.loadKg && (x.reps ?? 0) > (best.reps ?? 0)) return x;
+        return best;
+      }, null);
       let volume, topValue;
       if (isTimed) {
         volume   = s.totalTimeMinutes ?? sets.reduce((sum, set) => sum + (set.timeMinutes ?? 0), 0);
@@ -142,7 +152,8 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
         volume   = s.volumeKgReps;
         topValue = s.topLoadKg != null ? Math.round(s.topLoadKg * 2) / 2 : null;
       }
-      return { date: s.sessionDate, volume, topValue, sets, sessionType: sessionTypeByDate[dateKey] ?? null };
+      return { date: s.sessionDate, volume, topValue, topSet, sets,
+               sessionType: sessionTypeByDate[dateKey] ?? null };
     })
     .filter(s => {
       if (!isBenchPress || hideBenchFilter) return true;
@@ -377,6 +388,16 @@ export default function VolumeChart({ sessions, exerciseVolumes, exercises, hide
                 <>
                   <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{topLabel}</div>
                   <strong>{tooltip.data.topValue}{isTimed ? ' min' : (isBodyweight && !pullupE1rm) ? ' reps' : ' kg'}</strong>
+                  {/* A load on its own does not say what it cost: 75 kg for 3
+                      and 75 kg for 10 are different sessions. Not shown where
+                      the number already is reps, or for timed work. */}
+                  {!isTimed && !(isBodyweight && !pullupE1rm) && tooltip.data.topSet?.reps != null && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {pullupE1rm
+                        ? `${tooltip.data.topSet.loadKg ? `+${tooltip.data.topSet.loadKg} kg` : 'bodyweight'} × ${tooltip.data.topSet.reps} reps`
+                        : `${tooltip.data.topSet.loadKg} kg × ${tooltip.data.topSet.reps} reps`}
+                    </div>
+                  )}
                 </>
               ) : (
                 <>

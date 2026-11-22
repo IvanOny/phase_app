@@ -131,16 +131,8 @@ export default function PowerliftingDashboard({
               sets, the class. All-phase feeds fall back to this phase until
               they arrive. */}
           <PlatesCard sessions={allPl?.sessions ?? sessions} plMetrics={allPl ?? plMetrics} />
-          {/* The same data twice, so the difference between the two readings
-              is visible instead of argued about. The first averages each
-              window: what a period was like. The second takes the best
-              session in it: what you are capable of. They diverge most where
-              easy days sit beside hard ones. */}
           <LiftTrendChart sessions={allPl?.sessions ?? sessions}
                           plMetrics={allPl ?? plMetrics} showTotal={false} />
-          <LiftTrendChart sessions={allPl?.sessions ?? sessions}
-                          plMetrics={allPl ?? plMetrics} showTotal={false}
-                          aggregate="best" />
           {/* Health is about the person rather than the training, so it needs
               the login -- the server refuses these reads otherwise. */}
           {isAuthenticated && (

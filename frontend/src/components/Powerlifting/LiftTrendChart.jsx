@@ -74,10 +74,15 @@ const DAY_MS = 86400000;
 // the same thing from one visit to the next, which a span that stretched to fit
 // the data never did. `null` is everything on record, cut from first session to
 // last as before.
+// `since` is the odd one out: a fixed start instead of a fixed length, so it
+// grows a day longer every day. 01.04.2026 is where logging began -- everything
+// before it is the hand-kept notebook, and this span is "the app's own record".
+const SINCE_START = '2026-04-01';
 const SPANS = [
   { key: '30',     label: '30d', days: 30 },
   { key: '100',    label: '100d', days: 100 },
   { key: '365',    label: '1y',  days: 365 },
+  { key: 'since',  label: 'since 01.04.26', since: SINCE_START },
   { key: 'all',    label: 'all', days: null },
   { key: 'custom', label: 'custom' },
 ];
@@ -104,14 +109,12 @@ function resolveRange(spanKey, custom) {
     if (Number.isNaN(a) || Number.isNaN(b)) return null;
     return { from: Math.min(a, b), to: Math.max(a, b) };
   }
-  const days = SPANS.find(s => s.key === spanKey)?.days ?? null;
+  const span = SPANS.find(s => s.key === spanKey);
+  if (span?.since) return { from: Date.parse(span.since), to: todayMs() };
+  const days = span?.days ?? null;
   if (!days) return null;
   const today = todayMs();
   return { from: today - days * DAY_MS, to: today };
-}
-
-function round1(n) {
-  return Math.round(n * 10) / 10;
 }
 
 /**
@@ -126,11 +129,11 @@ function round1(n) {
  * measurement, so its bucket value is the last one in the window, not a mean
  * of running bests.
  */
-// `aggregate` decides what a window of several sessions becomes: their
-// average, or the best of them. Average is the honest summary of a period;
-// best is the record line. Neither is wrong, they answer different questions,
-// and the dashboard shows both so the gap between them is visible.
-function bucketChartData(points, lifts, range = null, aggregate = 'avg') {
+// A window of several sessions becomes the best of them, not their average.
+// Both were drawn side by side for a while; the average told you what a period
+// was like, including the easy days, and that is not the question this chart is
+// read for. The best session is what you were capable of in that window.
+function bucketChartData(points, lifts, range = null) {
   const has = p => lifts.some(l => (l === 'total' ? p.total : p[`_${l}`]) != null);
   let used = points.filter(has);
 
@@ -191,26 +194,12 @@ function bucketChartData(points, lifts, range = null, aggregate = 'avg') {
       const ss = b[`_${l}Sessions`];
       if (ss.length === 0) continue;
       const best = ss.reduce((a2, s2) => (s2.value > a2.value ? s2 : a2), ss[0]);
-      const v = l === 'total'
-        ? ss[ss.length - 1].value
-        : aggregate === 'best'
-          ? best.value
-          : round1(ss.reduce((a, s) => a + s.value, 0) / ss.length);
+      const v = l === 'total' ? ss[ss.length - 1].value : best.value;
       b[l] = v;
       b[`_${l}`] = v;
-      // One session in the window: that set is the point, so it is written
-      // plainly. Several: the point is their average, so the best set is
-      // marked "max" -- without that prefix the label would read as the
-      // number drawn, which it is not.
-      if (ss.length === 1 || aggregate === 'best') {
-        // The drawn value is this set, so it is written plainly.
-        b[`${l}SetLabel`] = setLabel(aggregate === 'best' ? best.set : ss[0].set);
-      } else {
-        // The drawn value is the average of the window, so the best set gets
-        // "max" -- unprefixed it would read as the number drawn, which it is not.
-        const lbl = setLabel(best.set);
-        b[`${l}SetLabel`] = lbl ? `max ${lbl}` : '';
-      }
+      // The drawn value is this set, whatever the window's width, so it needs
+      // no qualifier -- the "max" prefix went with the averaging chart.
+      b[`${l}SetLabel`] = setLabel(best.set);
     }
     delete b._start; delete b._end;
   }
@@ -313,7 +302,7 @@ function buildChartData(sessions, plMetrics) {
   return points;
 }
 
-export default function LiftTrendChart({ sessions, plMetrics, showTotal = true, aggregate = 'avg' }) {
+export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }) {
   const colors = useChartColors();
   const isTouch = useIsTouchDevice();
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-pl');
@@ -392,7 +381,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true, 
   });
   const points = [...logged, ...history]
     .sort((a, b) => Date.parse(a.date.split('T')[0]) - Date.parse(b.date.split('T')[0]));
-  const data = bucketChartData(points, seriesToShow, range, aggregate);
+  const data = bucketChartData(points, seriesToShow, range);
   const hasData = data.length > 0;
 
   // dd.mm says nothing once a chart spans years -- and with the notebook,
@@ -539,7 +528,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true, 
   return (
     <div className="chart-wrapper">
       <div className="chart-title-row">
-        <span className="card-title">Lift Trend — e1RM (kg){aggregate === 'best' ? ' · best set' : ' · window average'}</span>
+        <span className="card-title">Lift Trend — e1RM (kg) · best set</span>
       </div>
       {/* Each pill wears its own line's colour when it is on, so the chart can
           be read without counting back to a legend. */}
@@ -573,7 +562,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true, 
           className={`filter-chip${showSets ? ' active' : ''}`}
           onClick={() => setShowSets(v => !v)}
           aria-pressed={showSets}
-          title="Show the set behind each point. Where a point covers several sessions, the best one, marked max."
+          title="Show the set behind each point."
           style={{ fontSize: 11, padding: '1px 8px', marginLeft: 8,
                    ...(showSets ? { background: 'transparent' } : null) }}
         >
@@ -686,9 +675,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true, 
                           {lift === 'total' ? 'Total'
                             : sessions.some(s => s?.notebook)
                               ? (sessions.length > 1 ? 'average · avg e1RM' : 'average · e1RM')
-                              : sessions.length > 1
-                                ? (aggregate === 'best' ? 'best e1RM' : 'avg e1RM')
-                                : 'e1RM'}
+                              : sessions.length > 1 ? 'best e1RM' : 'e1RM'}
                         </span>
                         <strong>{Math.round(val)}</strong>
                       </div>

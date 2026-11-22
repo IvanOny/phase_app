@@ -59,6 +59,9 @@ PRIVATE_READS = (
     "/v1/injuries",
     "/v1/bodyweight",
     "/v1/day-notes",
+    # The whole-database dump: it contains every private read above, so it is
+    # private whatever else it holds.
+    "/v1/export",
 )
 _SELF_GUARDED = ("/v1/burpee", "/v1/exq")      # ?token= resolved by the handler
 _READ_METHODS = ("GET", "HEAD", "OPTIONS")

@@ -65,7 +65,7 @@ function formatDateRange(start, end) {
   return `${fmt(start)} – ${fmt(end)}`;
 }
 
-export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme, isAuthenticated, onLogout, onLoginClick, onFaqClick, showProgress = true }) {
+export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme, onToggleTheme, isAuthenticated, onLogout, onLoginClick, onFaqClick, onDataClick, showProgress = true }) {
   const [editing, setEditing] = useState(false);
   const [showDays, toggleDays, headerRef] = useExpandable('phase-days');
   const [form, setForm] = useState({});
@@ -202,6 +202,13 @@ export default function PhaseHeader({ phase, onUpdatePhase, onDeletePhase, theme
           ) : (
             <button className="btn btn-ghost" title="Log in" onClick={onLoginClick} style={{ fontSize: 13, padding: '3px 10px' }}>
               Log in
+            </button>
+          )}
+          {/* Only when logged in: /v1/export is private, so the button would
+              lead straight to a 401 for anyone else. */}
+          {isAuthenticated && (
+            <button className="btn btn-ghost" onClick={onDataClick} style={{ fontSize: 13, padding: '3px 10px' }}>
+              Data
             </button>
           )}
           <button className="btn btn-ghost" onClick={onFaqClick} style={{ fontSize: 13, padding: '3px 10px' }}>

@@ -1,0 +1,115 @@
+.data-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.data-page-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.data-page-head .card-title { flex: 1; }
+
+.data-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 68ch;
+}
+
+.data-table {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.data-table-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+.data-table-toggle {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  /* Without this the long row of columns can push the copy button off the card. */
+  min-width: 0;
+}
+
+.data-caret { color: var(--text-secondary); font-size: 11px; }
+.data-table-name { font-weight: 600; }
+.data-table-count { color: var(--text-secondary); font-size: 12px; }
+
+.data-copy { white-space: nowrap; font-size: 12px; }
+
+/* The table itself scrolls sideways rather than the page: monthly_run has 25
+   columns, and a page that slides under the viewport is worse than a table
+   that does. */
+.data-scroll {
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+}
+
+.data-scroll table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-scroll th,
+.data-scroll td {
+  padding: 5px var(--space-3);
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-scroll th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.data-scroll tbody tr:last-child td { border-bottom: 0; }
+.data-scroll td { color: var(--text-primary); }
+
+.data-more {
+  display: block;
+  width: 100%;
+  padding: var(--space-3);
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.data-more:hover { color: var(--text-primary); }
+
+.data-empty {
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font-size: 13px;
+}

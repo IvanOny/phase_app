@@ -472,3 +472,10 @@ export async function importScreenshots(files) {
   })));
   return apiFetch('POST', '/v1/import/screenshots', { images });
 }
+
+// Every table of your own data, for the Data page. Private — carries the
+// bodyweight log, injuries and day notes, so it needs the login.
+export async function getExport() {
+  if (MOCK_MODE) return Promise.resolve({ tables: [] });
+  return apiFetch('GET', '/v1/export');
+}

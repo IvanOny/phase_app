@@ -164,6 +164,8 @@ class PhaseApi:
             return self.get_session_pl_metrics(None)
         if method == "GET" and path == "/v1/metrics/notebook":
             return self.get_notebook_points()
+        if method == "GET" and path == "/v1/export":
+            return self.get_export()
         if method == "GET" and re.fullmatch(r"/v1/metrics/phases/\d+/classification", path):
             return self.get_classification(int(path.split("/")[4]), qp)
 
@@ -1160,6 +1162,15 @@ class PhaseApi:
     # (year offset, month, day), to tell a finished season from one in progress.
     _SEASON_MID = {"spring": (0, 4), "summer": (0, 7), "autumn": (0, 10), "winter": (1, 1)}
     _SEASON_AFTER = {"spring": (0, 6, 1), "summer": (0, 9, 1), "autumn": (0, 12, 1), "winter": (1, 3, 1)}
+
+    def get_export(self) -> ApiResponse:
+        """Every table of the owner's own data, for the Data page.
+
+        Private: it carries the bodyweight log, injuries and day notes, so it
+        sits behind the login like the routes those have of their own.
+        """
+        from phase_app.export import dump
+        return ApiResponse(200, {"tables": dump(self.conn)})
 
     def get_notebook_points(self) -> ApiResponse:
         """The hand-kept notebook as e1RM points the lift trend can draw.

@@ -23,6 +23,7 @@ function useTheme() {
   return { theme, toggleTheme };
 }
 import Dashboard from './components/Dashboard/Dashboard.jsx';
+import DataPage from './components/Data/DataPage.jsx';
 import FaqPage from './components/Faq/FaqPage.jsx';
 import DataEntryPanel from './components/DataEntry/DataEntryPanel.jsx';
 import ExerciseQueueApp from './components/ExerciseQueue/ExerciseQueueApp.jsx';
@@ -224,6 +225,10 @@ function PhaseApp() {
     return <FaqPage onBack={() => setPage('dashboard')} />;
   }
 
+  if (page === 'data' && isAuthenticated) {
+    return <DataPage onBack={() => setPage('dashboard')} />;
+  }
+
   return (
     <>
       {showLogin && (
@@ -258,6 +263,7 @@ function PhaseApp() {
         onLogout={logout}
         onLoginClick={() => setShowLogin(true)}
         onFaqClick={() => setPage('faq')}
+        onDataClick={() => setPage('data')}
         bwRefreshKey={bwKey}
       />
       {isAuthenticated && (

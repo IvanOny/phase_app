@@ -1506,11 +1506,12 @@ class PhaseApi:
             "resolvedOn": str(r["resolved_on"]) if r["resolved_on"] else None,
             "area":       r["area"],
             "severity":   r["severity"],
+            "discipline": r["discipline"] if "discipline" in r else "lifting",
             "note":       r["note"],
         }
 
     def list_injuries(self) -> ApiResponse:
-        rows = self._exec("SELECT * FROM injuries ORDER BY started_on").fetchall()
+        rows = self._exec("SELECT * FROM injuries ORDER BY discipline, started_on").fetchall()
         return ApiResponse(200, [self._injury_row(r) for r in rows])
 
     def save_injury(self, injury_id: int | None, payload: dict[str, Any]) -> ApiResponse:
@@ -1536,6 +1537,13 @@ class PhaseApi:
                 if payload["severity"] not in self._INJURY_SEVERITIES:
                     raise ValueError("severity must be minor, moderate or severe")
                 fields["severity"] = payload["severity"]
+            if "discipline" in payload:
+                # Lifting or running. Without it the knee -- which has never
+                # cost a lift -- reads as a third interruption to the barbell
+                # work, and the list overstates how often training stopped.
+                if payload["discipline"] not in ("lifting", "running", "both"):
+                    raise ValueError("discipline must be lifting, running or both")
+                fields["discipline"] = payload["discipline"]
             if "note" in payload:
                 fields["note"] = (payload.get("note") or "").strip() or None
         except ValueError as exc:

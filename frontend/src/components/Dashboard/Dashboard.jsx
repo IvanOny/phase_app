@@ -36,6 +36,7 @@ export default function Dashboard({
   onLogout,
   onLoginClick,
   onFaqClick,
+  onDataClick,
   bwRefreshKey,
 }) {
   const [focusFilter, setFocusFilter] = useState(null);
@@ -68,6 +69,7 @@ export default function Dashboard({
         onLogout={onLogout}
         onLoginClick={onLoginClick}
         onFaqClick={onFaqClick}
+        onDataClick={onDataClick}
         bwRefreshKey={bwRefreshKey}
       />
     );
@@ -90,6 +92,7 @@ export default function Dashboard({
         onLogout={onLogout}
         onLoginClick={onLoginClick}
         onFaqClick={onFaqClick}
+        onDataClick={onDataClick}
       />
       {sessions.length === 0 ? (
         <div className="phase-no-data">

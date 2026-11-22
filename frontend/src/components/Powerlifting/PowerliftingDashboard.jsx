@@ -31,6 +31,7 @@ export default function PowerliftingDashboard({
   onLogout,
   onLoginClick,
   onFaqClick,
+  onDataClick,
   bwRefreshKey,
 }) {
   const [plMetrics, setPlMetrics] = useState(null);
@@ -115,6 +116,7 @@ export default function PowerliftingDashboard({
         onLogout={onLogout}
         onLoginClick={onLoginClick}
         onFaqClick={onFaqClick}
+        onDataClick={onDataClick}
         showProgress={false}
       />
 

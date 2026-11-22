@@ -46,6 +46,18 @@ const LIFT_ORDER = ['squat', 'bench', 'deadlift', 'pullup', 'total'];
 // own lift's series, so there is nothing extra here.
 const SERIES = LIFT_ORDER;
 
+// "75×8" -- the set behind a point. Shared by the tooltip and the on-chart
+// labels so the two can never word the same set differently. Pull-ups carry
+// the bodyweight they were done at; the notebook brings its own wording.
+function setLabel(set) {
+  if (!set) return '';
+  if (set.note) return set.note;
+  if (set.bodyweight != null) {
+    return `${(set.bodyweight * PULLUP_BW_FACTOR).toFixed(1)}${set.load ? ` + ${set.load}` : ''} × ${set.reps}`;
+  }
+  return `${set.load}×${set.reps}`;
+}
+
 // How many points a line has, however many sessions are behind it. The span
 // of the lifts on screen is cut into this many equal windows, and each point
 // is the average e1RM of the sessions that fell in its window — so the chart
@@ -179,6 +191,10 @@ function bucketChartData(points, lifts, range = null) {
         : round1(ss.reduce((a, s) => a + s.value, 0) / ss.length);
       b[l] = v;
       b[`_${l}`] = v;
+      // Nur wenn das Fenster genau eine Einheit umfasst. Bei mehreren ist der
+      // Punkt ein Mittelwert, und ein einzelner Satz darunter würde ihn als
+      // den gezeichneten Wert ausgeben.
+      b[`${l}SetLabel`] = ss.length === 1 ? setLabel(ss[0].set) : '';
     }
     delete b._start; delete b._end;
   }
@@ -299,6 +315,8 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   const range = resolveRange(spanKey, custom);
 
   const [notebook, setNotebook] = useState([]);
+  // Die Sätze an den Punkten: aus, bis jemand sie sehen will.
+  const [showSets, setShowSets] = useState(false);
   useEffect(() => {
     getNotebookPoints().then(r => setNotebook(Array.isArray(r) ? r : [])).catch(() => {});
   }, []);
@@ -469,6 +487,18 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
             stroke={isActive || isHovered ? cfg.color : colors.bgApp}
             strokeWidth={isActive ? 3 : 1.5}
           />
+          {showSets && payload[`${lift}SetLabel`] && (
+            <text
+              x={cx}
+              y={cy + dotR + 13}
+              fill={colors.textMuted}
+              fontSize={10}
+              textAnchor="middle"
+              style={{ pointerEvents: 'none', userSelect: 'none' }}
+            >
+              {payload[`${lift}SetLabel`]}
+            </text>
+          )}
           {/* Labelled like any other line. The averages used to be unlabelled
               because they ran beside the logged lines they belong to; on 'all'
               they are the only lines there is, and an unlabelled chart is
@@ -519,6 +549,20 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
             </button>
           );
         })}
+        {/* Sets on or off. Its own switch rather than a lift pill: it changes
+            how every line is drawn, not which ones are drawn. Labelled with an
+            example, because "75×8" says what it does in less space than
+            "show sets" and in the chart's own vocabulary. */}
+        <button
+          className={`filter-chip${showSets ? ' active' : ''}`}
+          onClick={() => setShowSets(v => !v)}
+          aria-pressed={showSets}
+          title="Show the set behind each point. Only where a point covers a single session."
+          style={{ fontSize: 11, padding: '1px 8px', marginLeft: 8,
+                   ...(showSets ? { background: 'transparent' } : null) }}
+        >
+          75×8
+        </button>
         {/* The span, on the right of the same row: which lifts, and over how
             long. One of these is always on, like the lifts — there is no
             "no span". */}
@@ -615,9 +659,6 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                   const sessions = tooltip.data[`_${lift}Sessions`] || [];
                   if (val == null) return null;
                   const window = `${formatDate(tooltip.data.dateStart)} – ${formatDate(tooltip.data.dateEnd)}`;
-                  const setLabel = set => !set ? '' : set.note ? set.note : set.bodyweight != null
-                    ? `${(set.bodyweight * PULLUP_BW_FACTOR).toFixed(1)}${set.load ? ` + ${set.load}` : ''} × ${set.reps}`
-                    : `${set.load}×${set.reps}`;
                   return (
                     <>
                       <div className="tooltip-row">

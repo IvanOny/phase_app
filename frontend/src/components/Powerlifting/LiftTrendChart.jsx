@@ -191,10 +191,17 @@ function bucketChartData(points, lifts, range = null) {
         : round1(ss.reduce((a, s) => a + s.value, 0) / ss.length);
       b[l] = v;
       b[`_${l}`] = v;
-      // Nur wenn das Fenster genau eine Einheit umfasst. Bei mehreren ist der
-      // Punkt ein Mittelwert, und ein einzelner Satz darunter würde ihn als
-      // den gezeichneten Wert ausgeben.
-      b[`${l}SetLabel`] = ss.length === 1 ? setLabel(ss[0].set) : '';
+      // One session in the window: that set is the point, so it is written
+      // plainly. Several: the point is their average, so the best set is
+      // marked "max" -- without that prefix the label would read as the
+      // number drawn, which it is not.
+      if (ss.length === 1) {
+        b[`${l}SetLabel`] = setLabel(ss[0].set);
+      } else {
+        const best = ss.reduce((a2, s2) => (s2.value > a2.value ? s2 : a2), ss[0]);
+        const lbl = setLabel(best.set);
+        b[`${l}SetLabel`] = lbl ? `max ${lbl}` : '';
+      }
     }
     delete b._start; delete b._end;
   }
@@ -557,7 +564,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
           className={`filter-chip${showSets ? ' active' : ''}`}
           onClick={() => setShowSets(v => !v)}
           aria-pressed={showSets}
-          title="Show the set behind each point. Only where a point covers a single session."
+          title="Show the set behind each point. Where a point covers several sessions, the best one, marked max."
           style={{ fontSize: 11, padding: '1px 8px', marginLeft: 8,
                    ...(showSets ? { background: 'transparent' } : null) }}
         >

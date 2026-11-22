@@ -58,6 +58,15 @@ function setLabel(set) {
   return `${set.load}×${set.reps}`;
 }
 
+// The same set, short enough for a button. Pull-ups lose the bodyweight term
+// -- "66.6 + 11 × 8" would make the pill twice the width of its neighbours.
+function setLabelShort(set) {
+  if (!set) return '';
+  if (set.note) return set.note;
+  if (set.bodyweight != null) return set.load ? `+${set.load}×${set.reps}` : `BW×${set.reps}`;
+  return `${set.load}×${set.reps}`;
+}
+
 // How many points a line has, however many sessions are behind it. The span
 // of the lifts on screen is cut into this many equal windows, and each point
 // is the average e1RM of the sessions that fell in its window — so the chart
@@ -200,6 +209,7 @@ function bucketChartData(points, lifts, range = null) {
       // The drawn value is this set, whatever the window's width, so it needs
       // no qualifier -- the "max" prefix went with the averaging chart.
       b[`${l}SetLabel`] = setLabel(best.set);
+      b[`${l}SetShort`] = setLabelShort(best.set);
     }
     delete b._start; delete b._end;
   }
@@ -383,6 +393,19 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
     .sort((a, b) => Date.parse(a.date.split('T')[0]) - Date.parse(b.date.split('T')[0]));
   const data = bucketChartData(points, seriesToShow, range);
   const hasData = data.length > 0;
+  // The best set on screen right now, for the switch's own label. It follows
+  // the lifts and the span, so the pill always names a set that is actually
+  // drawn rather than a fixed example.
+  let bestVal = -Infinity, bestShort = '';
+  for (const d of data) {
+    for (const l of seriesToShow) {
+      if (l === 'total') continue;
+      const v = d[l];
+      if (v == null || v <= bestVal) continue;
+      bestVal = v;
+      bestShort = d[`${l}SetShort`] || '';
+    }
+  }
 
   // dd.mm says nothing once a chart spans years -- and with the notebook,
   // "all" reaches back to 2024. Past ~10 months the ticks read mm.yy.
@@ -562,11 +585,11 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
           className={`filter-chip${showSets ? ' active' : ''}`}
           onClick={() => setShowSets(v => !v)}
           aria-pressed={showSets}
-          title="Show the set behind each point."
+          title="Show the set behind each point. The label is the best one in view."
           style={{ fontSize: 11, padding: '1px 8px', marginLeft: 8,
                    ...(showSets ? { background: 'transparent' } : null) }}
         >
-          75×8
+          {bestShort || 'sets'}
         </button>
         {/* The span, on the right of the same row: which lifts, and over how
             long. One of these is always on, like the lifts — there is no

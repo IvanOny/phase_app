@@ -126,7 +126,11 @@ function round1(n) {
  * measurement, so its bucket value is the last one in the window, not a mean
  * of running bests.
  */
-function bucketChartData(points, lifts, range = null) {
+// `aggregate` decides what a window of several sessions becomes: their
+// average, or the best of them. Average is the honest summary of a period;
+// best is the record line. Neither is wrong, they answer different questions,
+// and the dashboard shows both so the gap between them is visible.
+function bucketChartData(points, lifts, range = null, aggregate = 'avg') {
   const has = p => lifts.some(l => (l === 'total' ? p.total : p[`_${l}`]) != null);
   let used = points.filter(has);
 
@@ -186,19 +190,24 @@ function bucketChartData(points, lifts, range = null) {
     for (const l of SERIES) {
       const ss = b[`_${l}Sessions`];
       if (ss.length === 0) continue;
+      const best = ss.reduce((a2, s2) => (s2.value > a2.value ? s2 : a2), ss[0]);
       const v = l === 'total'
         ? ss[ss.length - 1].value
-        : round1(ss.reduce((a, s) => a + s.value, 0) / ss.length);
+        : aggregate === 'best'
+          ? best.value
+          : round1(ss.reduce((a, s) => a + s.value, 0) / ss.length);
       b[l] = v;
       b[`_${l}`] = v;
       // One session in the window: that set is the point, so it is written
       // plainly. Several: the point is their average, so the best set is
       // marked "max" -- without that prefix the label would read as the
       // number drawn, which it is not.
-      if (ss.length === 1) {
-        b[`${l}SetLabel`] = setLabel(ss[0].set);
+      if (ss.length === 1 || aggregate === 'best') {
+        // The drawn value is this set, so it is written plainly.
+        b[`${l}SetLabel`] = setLabel(aggregate === 'best' ? best.set : ss[0].set);
       } else {
-        const best = ss.reduce((a2, s2) => (s2.value > a2.value ? s2 : a2), ss[0]);
+        // The drawn value is the average of the window, so the best set gets
+        // "max" -- unprefixed it would read as the number drawn, which it is not.
         const lbl = setLabel(best.set);
         b[`${l}SetLabel`] = lbl ? `max ${lbl}` : '';
       }
@@ -304,7 +313,7 @@ function buildChartData(sessions, plMetrics) {
   return points;
 }
 
-export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }) {
+export default function LiftTrendChart({ sessions, plMetrics, showTotal = true, aggregate = 'avg' }) {
   const colors = useChartColors();
   const isTouch = useIsTouchDevice();
   const [tooltip, openTooltip, chartRef] = useTooltip('chart-pl');
@@ -383,7 +392,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   });
   const points = [...logged, ...history]
     .sort((a, b) => Date.parse(a.date.split('T')[0]) - Date.parse(b.date.split('T')[0]));
-  const data = bucketChartData(points, seriesToShow, range);
+  const data = bucketChartData(points, seriesToShow, range, aggregate);
   const hasData = data.length > 0;
 
   // dd.mm says nothing once a chart spans years -- and with the notebook,
@@ -530,7 +539,7 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
   return (
     <div className="chart-wrapper">
       <div className="chart-title-row">
-        <span className="card-title">Lift Trend — e1RM (kg)</span>
+        <span className="card-title">Lift Trend — e1RM (kg){aggregate === 'best' ? ' · best set' : ' · window average'}</span>
       </div>
       {/* Each pill wears its own line's colour when it is on, so the chart can
           be read without counting back to a legend. */}
@@ -677,7 +686,9 @@ export default function LiftTrendChart({ sessions, plMetrics, showTotal = true }
                           {lift === 'total' ? 'Total'
                             : sessions.some(s => s?.notebook)
                               ? (sessions.length > 1 ? 'average · avg e1RM' : 'average · e1RM')
-                              : sessions.length > 1 ? 'avg e1RM' : 'e1RM'}
+                              : sessions.length > 1
+                                ? (aggregate === 'best' ? 'best e1RM' : 'avg e1RM')
+                                : 'e1RM'}
                         </span>
                         <strong>{Math.round(val)}</strong>
                       </div>
